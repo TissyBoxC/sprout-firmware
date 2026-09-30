@@ -66,5 +66,14 @@ secrets/
 # Local-only agent instructions
 AGENTS.md
 
-# Local research and workspace notes
-/docs/
+# Repository content policy: only code, runtime assets, and README files
+docs/
+documentation/
+openspec/
+skills/
+dev-docs/
+*.md
+!README.md
+!README.*.md
+!**/README.md
+!**/README.*.md
