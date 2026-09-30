@@ -1,4 +1,4 @@
-menu "Clarkaitoy feature modules"
+menu "Sprout feature modules"
 
 config FEATURE_UI_TEXT
     bool "Enable remote UI text"
