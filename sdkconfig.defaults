@@ -7,3 +7,6 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
+
+# Optional feature modules are disabled unless a product profile enables them.
+# CONFIG_FEATURE_UI_TEXT is not set

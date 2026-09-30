@@ -1,6 +1,12 @@
-# This file was automatically generated for projects
-# without default 'CMakeLists.txt' file.
+# Keep the project application component explicit because PlatformIO uses
+# `src` as its source directory rather than the ESP-IDF default `main`.
+set(app_requires "")
 
-FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/src/*.*)
+if(CONFIG_FEATURE_UI_TEXT)
+    list(APPEND app_requires "ui_text")
+endif()
 
-idf_component_register(SRCS ${app_sources})
+idf_component_register(
+    SRCS "main.c"
+    REQUIRES ${app_requires}
+)

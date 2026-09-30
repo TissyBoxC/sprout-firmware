@@ -1,0 +1,10 @@
+menu "Clarkaitoy feature modules"
+
+config FEATURE_UI_TEXT
+    bool "Enable remote UI text"
+    default n
+    help
+        Enable the optional remote UI text module. When disabled, UI text
+        related source files and dependencies are not linked.
+
+endmenu
