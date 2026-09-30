@@ -65,3 +65,6 @@ secrets/
 
 # Local-only agent instructions
 AGENTS.md
+
+# Local research and workspace notes
+/docs/
