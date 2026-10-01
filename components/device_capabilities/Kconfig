@@ -1,0 +1,90 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_CAPABILITIES
+    bool "Enable device capability reporting"
+    default y
+    help
+        Expose the capability set compiled into this firmware image. The
+        capability names are shared with the platform device contract.
+
+config CAPABILITY_AUDIO_INPUT
+    bool "Advertise audio input"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default y
+
+config CAPABILITY_AUDIO_OUTPUT
+    bool "Advertise audio output"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default y
+
+config CAPABILITY_WIFI
+    bool "Advertise Wi-Fi"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default y
+
+config CAPABILITY_CAMERA
+    bool "Advertise camera"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_DISPLAY
+    bool "Advertise display"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_TOUCH
+    bool "Advertise touch input"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_LED
+    bool "Advertise LED"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_BATTERY
+    bool "Advertise battery"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_CELLULAR_4G
+    bool "Advertise cellular 4G"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_MOTION
+    bool "Advertise motion"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_BLUETOOTH_AUDIO
+    bool "Advertise Bluetooth audio"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_VIDEO_CALL
+    bool "Advertise video call"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_LOCATION
+    bool "Advertise location"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_GEOFENCE
+    bool "Advertise geofence"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_SOS
+    bool "Advertise SOS"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+config CAPABILITY_MULTI_DEVICE
+    bool "Advertise multi-device support"
+    depends on FEATURE_DEVICE_CAPABILITIES
+    default n
+
+endmenu

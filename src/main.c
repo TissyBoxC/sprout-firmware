@@ -7,6 +7,9 @@
 #if CONFIG_FEATURE_DEVICE_IDENTITY
 #include "device_identity.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_CAPABILITIES
+#include "device_capabilities.h"
+#endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
 #include "error_recovery.h"
 #endif
@@ -38,6 +41,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DEVICE_IDENTITY
     ESP_ERROR_CHECK(module_registry_add(device_identity_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_CAPABILITIES
+    ESP_ERROR_CHECK(module_registry_add(device_capabilities_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
     ESP_ERROR_CHECK(module_registry_add(error_recovery_module_descriptor()));
