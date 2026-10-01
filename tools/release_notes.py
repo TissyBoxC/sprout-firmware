@@ -68,6 +68,21 @@ DESCRIPTION_TITLES = {
     "verify": "验证",
 }
 
+DESCRIPTION_PHRASES = {
+    "derive stable device identifier": "生成稳定的设备标识",
+    "expand generated file ignore rules": "扩展生成文件忽略规则",
+    "expose device contract schema version": "开放设备契约结构版本",
+    "initialize esp32-s3 n16r8 platformio project": "初始化 ESP32-S3 N16R8 PlatformIO 工程",
+    "physical optional module removal": "验证可选模块可物理移除",
+    "removable capability bitmap": "新增可移除的能力位图",
+    "removable core module baseline": "新增可移除的核心模块基线",
+    "removable module builds": "验证可移除模块构建",
+    "removable remote text component": "新增可移除的远程文本组件",
+    "restrict tracked content to code and readme": "仅跟踪代码与 README",
+    "shared firmware error codes": "新增共享固件错误码",
+    "stop tracking local research docs": "停止跟踪本地研究文档",
+}
+
 CONVENTIONAL_COMMIT = re.compile(
     r"^(?P<type>[A-Za-z]+)"
     r"(?:\((?P<scope>[^)]+)\))?"
@@ -144,13 +159,17 @@ def read_commits(previous_tag: str | None, current_ref: str) -> list[dict[str, s
 
 
 def localize_description(description: str) -> str:
+    phrase = DESCRIPTION_PHRASES.get(description.lower())
+    if phrase is not None:
+        return phrase
+
     words = description.split(maxsplit=1)
     if not words:
         return description
     action = DESCRIPTION_TITLES.get(words[0].lower())
     if action is None:
-        return description
-    return action if len(words) == 1 else f"{action}：{words[1]}"
+        return "完善相关功能"
+    return action
 
 
 def render_commit_lines(commits: list[dict[str, str]], repository: str) -> list[str]:
