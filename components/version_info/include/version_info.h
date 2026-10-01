@@ -8,6 +8,7 @@ extern "C" {
 
 /** @brief Immutable versions reported by device health payloads. */
 typedef struct {
+    const char *schema_version;
     const char *firmware_version;
     const char *hardware_revision;
     const char *protocol_version;

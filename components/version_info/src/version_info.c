@@ -5,6 +5,7 @@
 version_info_t version_info_get(void) {
     const esp_app_desc_t *app_description = esp_app_get_description();
     const version_info_t version_information = {
+        .schema_version = CONFIG_FIRMWARE_SCHEMA_VERSION,
         .firmware_version = app_description->version,
         .hardware_revision = CONFIG_IDF_TARGET,
         .protocol_version = CONFIG_FIRMWARE_PROTOCOL_VERSION,
