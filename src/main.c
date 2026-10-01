@@ -1,6 +1,9 @@
 #include "esp_err.h"
 #include "esp_log.h"
 
+#if CONFIG_FEATURE_ERROR_CODE
+#include "error_code.h"
+#endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
 #include "error_recovery.h"
 #endif
@@ -26,6 +29,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_VERSION_INFO
     ESP_ERROR_CHECK(module_registry_add(version_info_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_ERROR_CODE
+    ESP_ERROR_CHECK(module_registry_add(error_code_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
     ESP_ERROR_CHECK(module_registry_add(error_recovery_module_descriptor()));

@@ -1,0 +1,10 @@
+menu "Sprout feature modules"
+
+config FEATURE_ERROR_CODE
+    bool "Enable shared error codes"
+    default y
+    help
+        Map firmware failures to stable error strings shared with platform
+        services. ESP-IDF error numbers must not cross the device contract.
+
+endmenu

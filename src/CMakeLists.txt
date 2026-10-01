@@ -2,6 +2,10 @@
 # `src` as its source directory rather than the ESP-IDF default `main`.
 set(app_requires "")
 
+if(CONFIG_FEATURE_ERROR_CODE)
+    list(APPEND app_requires "error_code")
+endif()
+
 if(CONFIG_FEATURE_ERROR_RECOVERY)
     list(APPEND app_requires "error_recovery")
 endif()
