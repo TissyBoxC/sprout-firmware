@@ -73,6 +73,7 @@ DESCRIPTION_PHRASES = {
     "expand generated file ignore rules": "扩展生成文件忽略规则",
     "expose device contract schema version": "开放设备契约结构版本",
     "initialize esp32-s3 n16r8 platformio project": "初始化 ESP32-S3 N16R8 PlatformIO 工程",
+    "localize release note fallback": "完善发行说明的中文回退文本",
     "physical optional module removal": "验证可选模块可物理移除",
     "removable capability bitmap": "新增可移除的能力位图",
     "removable core module baseline": "新增可移除的核心模块基线",
