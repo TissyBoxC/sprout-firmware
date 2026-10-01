@@ -78,6 +78,7 @@ DESCRIPTION_PHRASES = {
     "removable core module baseline": "新增可移除的核心模块基线",
     "removable module builds": "验证可移除模块构建",
     "removable remote text component": "新增可移除的远程文本组件",
+    "preserve concrete release note descriptions": "保留具体的发行说明内容",
     "restrict tracked content to code and readme": "仅跟踪代码与 README",
     "shared firmware error codes": "新增共享固件错误码",
     "stop tracking local research docs": "停止跟踪本地研究文档",
