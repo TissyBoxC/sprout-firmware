@@ -1,0 +1,15 @@
+menu "Sprout feature modules"
+
+config FEATURE_VERSION_INFO
+    bool "Enable version info"
+    default y
+    help
+        Expose firmware, hardware, and protocol versions shared with the
+        platform contract.
+
+config FIRMWARE_PROTOCOL_VERSION
+    string "Device protocol version"
+    depends on FEATURE_VERSION_INFO
+    default "1.0.0"
+
+endmenu

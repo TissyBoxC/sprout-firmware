@@ -7,4 +7,5 @@ endif()
 idf_component_register(
     SRCS ${ui_text_sources}
     INCLUDE_DIRS "include"
+    REQUIRES module_registry
 )

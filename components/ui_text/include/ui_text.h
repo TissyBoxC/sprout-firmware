@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "module_registry.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,9 @@ extern "C" {
  *         ESP_ERR_NOT_FOUND when the key is unknown.
  */
 esp_err_t ui_text_resolve(const char *ui_text_key, const char **value);
+
+/** @brief Return the removable-module descriptor for remote UI text. */
+const module_descriptor_t *ui_text_module_descriptor(void);
 
 #ifdef __cplusplus
 }

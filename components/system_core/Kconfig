@@ -1,0 +1,10 @@
+menu "Sprout feature modules"
+
+config FEATURE_SYSTEM_CORE
+    bool "Enable system core"
+    default y
+    help
+        Initialize shared process primitives and expose the default event loop
+        used by removable feature modules.
+
+endmenu

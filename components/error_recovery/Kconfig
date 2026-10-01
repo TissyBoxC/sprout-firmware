@@ -1,0 +1,16 @@
+menu "Sprout feature modules"
+
+config FEATURE_ERROR_RECOVERY
+    bool "Enable error recovery"
+    default y
+    help
+        Record recoverable module failures and provide a controlled restart
+        path for unrecoverable states.
+
+config ERROR_RECOVERY_RESTART_DELAY_MS
+    int "Restart delay after an unrecoverable error"
+    depends on FEATURE_ERROR_RECOVERY
+    range 100 60000
+    default 2000
+
+endmenu

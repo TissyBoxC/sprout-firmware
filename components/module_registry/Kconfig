@@ -1,0 +1,19 @@
+menu "Sprout feature modules"
+
+config FEATURE_MODULE_REGISTRY
+    bool "Enable module registry"
+    default y
+    help
+        Register removable feature modules and track initialization results
+        without requiring the composition root to know each implementation.
+
+config MODULE_REGISTRY_CAPACITY
+    int "Maximum registered feature modules"
+    depends on FEATURE_MODULE_REGISTRY
+    range 1 128
+    default 64
+    help
+        Static registry capacity. Keep this above the number of modules enabled
+        by any released product profile.
+
+endmenu
