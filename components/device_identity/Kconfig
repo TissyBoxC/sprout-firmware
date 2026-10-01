@@ -1,0 +1,10 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_IDENTITY
+    bool "Enable device identity"
+    default y
+    help
+        Derive a stable device identifier from the factory MAC without
+        exposing the raw MAC in device payloads.
+
+endmenu

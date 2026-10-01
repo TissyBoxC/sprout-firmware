@@ -6,6 +6,10 @@ if(CONFIG_FEATURE_ERROR_CODE)
     list(APPEND app_requires "error_code")
 endif()
 
+if(CONFIG_FEATURE_DEVICE_IDENTITY)
+    list(APPEND app_requires "device_identity")
+endif()
+
 if(CONFIG_FEATURE_ERROR_RECOVERY)
     list(APPEND app_requires "error_recovery")
 endif()
