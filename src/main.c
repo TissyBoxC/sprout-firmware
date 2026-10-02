@@ -10,6 +10,9 @@
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
 #include "device_binding_client.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_PROVISIONING
+#include "device_provisioning.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_IDENTITY
 #include "device_identity.h"
 #endif
@@ -62,6 +65,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
     ESP_ERROR_CHECK(module_registry_add(device_binding_client_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_PROVISIONING
+    ESP_ERROR_CHECK(module_registry_add(device_provisioning_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
     ESP_ERROR_CHECK(module_registry_add(provisioning_payload_module_descriptor()));

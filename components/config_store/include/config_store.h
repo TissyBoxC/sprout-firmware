@@ -40,6 +40,30 @@ esp_err_t config_store_init(void);
 bool config_store_is_ready(void);
 
 /**
+ * @brief Write one binary value and commit it.
+ *
+ * Binary values are used for manufacturing secrets such as provisioning SRP
+ * material. The caller keeps ownership of the input buffer.
+ */
+esp_err_t config_store_set_blob(
+    const char *key,
+    const void *value,
+    size_t value_size
+);
+
+/**
+ * @brief Read one binary value.
+ *
+ * Returns CONFIG_STORE_ERR_NOT_FOUND when the key is absent. On
+ * ESP_ERR_NVS_INVALID_LENGTH, value_size_out contains the required size.
+ */
+esp_err_t config_store_get_blob(
+    const char *key,
+    void *output,
+    size_t *value_size_in_out
+);
+
+/**
  * @brief Write one string value and commit it.
  *
  * Passwords are never echoed, logged, or returned by this module.

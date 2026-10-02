@@ -12,6 +12,15 @@ function Resolve-PlatformIoCommand {
         return $platformIo.Source
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($env:PLATFORMIO_CORE_DIR)) {
+        $configuredEnvironment = Join-Path `
+            $env:PLATFORMIO_CORE_DIR `
+            'penv/Scripts/pio.exe'
+        if (Test-Path -LiteralPath $configuredEnvironment) {
+            return $configuredEnvironment
+        }
+    }
+
     $pythonEnvironment = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\platformio.exe'
     if (Test-Path -LiteralPath $pythonEnvironment) {
         return $pythonEnvironment
@@ -75,16 +84,18 @@ function Remove-OptionalModule {
         [System.Text.UTF8Encoding]::new($false)
     )
 
-    $rootCMakePath = Join-Path $ProjectPath 'CMakeLists.txt'
-    $rootCMake = Get-Content -LiteralPath $rootCMakePath -Raw
+    $applicationCMakePath = Join-Path $ProjectPath 'src/CMakeLists.txt'
+    $applicationCMake = Get-Content -LiteralPath $applicationCMakePath -Raw
     $dependencyPattern =
         '(?ms)\r?\nif\(CONFIG_FEATURE_{0}\)\r?\n\s*list\(APPEND app_requires "{1}"\)\r?\nendif\(\)\r?\n' -f
         $moduleMacro,
         $ModuleName
-    $rootCMake = $rootCMake -replace $dependencyPattern, [Environment]::NewLine
+    $applicationCMake = $applicationCMake -replace `
+        $dependencyPattern, `
+        [Environment]::NewLine
     [System.IO.File]::WriteAllText(
-        $rootCMakePath,
-        $rootCMake,
+        $applicationCMakePath,
+        $applicationCMake,
         [System.Text.UTF8Encoding]::new($false)
     )
 }
@@ -113,6 +124,9 @@ function Test-OptionalModuleRemoval {
         Remove-OptionalModule `
             -ProjectPath $temporaryRoot `
             -ModuleName 'ui_text'
+        Remove-OptionalModule `
+            -ProjectPath $temporaryRoot `
+            -ModuleName 'device_provisioning'
         Invoke-PlatformIoBuild `
             -ProjectPath $temporaryRoot `
             -Environments @('esp32-s3-n16r8') `

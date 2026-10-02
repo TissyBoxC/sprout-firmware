@@ -64,6 +64,9 @@ esp_err_t device_binding_client_create_provisioning_token(
 /** @brief Return true when a previous call bound the device to a guardian. */
 bool device_binding_client_is_bound(void);
 
+/** @brief Return true when the device has a persisted platform registration. */
+bool device_binding_client_is_registered(void);
+
 /**
  * @brief Register the binding completion observer.
  *

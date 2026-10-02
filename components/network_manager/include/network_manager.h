@@ -43,6 +43,18 @@ esp_err_t network_manager_connect(
     const char *password
 );
 
+/**
+ * @brief Store Wi-Fi credentials without changing the active connection.
+ *
+ * Provisioning uses this to persist the guardian-supplied network before the
+ * provisioning service hands ownership of Wi-Fi back to network_manager.
+ * Passwords are never returned or logged.
+ */
+esp_err_t network_manager_store_credentials(
+    const char *ssid,
+    const char *password
+);
+
 /** @brief Disconnect from the current access point and keep credentials. */
 esp_err_t network_manager_disconnect(void);
 

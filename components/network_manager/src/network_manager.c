@@ -141,17 +141,7 @@ esp_err_t network_manager_connect(const char *ssid, const char *password) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    esp_err_t result = config_store_set_string(
-        NETWORK_MANAGER_WIFI_KEY_SSID,
-        ssid
-    );
-    if (result != ESP_OK) {
-        return result;
-    }
-    result = config_store_set_string(
-        NETWORK_MANAGER_WIFI_KEY_PASSWORD,
-        password != NULL ? password : ""
-    );
+    esp_err_t result = network_manager_store_credentials(ssid, password);
     if (result != ESP_OK) {
         return result;
     }
@@ -181,6 +171,34 @@ esp_err_t network_manager_connect(const char *ssid, const char *password) {
         return result;
     }
     return esp_wifi_connect();
+}
+
+esp_err_t network_manager_store_credentials(
+    const char *ssid,
+    const char *password
+) {
+    if (!config_store_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (ssid == NULL || ssid[0] == '\0' ||
+        strlen(ssid) > CONFIG_STORE_SSID_SIZE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (password != NULL && strlen(password) > CONFIG_STORE_PASSWORD_SIZE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const esp_err_t ssid_result = config_store_set_string(
+        NETWORK_MANAGER_WIFI_KEY_SSID,
+        ssid
+    );
+    if (ssid_result != ESP_OK) {
+        return ssid_result;
+    }
+    return config_store_set_string(
+        NETWORK_MANAGER_WIFI_KEY_PASSWORD,
+        password != NULL ? password : ""
+    );
 }
 
 esp_err_t network_manager_disconnect(void) {

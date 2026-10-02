@@ -57,6 +57,64 @@ bool config_store_is_ready(void) {
     return config_store_ready;
 }
 
+esp_err_t config_store_set_blob(
+    const char *key,
+    const void *value,
+    size_t value_size
+) {
+    const esp_err_t key_result = config_store_validate_key(key);
+    if (key_result != ESP_OK) {
+        return key_result;
+    }
+    if (value == NULL || value_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t result = config_store_open(NVS_READWRITE, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = nvs_set_blob(handle, key, value, value_size);
+    if (result == ESP_OK) {
+        result = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return result;
+}
+
+esp_err_t config_store_get_blob(
+    const char *key,
+    void *output,
+    size_t *value_size_in_out
+) {
+    const esp_err_t key_result = config_store_validate_key(key);
+    if (key_result != ESP_OK) {
+        return key_result;
+    }
+    if (output == NULL || value_size_in_out == NULL ||
+        *value_size_in_out == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t result = config_store_open(NVS_READONLY, &handle);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = nvs_get_blob(
+        handle,
+        key,
+        output,
+        value_size_in_out
+    );
+    nvs_close(handle);
+    if (result == ESP_ERR_NVS_NOT_FOUND) {
+        return CONFIG_STORE_ERR_NOT_FOUND;
+    }
+    return result;
+}
+
 esp_err_t config_store_set_string(const char *key, const char *value) {
     const esp_err_t key_result = config_store_validate_key(key);
     if (key_result != ESP_OK) {

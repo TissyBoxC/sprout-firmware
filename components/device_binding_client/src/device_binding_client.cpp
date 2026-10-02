@@ -536,6 +536,10 @@ bool device_binding_client_is_bound(void) {
     return device_binding_is_bound;
 }
 
+bool device_binding_client_is_registered(void) {
+    return device_binding_is_registered;
+}
+
 esp_err_t device_binding_client_check_binding(bool *is_bound_out) {
     if (is_bound_out == NULL) {
         return ESP_ERR_INVALID_ARG;

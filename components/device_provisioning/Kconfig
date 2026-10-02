@@ -1,0 +1,20 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_PROVISIONING
+    bool "Enable device provisioning"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_PROVISIONING_PAYLOAD
+    help
+        Owns the BLE provisioning service, receives Wi-Fi credentials, returns
+        the one-time binding URI to the guardian application, and persists the
+        completed binding state.
+
+config DEVICE_PROVISIONING_SERVICE_PREFIX
+    string "Provisioning service name prefix"
+    depends on FEATURE_DEVICE_PROVISIONING
+    default "SPROUT"
+    help
+        Prefix used for the BLE device name. The last three bytes of the Wi-Fi
+        station MAC are appended to make nearby devices distinguishable.
+
+endmenu
