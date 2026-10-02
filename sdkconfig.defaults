@@ -22,8 +22,9 @@ CONFIG_FEATURE_DEVICE_PROVISIONING=y
 CONFIG_FEATURE_PROVISIONING_PAYLOAD=y
 CONFIG_MODULE_REGISTRY_CAPACITY=64
 
-# Platform HTTPS endpoint used by the device binding client.
-CONFIG_DEVICE_BINDING_PLATFORM_BASE_URL=""
+# Platform HTTPS endpoint is defined by the device_binding_client Kconfig
+# default (https://api.clarkhub.cn), so releases cannot silently ship an
+# empty or cleartext endpoint.
 
 # BLE provisioning uses NimBLE and Security 2. On first boot the device
 # generates a unique proof of possession and SRP verifier into encrypted NVS.

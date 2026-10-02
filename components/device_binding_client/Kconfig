@@ -12,10 +12,11 @@ config FEATURE_DEVICE_BINDING_CLIENT
 config DEVICE_BINDING_PLATFORM_BASE_URL
     string "Device platform HTTPS base URL"
     depends on FEATURE_DEVICE_BINDING_CLIENT
-    default ""
+    default "https://api.clarkhub.cn"
     help
         Base URL of device_platform. Must use HTTPS so certificate validation
-        stays enabled.
+        stays enabled. Change this value in one place when the public API
+        hostname changes.
 
 config DEVICE_BINDING_HARDWARE_MODEL
     string "Hardware model reported during registration"

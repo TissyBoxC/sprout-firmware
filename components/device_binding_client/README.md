@@ -12,7 +12,8 @@ confirmation with `device_platform`:
 
 All transport is HTTPS with the ESP certificate bundle; there is no insecure
 fallback. The platform base URL is read from `config_store` under
-`platform_base_url` and must start with `https://`.
+`platform_base_url` and must start with `https://`. Its build-time default is
+`https://api.clarkhub.cn`, defined once in this component's `Kconfig`.
 
 `CONFIG_FEATURE_DEVICE_BINDING_CLIENT` controls source inclusion. Delete the
 component, its Kconfig entry, and the `main.c` registration to remove it.
