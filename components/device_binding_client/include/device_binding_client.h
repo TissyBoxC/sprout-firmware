@@ -60,6 +60,25 @@ esp_err_t device_binding_client_register_pending(void);
 esp_err_t device_binding_client_authenticate(void);
 
 /**
+ * @brief Copy the current short-lived device session token.
+ *
+ * Returns ESP_ERR_INVALID_STATE when no session has been issued. The caller
+ * owns the buffer and must clear it when finished.
+ */
+esp_err_t device_binding_client_copy_session_token(
+    char *output,
+    size_t output_size
+);
+
+/**
+ * @brief Erase the local device session token.
+ *
+ * Used after a platform 401 so the next authenticated request performs a
+ * fresh challenge instead of retrying a revoked token.
+ */
+esp_err_t device_binding_client_clear_session_token(void);
+
+/**
  * @brief Request a single-use binding token for the QR or BLE provisioning flow.
  *
  * The token is written to the caller buffer and is safe to place in a QR code.

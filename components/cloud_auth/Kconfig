@@ -1,0 +1,18 @@
+menu "Sprout feature modules"
+
+config FEATURE_CLOUD_AUTH
+    bool "Enable cloud authentication lifecycle"
+    default y
+    depends on FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Refreshes the device session before expiry, clears a revoked session
+        after a platform rejection, and blocks authenticated work until the
+        device clock is trusted.
+
+config CLOUD_AUTH_REFRESH_MARGIN_SECONDS
+    int "Seconds before expiry to refresh the device session"
+    depends on FEATURE_CLOUD_AUTH
+    range 30 1800
+    default 300
+
+endmenu

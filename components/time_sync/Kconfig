@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_TIME_SYNC
+    bool "Enable network time synchronization"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_NETWORK_MANAGER
+    help
+        Synchronizes the device clock through SNTP, persists the last trusted
+        time, and reports synchronization failures to cloud_auth and the
+        runtime status reporter.
+
+config TIME_SYNC_SNTP_SERVER
+    string "SNTP server"
+    depends on FEATURE_TIME_SYNC
+    default "ntp.aliyun.com"
+    help
+        Primary SNTP server used before the device connects to the platform.
+
+config TIME_SYNC_RETRY_INTERVAL_SECONDS
+    int "Time synchronization retry interval in seconds"
+    depends on FEATURE_TIME_SYNC
+    range 10 3600
+    default 60
+
+endmenu

@@ -565,6 +565,33 @@ esp_err_t device_binding_client_create_provisioning_token(
     );
 }
 
+esp_err_t device_binding_client_copy_session_token(
+    char *output,
+    size_t output_size
+) {
+    if (output == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (device_binding_session_token[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const size_t length = strlen(device_binding_session_token);
+    if (length + 1 > output_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(output, device_binding_session_token, length + 1);
+    return ESP_OK;
+}
+
+esp_err_t device_binding_client_clear_session_token(void) {
+    memset(
+        device_binding_session_token,
+        0,
+        sizeof(device_binding_session_token)
+    );
+    return config_store_erase_key(DEVICE_BINDING_KEY_SESSION_TOKEN);
+}
+
 bool device_binding_client_is_bound(void) {
     return device_binding_is_bound;
 }

@@ -1,0 +1,18 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_RUNTIME_REPORTER
+    bool "Enable cloud runtime reporting"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_CLOUD_AUTH && FEATURE_NETWORK_MANAGER && FEATURE_NETWORK_QUALITY && FEATURE_OFFLINE_FALLBACK && FEATURE_TIME_SYNC
+    help
+        Sends authenticated heartbeat snapshots to device_platform, refreshes
+        the device session when needed, applies server-supplied time, and
+        executes network maintenance commands.
+
+config DEVICE_RUNTIME_HEARTBEAT_INTERVAL_SECONDS
+    int "Heartbeat interval in seconds"
+    depends on FEATURE_DEVICE_RUNTIME_REPORTER
+    range 15 3600
+    default 30
+
+endmenu

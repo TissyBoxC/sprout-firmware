@@ -23,6 +23,9 @@ typedef void (*network_manager_state_callback_t)(
     void *context
 );
 
+/** @brief Maximum number of independent Wi-Fi state observers. */
+#define NETWORK_MANAGER_MAX_CALLBACKS 6
+
 /**
  * @brief Initialize the Wi-Fi station driver and register event handlers.
  *
@@ -75,6 +78,23 @@ esp_err_t network_manager_copy_ssid(char *output, size_t output_size);
  * and must not block or call back into the network manager.
  */
 esp_err_t network_manager_set_state_callback(
+    network_manager_state_callback_t callback,
+    void *context
+);
+
+/**
+ * @brief Add one independent state observer.
+ *
+ * Modules that coexist at runtime use this instead of replacing the single
+ * observer installed by another module.
+ */
+esp_err_t network_manager_add_state_callback(
+    network_manager_state_callback_t callback,
+    void *context
+);
+
+/** @brief Remove a previously added state observer. */
+esp_err_t network_manager_remove_state_callback(
     network_manager_state_callback_t callback,
     void *context
 );

@@ -7,6 +7,9 @@
 #if CONFIG_FEATURE_CONFIG_STORE
 #include "config_store.h"
 #endif
+#if CONFIG_FEATURE_CLOUD_AUTH
+#include "cloud_auth.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
 #include "device_binding_client.h"
 #endif
@@ -15,6 +18,9 @@
 #endif
 #if CONFIG_FEATURE_DEVICE_IDENTITY
 #include "device_identity.h"
+#endif
+#if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
+#include "device_runtime_reporter.h"
 #endif
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
 #include "device_capabilities.h"
@@ -28,11 +34,20 @@
 #if CONFIG_FEATURE_NETWORK_MANAGER
 #include "network_manager.h"
 #endif
+#if CONFIG_FEATURE_NETWORK_QUALITY
+#include "network_quality.h"
+#endif
+#if CONFIG_FEATURE_OFFLINE_FALLBACK
+#include "offline_fallback.h"
+#endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
 #include "provisioning_payload.h"
 #endif
 #if CONFIG_FEATURE_SYSTEM_CORE
 #include "system_core.h"
+#endif
+#if CONFIG_FEATURE_TIME_SYNC
+#include "time_sync.h"
 #endif
 #if CONFIG_FEATURE_UI_TEXT
 #include "ui_text.h"
@@ -63,11 +78,26 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_NETWORK_MANAGER
     ESP_ERROR_CHECK(module_registry_add(network_manager_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_TIME_SYNC
+    ESP_ERROR_CHECK(module_registry_add(time_sync_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_NETWORK_QUALITY
+    ESP_ERROR_CHECK(module_registry_add(network_quality_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_OFFLINE_FALLBACK
+    ESP_ERROR_CHECK(module_registry_add(offline_fallback_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
     ESP_ERROR_CHECK(module_registry_add(device_binding_client_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_DEVICE_PROVISIONING
     ESP_ERROR_CHECK(module_registry_add(device_provisioning_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CLOUD_AUTH
+    ESP_ERROR_CHECK(module_registry_add(cloud_auth_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
+    ESP_ERROR_CHECK(module_registry_add(device_runtime_reporter_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
     ESP_ERROR_CHECK(module_registry_add(provisioning_payload_module_descriptor()));

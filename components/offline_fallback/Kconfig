@@ -1,0 +1,17 @@
+menu "Sprout feature modules"
+
+config FEATURE_OFFLINE_FALLBACK
+    bool "Enable offline fallback state"
+    default y
+    depends on FEATURE_NETWORK_MANAGER
+    help
+        Tracks network loss, enters a bounded safe mode, queues telemetry
+        markers, and exposes a recovery state to the runtime reporter.
+
+config OFFLINE_FALLBACK_GRACE_SECONDS
+    int "Seconds to wait before entering offline mode"
+    depends on FEATURE_OFFLINE_FALLBACK
+    range 0 3600
+    default 15
+
+endmenu

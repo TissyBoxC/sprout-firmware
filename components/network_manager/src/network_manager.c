@@ -18,8 +18,10 @@ static bool network_manager_ready;
 static bool network_manager_started;
 static network_manager_state_t network_manager_state =
     NETWORK_MANAGER_STATE_IDLE;
-static network_manager_state_callback_t network_manager_callback;
-static void *network_manager_callback_context;
+static network_manager_state_callback_t
+    network_manager_callbacks[NETWORK_MANAGER_MAX_CALLBACKS];
+static void *network_manager_callback_contexts[NETWORK_MANAGER_MAX_CALLBACKS];
+static size_t network_manager_callback_count;
 static esp_netif_t *network_manager_station_netif;
 
 static void network_manager_publish_state(network_manager_state_t state) {
@@ -27,8 +29,13 @@ static void network_manager_publish_state(network_manager_state_t state) {
         return;
     }
     network_manager_state = state;
-    if (network_manager_callback != NULL) {
-        network_manager_callback(state, network_manager_callback_context);
+    for (size_t index = 0; index < network_manager_callback_count; ++index) {
+        if (network_manager_callbacks[index] != NULL) {
+            network_manager_callbacks[index](
+                state,
+                network_manager_callback_contexts[index]
+            );
+        }
     }
 }
 
@@ -246,9 +253,64 @@ esp_err_t network_manager_set_state_callback(
     network_manager_state_callback_t callback,
     void *context
 ) {
-    network_manager_callback = callback;
-    network_manager_callback_context = context;
+    network_manager_callback_count = 0;
+    memset(network_manager_callbacks, 0, sizeof(network_manager_callbacks));
+    memset(
+        network_manager_callback_contexts,
+        0,
+        sizeof(network_manager_callback_contexts)
+    );
+    if (callback == NULL) {
+        return ESP_OK;
+    }
+    return network_manager_add_state_callback(callback, context);
+}
+
+esp_err_t network_manager_add_state_callback(
+    network_manager_state_callback_t callback,
+    void *context
+) {
+    if (callback == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    for (size_t index = 0; index < network_manager_callback_count; ++index) {
+        if (network_manager_callbacks[index] == callback &&
+            network_manager_callback_contexts[index] == context) {
+            return ESP_OK;
+        }
+    }
+    if (network_manager_callback_count >= NETWORK_MANAGER_MAX_CALLBACKS) {
+        return ESP_ERR_NO_MEM;
+    }
+    network_manager_callbacks[network_manager_callback_count] = callback;
+    network_manager_callback_contexts[network_manager_callback_count] = context;
+    ++network_manager_callback_count;
     return ESP_OK;
+}
+
+esp_err_t network_manager_remove_state_callback(
+    network_manager_state_callback_t callback,
+    void *context
+) {
+    for (size_t index = 0; index < network_manager_callback_count; ++index) {
+        if (network_manager_callbacks[index] != callback ||
+            network_manager_callback_contexts[index] != context) {
+            continue;
+        }
+        for (size_t move_index = index + 1;
+             move_index < network_manager_callback_count;
+             ++move_index) {
+            network_manager_callbacks[move_index - 1] =
+                network_manager_callbacks[move_index];
+            network_manager_callback_contexts[move_index - 1] =
+                network_manager_callback_contexts[move_index];
+        }
+        --network_manager_callback_count;
+        network_manager_callbacks[network_manager_callback_count] = NULL;
+        network_manager_callback_contexts[network_manager_callback_count] = NULL;
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t network_manager_reconnect_stored(void) {

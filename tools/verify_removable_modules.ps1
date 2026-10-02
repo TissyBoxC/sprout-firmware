@@ -127,6 +127,15 @@ function Test-OptionalModuleRemoval {
         Remove-OptionalModule `
             -ProjectPath $temporaryRoot `
             -ModuleName 'device_provisioning'
+        Remove-OptionalModule `
+            -ProjectPath $temporaryRoot `
+            -ModuleName 'device_runtime_reporter'
+        Remove-OptionalModule `
+            -ProjectPath $temporaryRoot `
+            -ModuleName 'network_quality'
+        Remove-OptionalModule `
+            -ProjectPath $temporaryRoot `
+            -ModuleName 'offline_fallback'
         Invoke-PlatformIoBuild `
             -ProjectPath $temporaryRoot `
             -Environments @('esp32-s3-n16r8') `

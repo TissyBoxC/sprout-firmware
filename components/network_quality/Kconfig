@@ -1,0 +1,29 @@
+menu "Sprout feature modules"
+
+config FEATURE_NETWORK_QUALITY
+    bool "Enable network quality measurement"
+    default y
+    depends on FEATURE_NETWORK_MANAGER
+    help
+        Measures Wi-Fi RSSI, connection latency, and packet-loss estimate for
+        the runtime status contract and the diagnostics module.
+
+config NETWORK_QUALITY_POOR_RSSI
+    int "Poor-quality RSSI threshold in dBm"
+    depends on FEATURE_NETWORK_QUALITY
+    range -127 -60
+    default -80
+
+config NETWORK_QUALITY_GOOD_RSSI
+    int "Good-quality RSSI threshold in dBm"
+    depends on FEATURE_NETWORK_QUALITY
+    range -90 -40
+    default -65
+
+config NETWORK_QUALITY_EXCELLENT_RSSI
+    int "Excellent-quality RSSI threshold in dBm"
+    depends on FEATURE_NETWORK_QUALITY
+    range -80 -30
+    default -50
+
+endmenu

@@ -18,6 +18,14 @@ if(CONFIG_FEATURE_DEVICE_PROVISIONING)
     list(APPEND app_requires "device_provisioning")
 endif()
 
+if(CONFIG_FEATURE_CLOUD_AUTH)
+    list(APPEND app_requires "cloud_auth")
+endif()
+
+if(CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER)
+    list(APPEND app_requires "device_runtime_reporter")
+endif()
+
 if(CONFIG_FEATURE_ERROR_RECOVERY)
     list(APPEND app_requires "error_recovery")
 endif()
@@ -28,6 +36,18 @@ endif()
 
 if(CONFIG_FEATURE_SYSTEM_CORE)
     list(APPEND app_requires "system_core")
+endif()
+
+if(CONFIG_FEATURE_TIME_SYNC)
+    list(APPEND app_requires "time_sync")
+endif()
+
+if(CONFIG_FEATURE_NETWORK_QUALITY)
+    list(APPEND app_requires "network_quality")
+endif()
+
+if(CONFIG_FEATURE_OFFLINE_FALLBACK)
+    list(APPEND app_requires "offline_fallback")
 endif()
 
 if(CONFIG_FEATURE_UI_TEXT)
