@@ -13,6 +13,7 @@ extern "C" {
 #include "config_store.h"
 #include "device_capabilities.h"
 #include "device_identity.h"
+#include "esp_app_desc.h"
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -21,6 +22,7 @@ extern "C" {
 #define DEVICE_BINDING_KEY_BOUND "device_bound"
 #define DEVICE_BINDING_KEY_SESSION_TOKEN "device_session"
 #define DEVICE_BINDING_KEY_REGISTERED "device_registered"
+#define DEVICE_BINDING_KEY_REGISTRATION_TOKEN "device_registration_token"
 #define DEVICE_BINDING_PLATFORM_KEY "platform_base_url"
 #define DEVICE_BINDING_HTTP_TIMEOUT_MS 15000
 #define DEVICE_BINDING_RESPONSE_SIZE 4096
@@ -359,6 +361,37 @@ esp_err_t device_binding_client_register(
         DEVICE_BINDING_KEY_REGISTERED,
         DEVICE_BINDING_TRUE_VALUE
     );
+}
+
+esp_err_t device_binding_client_register_pending(void) {
+    if (!device_binding_is_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (device_binding_is_registered) {
+        return ESP_OK;
+    }
+
+    char registration_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    const esp_err_t token_result = config_store_get_string(
+        DEVICE_BINDING_KEY_REGISTRATION_TOKEN,
+        registration_token,
+        sizeof(registration_token)
+    );
+    if (token_result != ESP_OK) {
+        return token_result;
+    }
+
+    const esp_app_desc_t *const app_description = esp_app_get_description();
+    const esp_err_t result = device_binding_client_register(
+        registration_token,
+        CONFIG_DEVICE_BINDING_HARDWARE_MODEL,
+        app_description != NULL ? app_description->version : ""
+    );
+    memset(registration_token, 0, sizeof(registration_token));
+    if (result != ESP_OK) {
+        return result;
+    }
+    return config_store_erase_key(DEVICE_BINDING_KEY_REGISTRATION_TOKEN);
 }
 
 esp_err_t device_binding_client_authenticate(void) {

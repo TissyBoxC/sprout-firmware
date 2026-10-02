@@ -5,6 +5,8 @@
 
 #define PROVISIONING_PAYLOAD_URI_SCHEME "sprout"
 #define PROVISIONING_PAYLOAD_HOST "device"
+#define PROVISIONING_PAYLOAD_SETUP_HOST "setup"
+#define PROVISIONING_PAYLOAD_SECURITY_USERNAME "sprout-provisioning"
 
 /**
  * @brief Validate an identifier that must survive an unescaped URI segment.
@@ -82,6 +84,44 @@ static bool provisioning_payload_encode_name(
 
 const char *provisioning_payload_scheme(void) {
     return PROVISIONING_PAYLOAD_URI_SCHEME;
+}
+
+const char *provisioning_payload_security_username(void) {
+    return PROVISIONING_PAYLOAD_SECURITY_USERNAME;
+}
+
+esp_err_t provisioning_payload_build_setup_qr(
+    const char *service_name,
+    const char *proof_of_possession,
+    char *output,
+    size_t output_size
+) {
+    if (output == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!provisioning_payload_is_safe_identifier(service_name) ||
+        !provisioning_payload_is_safe_identifier(proof_of_possession)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const int written = snprintf(
+        output,
+        output_size,
+        "%s://%s?service=%s&pop=%s&user=%s",
+        PROVISIONING_PAYLOAD_URI_SCHEME,
+        PROVISIONING_PAYLOAD_SETUP_HOST,
+        service_name,
+        proof_of_possession,
+        PROVISIONING_PAYLOAD_SECURITY_USERNAME
+    );
+    if (written < 0) {
+        return ESP_FAIL;
+    }
+    if ((size_t)written >= output_size) {
+        output[0] = '\0';
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return ESP_OK;
 }
 
 esp_err_t provisioning_payload_build_qr(
@@ -197,6 +237,43 @@ esp_err_t provisioning_payload_parse(
         return ESP_ERR_INVALID_ARG;
     }
     if (device_id[0] == '\0' || binding_token[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+esp_err_t provisioning_payload_parse_setup_qr(
+    const char *payload,
+    char *service_name,
+    size_t service_name_size,
+    char *proof_of_possession,
+    size_t proof_of_possession_size
+) {
+    if (payload == NULL || service_name == NULL ||
+        proof_of_possession == NULL || service_name_size == 0 ||
+        proof_of_possession_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *const prefix =
+        PROVISIONING_PAYLOAD_URI_SCHEME "://" PROVISIONING_PAYLOAD_SETUP_HOST;
+    if (strncmp(payload, prefix, strlen(prefix)) != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!provisioning_payload_extract_query_value(
+            payload,
+            "service",
+            service_name,
+            service_name_size) ||
+        !provisioning_payload_extract_query_value(
+            payload,
+            "pop",
+            proof_of_possession,
+            proof_of_possession_size)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (service_name[0] == '\0' || proof_of_possession[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
     return ESP_OK;

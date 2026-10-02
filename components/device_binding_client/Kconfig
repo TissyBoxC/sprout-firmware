@@ -17,4 +17,12 @@ config DEVICE_BINDING_PLATFORM_BASE_URL
         Base URL of device_platform. Must use HTTPS so certificate validation
         stays enabled.
 
+config DEVICE_BINDING_HARDWARE_MODEL
+    string "Hardware model reported during registration"
+    depends on FEATURE_DEVICE_BINDING_CLIENT
+    default "sprout-s3-n16r8"
+    help
+        Capability-oriented hardware model name sent to device_platform. It
+        must not contain a character, product-shape, or SKU codename.
+
 endmenu

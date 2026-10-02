@@ -14,6 +14,7 @@ extern "C" {
 #include "device_identity.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -22,15 +23,21 @@ extern "C" {
 #include "network_provisioning/manager.h"
 #include "network_provisioning/network_config.h"
 #include "network_provisioning/scheme_ble.h"
+#include "esp_srp.h"
 #include "provisioning_payload.h"
 
 #define DEVICE_PROVISIONING_SERVICE_NAME_SIZE 32
 #define DEVICE_PROVISIONING_BINDING_URI_SIZE PROVISIONING_PAYLOAD_SIZE
+#define DEVICE_PROVISIONING_SETUP_URI_SIZE PROVISIONING_PAYLOAD_SIZE
 #define DEVICE_PROVISIONING_POLL_INTERVAL_MS 2000
 #define DEVICE_PROVISIONING_SALT_KEY "provisioning_srp_salt"
 #define DEVICE_PROVISIONING_VERIFIER_KEY "provisioning_srp_verifier"
+#define DEVICE_PROVISIONING_POP_KEY "provisioning_pop"
+#define DEVICE_PROVISIONING_SALT_SIZE 16
 #define DEVICE_PROVISIONING_SALT_MAX_SIZE 64
-#define DEVICE_PROVISIONING_VERIFIER_MAX_SIZE 256
+#define DEVICE_PROVISIONING_VERIFIER_MAX_SIZE 384
+#define DEVICE_PROVISIONING_POP_TEXT_SIZE 9
+#define DEVICE_PROVISIONING_CREDENTIAL_RETRY_COUNT 8
 
 static const char *const TAG = "device_provisioning";
 static const char *const DEVICE_PROVISIONING_CUSTOM_ENDPOINT = "custom-data";
@@ -39,7 +46,9 @@ static bool device_provisioning_is_ready;
 static bool device_provisioning_is_service_active;
 static bool device_provisioning_has_pending_credentials;
 static bool device_provisioning_should_prepare_binding;
+static bool device_provisioning_has_security_credentials;
 static char device_provisioning_binding_uri[DEVICE_PROVISIONING_BINDING_URI_SIZE];
+static char device_provisioning_setup_uri[DEVICE_PROVISIONING_SETUP_URI_SIZE];
 static char device_provisioning_service_name[DEVICE_PROVISIONING_SERVICE_NAME_SIZE];
 static char
     device_provisioning_pending_ssid[CONFIG_STORE_SSID_SIZE + 1];
@@ -48,8 +57,12 @@ static char
 static char device_provisioning_salt[DEVICE_PROVISIONING_SALT_MAX_SIZE];
 static char
     device_provisioning_verifier[DEVICE_PROVISIONING_VERIFIER_MAX_SIZE];
+static char device_provisioning_proof_of_possession[
+    DEVICE_PROVISIONING_POP_TEXT_SIZE];
 static network_prov_security2_params_t device_provisioning_security_parameters;
 static SemaphoreHandle_t device_provisioning_state_mutex;
+
+static void device_provisioning_rotate_security_credentials(void);
 
 /**
  * @brief Build a nearby-device name unique within BLE range.
@@ -121,6 +134,105 @@ static esp_err_t device_provisioning_build_binding_uri(const char *device_name) 
         return result;
     }
     return ESP_OK;
+}
+
+/**
+ * @brief Generate and persist a unique proof of possession for this device.
+ *
+ * The SRP verifier is derived from the generated proof and the shared protocol
+ * username. Only the verifier and the proof needed by the local setup screen
+ * are stored; the platform never receives either value.
+ */
+static esp_err_t device_provisioning_generate_security_credentials(void) {
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    char proof_of_possession[DEVICE_PROVISIONING_POP_TEXT_SIZE] = {0};
+    for (size_t index = 0;
+         index + 1 < sizeof(proof_of_possession);
+         ++index) {
+        proof_of_possession[index] =
+            alphabet[esp_random() % (sizeof(alphabet) - 1)];
+    }
+
+    const char *const username = provisioning_payload_security_username();
+    char *salt = nullptr;
+    char *verifier = nullptr;
+    int verifier_size = 0;
+    esp_err_t result = ESP_FAIL;
+    for (int attempt = 0;
+         attempt < DEVICE_PROVISIONING_CREDENTIAL_RETRY_COUNT;
+         ++attempt) {
+        free(salt);
+        free(verifier);
+        salt = nullptr;
+        verifier = nullptr;
+        verifier_size = 0;
+        result = esp_srp_gen_salt_verifier(
+            username,
+            (int)strlen(username),
+            proof_of_possession,
+            (int)strlen(proof_of_possession),
+            &salt,
+            DEVICE_PROVISIONING_SALT_SIZE,
+            &verifier,
+            &verifier_size
+        );
+        // The API does not return the salt byte length. ESP-IDF encodes the
+        // salt as a big-endian integer, so a low leading bit would be lost if
+        // it were stored as a fixed-width blob. Retry until the generated
+        // value is guaranteed to use all configured bytes.
+        if (result == ESP_OK && salt != nullptr &&
+            (((unsigned char)salt[0]) & 0x80) != 0) {
+            break;
+        }
+        result = result == ESP_OK ? ESP_ERR_INVALID_SIZE : result;
+    }
+    if (result != ESP_OK || salt == nullptr || verifier == nullptr ||
+        verifier_size <= 0 ||
+        (size_t)verifier_size > DEVICE_PROVISIONING_VERIFIER_MAX_SIZE) {
+        free(salt);
+        free(verifier);
+        memset(proof_of_possession, 0, sizeof(proof_of_possession));
+        return result == ESP_OK ? ESP_ERR_INVALID_SIZE : result;
+    }
+
+    result = config_store_set_blob(
+        DEVICE_PROVISIONING_SALT_KEY,
+        salt,
+        DEVICE_PROVISIONING_SALT_SIZE
+    );
+    if (result == ESP_OK) {
+        result = config_store_set_blob(
+            DEVICE_PROVISIONING_VERIFIER_KEY,
+            verifier,
+            (size_t)verifier_size
+        );
+    }
+    if (result == ESP_OK) {
+        result = config_store_set_string(
+            DEVICE_PROVISIONING_POP_KEY,
+            proof_of_possession
+        );
+    }
+    memset(proof_of_possession, 0, sizeof(proof_of_possession));
+    free(salt);
+    free(verifier);
+    if (result == ESP_OK) {
+        device_provisioning_has_security_credentials = true;
+    }
+    return result;
+}
+
+static esp_err_t device_provisioning_build_setup_uri(void) {
+    if (device_provisioning_service_name[0] == '\0' ||
+        device_provisioning_proof_of_possession[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return provisioning_payload_build_setup_qr(
+        device_provisioning_service_name,
+        device_provisioning_proof_of_possession,
+        device_provisioning_setup_uri,
+        sizeof(device_provisioning_setup_uri)
+    );
 }
 
 static esp_err_t device_provisioning_custom_data_handler(
@@ -234,6 +346,7 @@ static void device_provisioning_event_handler(
 static void device_provisioning_work_task_entry(void *argument) {
     (void)argument;
     bool is_binding_uri_ready = false;
+    esp_err_t last_auth_error = ESP_OK;
 
     while (!device_binding_client_is_bound()) {
         bool should_prepare_binding = false;
@@ -317,8 +430,13 @@ static void device_provisioning_work_task_entry(void *argument) {
         }
 
         if (!is_binding_uri_ready && should_prepare_binding) {
-            const esp_err_t auth_result =
-                device_binding_client_authenticate();
+            esp_err_t auth_result = ESP_OK;
+            if (!device_binding_client_is_registered()) {
+                auth_result = device_binding_client_register_pending();
+            }
+            if (auth_result == ESP_OK) {
+                auth_result = device_binding_client_authenticate();
+            }
             if (auth_result == ESP_OK) {
                 const esp_err_t uri_result =
                     device_provisioning_build_binding_uri(
@@ -334,11 +452,14 @@ static void device_provisioning_work_task_entry(void *argument) {
                     );
                 }
             } else {
-                ESP_LOGW(
-                    TAG,
-                    "device authentication failed: %s",
-                    esp_err_to_name(auth_result)
-                );
+                if (auth_result != last_auth_error) {
+                    ESP_LOGW(
+                        TAG,
+                        "device authentication failed: %s",
+                        esp_err_to_name(auth_result)
+                    );
+                    last_auth_error = auth_result;
+                }
             }
         }
 
@@ -368,6 +489,7 @@ static void device_provisioning_work_task_entry(void *argument) {
         vTaskDelay(pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS));
     }
 
+    device_provisioning_rotate_security_credentials();
     network_prov_mgr_stop_provisioning();
     network_prov_mgr_wait();
     const esp_err_t deinit_result = network_prov_mgr_deinit();
@@ -396,17 +518,50 @@ static esp_err_t device_provisioning_load_security_credentials(void) {
         device_provisioning_salt,
         &salt_size
     );
-    if (result != ESP_OK) {
-        return result;
-    }
     size_t verifier_size = sizeof(device_provisioning_verifier);
-    result = config_store_get_blob(
+    const esp_err_t verifier_read_result = config_store_get_blob(
         DEVICE_PROVISIONING_VERIFIER_KEY,
         device_provisioning_verifier,
         &verifier_size
     );
-    if (result != ESP_OK) {
-        return result;
+    esp_err_t proof_read_result = config_store_get_string(
+        DEVICE_PROVISIONING_POP_KEY,
+        device_provisioning_proof_of_possession,
+        sizeof(device_provisioning_proof_of_possession)
+    );
+    const bool is_usable = result == ESP_OK &&
+                           verifier_read_result == ESP_OK &&
+                           proof_read_result == ESP_OK &&
+                           salt_size > 0 && verifier_size > 0;
+    if (!is_usable) {
+        // First boot or an incomplete manufacturing image must still produce a
+        // usable local credential instead of falling back to a shared secret.
+        const esp_err_t generate_result =
+            device_provisioning_generate_security_credentials();
+        if (generate_result != ESP_OK) {
+            return generate_result;
+        }
+        salt_size = sizeof(device_provisioning_salt);
+        result = config_store_get_blob(
+            DEVICE_PROVISIONING_SALT_KEY,
+            device_provisioning_salt,
+            &salt_size
+        );
+        verifier_size = sizeof(device_provisioning_verifier);
+        const esp_err_t verifier_result = config_store_get_blob(
+            DEVICE_PROVISIONING_VERIFIER_KEY,
+            device_provisioning_verifier,
+            &verifier_size
+        );
+        proof_read_result = config_store_get_string(
+            DEVICE_PROVISIONING_POP_KEY,
+            device_provisioning_proof_of_possession,
+            sizeof(device_provisioning_proof_of_possession)
+        );
+        if (result != ESP_OK || verifier_result != ESP_OK ||
+            proof_read_result != ESP_OK) {
+            return result != ESP_OK ? result : verifier_result;
+        }
     }
     if (salt_size == 0 || verifier_size == 0 ||
         salt_size > UINT16_MAX || verifier_size > UINT16_MAX) {
@@ -420,7 +575,38 @@ static esp_err_t device_provisioning_load_security_credentials(void) {
         device_provisioning_verifier;
     device_provisioning_security_parameters.verifier_len =
         static_cast<uint16_t>(verifier_size);
+    device_provisioning_has_security_credentials = true;
     return ESP_OK;
+}
+
+/**
+ * @brief Erase the one-time local provisioning secret after a successful bind.
+ *
+ * A photographed setup code must not stay valid after the device has been
+ * provisioned. A fresh proof of possession and SRP verifier are generated on
+ * the next provisioning start.
+ */
+static void device_provisioning_rotate_security_credentials(void) {
+    config_store_erase_key(DEVICE_PROVISIONING_SALT_KEY);
+    config_store_erase_key(DEVICE_PROVISIONING_VERIFIER_KEY);
+    config_store_erase_key(DEVICE_PROVISIONING_POP_KEY);
+    memset(device_provisioning_salt, 0, sizeof(device_provisioning_salt));
+    memset(
+        device_provisioning_verifier,
+        0,
+        sizeof(device_provisioning_verifier)
+    );
+    memset(
+        device_provisioning_proof_of_possession,
+        0,
+        sizeof(device_provisioning_proof_of_possession)
+    );
+    memset(
+        &device_provisioning_security_parameters,
+        0,
+        sizeof(device_provisioning_security_parameters)
+    );
+    device_provisioning_has_security_credentials = false;
 }
 
 /**
@@ -438,10 +624,13 @@ static esp_err_t device_provisioning_start_service(void) {
     if (device_binding_client_is_bound()) {
         return network_manager_reconnect_stored();
     }
-    if (!device_binding_client_is_registered()) {
-        return ESP_ERR_INVALID_STATE;
+    if (!device_provisioning_has_security_credentials) {
+        const esp_err_t credentials_result =
+            device_provisioning_load_security_credentials();
+        if (credentials_result != ESP_OK) {
+            return credentials_result;
+        }
     }
-
     result = device_provisioning_build_service_name(
         device_provisioning_service_name,
         sizeof(device_provisioning_service_name)
@@ -493,6 +682,12 @@ static esp_err_t device_provisioning_start_service(void) {
         return result;
     }
 
+    result = device_provisioning_build_setup_uri();
+    if (result != ESP_OK) {
+        network_prov_mgr_stop_provisioning();
+        return result;
+    }
+
     if (xTaskCreate(
             device_provisioning_work_task_entry,
             "sprout_prov_work",
@@ -510,8 +705,7 @@ esp_err_t device_provisioning_init(void) {
     if (device_provisioning_is_ready) {
         return ESP_OK;
     }
-    // Missing manufacturing material deliberately keeps BLE provisioning off
-    // instead of falling back to a shared or empty proof of possession.
+    // First boot derives a unique local credential before BLE is advertised.
     const esp_err_t credential_result =
         device_provisioning_load_security_credentials();
     if (credential_result != ESP_OK) {
@@ -538,6 +732,25 @@ esp_err_t device_provisioning_init(void) {
 
 bool device_provisioning_is_active(void) {
     return device_provisioning_is_service_active;
+}
+
+esp_err_t device_provisioning_copy_setup_payload(
+    char *output,
+    size_t output_size
+) {
+    if (output == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!device_provisioning_is_service_active ||
+        device_provisioning_setup_uri[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const size_t length = strlen(device_provisioning_setup_uri);
+    if (length + 1 > output_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(output, device_provisioning_setup_uri, length + 1);
+    return ESP_OK;
 }
 
 const module_descriptor_t *device_provisioning_module_descriptor(void) {

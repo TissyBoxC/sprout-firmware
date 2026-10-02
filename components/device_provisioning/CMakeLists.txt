@@ -7,6 +7,6 @@ endif()
 idf_component_register(
     SRCS ${device_provisioning_sources}
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES bt esp_event esp_timer
+    PRIV_REQUIRES bt esp_event esp_timer esp_hw_support protocomm
     REQUIRES config_store device_binding_client device_identity module_registry network_manager provisioning_payload
 )

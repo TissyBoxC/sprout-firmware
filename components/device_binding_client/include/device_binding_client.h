@@ -43,6 +43,15 @@ esp_err_t device_binding_client_register(
 );
 
 /**
+ * @brief Register with the manufacturing grant persisted in the config store.
+ *
+ * Returns ESP_ERR_INVALID_STATE when the device has no unused manufacturing
+ * grant or is already registered. The grant is erased only after the platform
+ * accepts the registration so a transient network failure can retry later.
+ */
+esp_err_t device_binding_client_register_pending(void);
+
+/**
  * @brief Authenticate with the platform and store a short-lived session token.
  *
  * A fresh challenge is requested for every call so a captured signature cannot
