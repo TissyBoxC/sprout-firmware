@@ -5,6 +5,15 @@ config FEATURE_DEVICE_IDENTITY
     default y
     help
         Derive a stable device identifier from the factory MAC without
-        exposing the raw MAC in device payloads.
+        exposing the raw MAC in device payloads. Generates and stores the
+        device's ECDSA P-256 key pair in NVS for platform authentication.
+
+config DEVICE_IDENTITY_NVS_PARTITION
+    string "NVS partition name for device identity"
+    depends on FEATURE_DEVICE_IDENTITY
+    default "nvs"
+    help
+        NVS partition that stores the device key pair. Production images must
+        enable NVS encryption for this partition.
 
 endmenu

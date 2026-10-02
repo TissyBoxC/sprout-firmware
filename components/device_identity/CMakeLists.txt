@@ -7,5 +7,6 @@ endif()
 idf_component_register(
     SRCS ${device_identity_sources}
     INCLUDE_DIRS "include"
-    REQUIRES esp_hw_support mbedtls module_registry
+    PRIV_REQUIRES esp_hw_support mbedtls nvs_flash
+    REQUIRES module_registry
 )
