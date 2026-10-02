@@ -98,8 +98,11 @@ function Test-OptionalModuleRemoval {
         [string]$PlatformIoCommand
     )
 
+    # Keep the copied project path short. ESP-IDF generates deeply nested
+    # object paths, and Windows fails with "command line is too long" when the
+    # verification copy contains a 32-character GUID.
     $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
-        'sprout-firmware-removal-' + [System.Guid]::NewGuid().ToString('N')
+        'sp' + [System.Guid]::NewGuid().ToString('N').Substring(0, 8)
     )
 
     try {

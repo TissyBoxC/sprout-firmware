@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_PROVISIONING_PAYLOAD
+    bool "Enable provisioning payload"
+    default y
+    help
+        Build the sprout://device QR payload a guardian scans to bind this
+        device. The payload carries only the single-use binding token, device
+        identifier, and display name.
+
+endmenu

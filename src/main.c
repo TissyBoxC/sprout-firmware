@@ -4,6 +4,12 @@
 #if CONFIG_FEATURE_ERROR_CODE
 #include "error_code.h"
 #endif
+#if CONFIG_FEATURE_CONFIG_STORE
+#include "config_store.h"
+#endif
+#if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
+#include "device_binding_client.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_IDENTITY
 #include "device_identity.h"
 #endif
@@ -15,6 +21,12 @@
 #endif
 #if CONFIG_FEATURE_MODULE_REGISTRY
 #include "module_registry.h"
+#endif
+#if CONFIG_FEATURE_NETWORK_MANAGER
+#include "network_manager.h"
+#endif
+#if CONFIG_FEATURE_PROVISIONING_PAYLOAD
+#include "provisioning_payload.h"
 #endif
 #if CONFIG_FEATURE_SYSTEM_CORE
 #include "system_core.h"
@@ -41,6 +53,18 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DEVICE_IDENTITY
     ESP_ERROR_CHECK(module_registry_add(device_identity_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONFIG_STORE
+    ESP_ERROR_CHECK(module_registry_add(config_store_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_NETWORK_MANAGER
+    ESP_ERROR_CHECK(module_registry_add(network_manager_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
+    ESP_ERROR_CHECK(module_registry_add(device_binding_client_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PROVISIONING_PAYLOAD
+    ESP_ERROR_CHECK(module_registry_add(provisioning_payload_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
     ESP_ERROR_CHECK(module_registry_add(device_capabilities_module_descriptor()));

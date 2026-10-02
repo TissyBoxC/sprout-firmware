@@ -1,0 +1,20 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_BINDING_CLIENT
+    bool "Enable device binding client"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_DEVICE_IDENTITY
+    help
+        Contacts device_platform to register this device, prove its identity
+        with an ECDSA challenge, request a single-use binding token, and detect
+        when a guardian completes binding.
+
+config DEVICE_BINDING_PLATFORM_BASE_URL
+    string "Device platform HTTPS base URL"
+    depends on FEATURE_DEVICE_BINDING_CLIENT
+    default ""
+    help
+        Base URL of device_platform. Must use HTTPS so certificate validation
+        stays enabled.
+
+endmenu

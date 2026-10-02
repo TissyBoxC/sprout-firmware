@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONFIG_STORE
+    bool "Enable configuration store"
+    default y
+    help
+        Store Wi-Fi credentials, provisioning state, and small runtime
+        settings in NVS. This module never logs or returns secrets. Production
+        images must enable NVS encryption for the target partition.
+
+endmenu

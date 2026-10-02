@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_NETWORK_MANAGER
+    bool "Enable network manager"
+    default y
+    depends on FEATURE_CONFIG_STORE
+    help
+        Owns the Wi-Fi station lifecycle, connection retries, and the SSID
+        visible to other modules. The device stays offline until credentials
+        are supplied by provisioning.
+
+endmenu
