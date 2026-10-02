@@ -69,21 +69,29 @@ DESCRIPTION_TITLES = {
 }
 
 DESCRIPTION_PHRASES = {
+    "add p-256 device signing key": "新增 P-256 设备签名密钥",
+    "add qr and wi-fi device binding flow": "新增扫码与 Wi-Fi 设备绑定流程",
+    "apply 如此萌屋 brand assets": "应用如此萌屋品牌资源",
+    "bootstrap local credentials and bind devices": "初始化本地凭据并完成设备绑定",
     "derive stable device identifier": "生成稳定的设备标识",
     "expand generated file ignore rules": "扩展生成文件忽略规则",
     "expose device contract schema version": "开放设备契约结构版本",
     "initialize esp32-s3 n16r8 platformio project": "初始化 ESP32-S3 N16R8 PlatformIO 工程",
+    "implement secure ble wi-fi setup": "实现安全的蓝牙 Wi-Fi 配网",
     "localize release note fallback": "完善发行说明的中文回退文本",
     "localize fallback summary": "补充发行说明的中文摘要",
+    "make avatar background transparent": "将品牌头像背景改为透明",
     "physical optional module removal": "验证可选模块可物理移除",
     "removable capability bitmap": "新增可移除的能力位图",
     "removable core module baseline": "新增可移除的核心模块基线",
     "removable module builds": "验证可移除模块构建",
     "removable remote text component": "新增可移除的远程文本组件",
     "preserve concrete release note descriptions": "保留具体的发行说明内容",
+    "refresh brand presentation": "更新品牌展示",
     "restrict tracked content to code and readme": "仅跟踪代码与 README",
     "shared firmware error codes": "新增共享固件错误码",
     "stop tracking local research docs": "停止跟踪本地研究文档",
+    "translate fallback summary descriptions": "完善发行说明回退描述",
 }
 
 CONVENTIONAL_COMMIT = re.compile(
