@@ -55,6 +55,9 @@
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
+#if CONFIG_FEATURE_PARENT_POLICY
+#include "parent_policy.h"
+#endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
 #include "provisioning_payload.h"
 #endif
@@ -128,6 +131,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_VOLUME_CONTROL
     ESP_ERROR_CHECK(module_registry_add(volume_control_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PARENT_POLICY
+    ESP_ERROR_CHECK(module_registry_add(parent_policy_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PLAYBACK_QUEUE
     ESP_ERROR_CHECK(module_registry_add(playback_queue_module_descriptor()));

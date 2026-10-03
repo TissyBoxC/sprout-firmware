@@ -126,6 +126,7 @@ function Test-OptionalModuleRemoval {
         foreach ($moduleName in @(
             'ui_text'
             'device_runtime_reporter'
+            'parent_policy'
             'device_provisioning'
             'offline_fallback'
             'network_quality'

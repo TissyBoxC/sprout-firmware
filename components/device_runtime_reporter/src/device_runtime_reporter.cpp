@@ -24,6 +24,9 @@ extern "C" {
 #include "network_manager.h"
 #include "network_quality.h"
 #include "offline_fallback.h"
+#if CONFIG_FEATURE_PARENT_POLICY
+#include "parent_policy.h"
+#endif
 #include "time_sync.h"
 
 #define DEVICE_RUNTIME_RESPONSE_SIZE 8192
@@ -88,8 +91,7 @@ static esp_err_t device_runtime_platform_request(
     int *status_code_out
 ) {
     char base_url[DEVICE_RUNTIME_URL_SIZE] = {0};
-    esp_err_t result = config_store_get_string(
-        "platform_base_url",
+    esp_err_t result = device_binding_client_get_platform_base_url(
         base_url,
         sizeof(base_url)
     );
@@ -443,7 +445,11 @@ static esp_err_t device_runtime_execute_command(
     } else if (strcmp(command->type, "resync_time") == 0) {
         result = time_sync_resynchronize();
     } else if (strcmp(command->type, "refresh_configuration") == 0) {
+#if CONFIG_FEATURE_PARENT_POLICY
+        result = parent_policy_refresh();
+#else
         result = ESP_OK;
+#endif
     } else {
         result = ESP_ERR_INVALID_ARG;
     }
@@ -542,6 +548,16 @@ static void device_runtime_work_task(void *argument) {
                 device_runtime_send_heartbeat();
             if (heartbeat_result == ESP_OK) {
                 offline_fallback_mark_recovered();
+#if CONFIG_FEATURE_PARENT_POLICY
+                const esp_err_t policy_result =
+                    parent_policy_refresh_if_due();
+                if (policy_result != ESP_OK &&
+                    policy_result != ESP_ERR_NOT_FOUND &&
+                    policy_result != ESP_ERR_INVALID_STATE &&
+                    policy_result != ESP_ERR_INVALID_VERSION) {
+                    offline_fallback_mark_service_unavailable();
+                }
+#endif
                 char session_token[DEVICE_RUNTIME_SESSION_TOKEN_SIZE] = {0};
                 if (device_binding_client_copy_session_token(
                         session_token,

@@ -1,0 +1,21 @@
+menu "Sprout feature modules"
+
+config FEATURE_PARENT_POLICY
+    bool "Enable parent policy cache"
+    default y
+    depends on FEATURE_CLOUD_AUTH && FEATURE_CONFIG_STORE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_DEVICE_IDENTITY && FEATURE_VOLUME_CONTROL
+    help
+        Fetch the effective guardian policy over an authenticated device
+        session, validate its monotonic version, persist the bounded fields,
+        and apply the maximum speaker volume.
+
+config PARENT_POLICY_REFRESH_INTERVAL_SECONDS
+    int "Parent policy refresh interval in seconds"
+    depends on FEATURE_PARENT_POLICY
+    range 60 86400
+    default 900
+    help
+        Minimum delay between background policy checks. A cached policy stays
+        in force until the platform reports a newer version or deletes it.
+
+endmenu

@@ -42,6 +42,10 @@ if(CONFIG_FEATURE_CLOUD_AUTH)
     list(APPEND app_requires "cloud_auth")
 endif()
 
+if(CONFIG_FEATURE_PARENT_POLICY)
+    list(APPEND app_requires "parent_policy")
+endif()
+
 if(CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER)
     list(APPEND app_requires "device_runtime_reporter")
 endif()
