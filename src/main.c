@@ -13,6 +13,9 @@
 #if CONFIG_FEATURE_AUDIO_CODEC
 #include "audio_codec.h"
 #endif
+#if CONFIG_FEATURE_AUDIO_PIPELINE
+#include "audio_pipeline.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
 #include "device_binding_client.h"
 #endif
@@ -110,6 +113,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_AUDIO_CODEC
     ESP_ERROR_CHECK(module_registry_add(audio_codec_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_AUDIO_PIPELINE
+    ESP_ERROR_CHECK(module_registry_add(audio_pipeline_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
     ESP_ERROR_CHECK(module_registry_add(error_recovery_module_descriptor()));

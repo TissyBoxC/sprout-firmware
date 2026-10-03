@@ -1,0 +1,86 @@
+menu "Sprout feature modules"
+
+config FEATURE_AUDIO_PIPELINE
+    bool "Enable I2S microphone capture and speaker playback"
+    default y
+    depends on FEATURE_AUDIO_CODEC
+    help
+        Own the I2S peripheral for the microphone and speaker. Capture reads
+        one 20 ms PCM frame at a time; playback writes one decoded frame at a
+        time. The microphone is only enabled while a conversation is active, so
+        a device never records in the background.
+
+config AUDIO_PIPELINE_INPUT_ENABLED
+    bool "Capture from the microphone"
+    depends on FEATURE_AUDIO_PIPELINE
+    default y
+
+config AUDIO_PIPELINE_OUTPUT_ENABLED
+    bool "Play through the speaker"
+    depends on FEATURE_AUDIO_PIPELINE
+    default y
+
+config AUDIO_PIPELINE_I2S_PORT
+    int "I2S peripheral index"
+    depends on FEATURE_AUDIO_PIPELINE
+    range 0 1
+    default 0
+
+config AUDIO_PIPELINE_BCLK_GPIO
+    int "I2S bit clock GPIO"
+    depends on FEATURE_AUDIO_PIPELINE
+    range 0 48
+    default 5
+
+config AUDIO_PIPELINE_WS_GPIO
+    int "I2S word select GPIO"
+    depends on FEATURE_AUDIO_PIPELINE
+    range 0 48
+    default 4
+
+config AUDIO_PIPELINE_DATA_IN_GPIO
+    int "I2S microphone data GPIO"
+    depends on FEATURE_AUDIO_PIPELINE && AUDIO_PIPELINE_INPUT_ENABLED
+    range 0 48
+    default 6
+
+config AUDIO_PIPELINE_DATA_OUT_GPIO
+    int "I2S speaker data GPIO"
+    depends on FEATURE_AUDIO_PIPELINE && AUDIO_PIPELINE_OUTPUT_ENABLED
+    range 0 48
+    default 7
+
+config AUDIO_PIPELINE_MCLK_GPIO
+    int "I2S master clock GPIO, -1 when unused"
+    depends on FEATURE_AUDIO_PIPELINE
+    range -1 48
+    default -1
+
+config AUDIO_PIPELINE_DMA_DESCRIPTOR_COUNT
+    int "I2S DMA descriptor count"
+    depends on FEATURE_AUDIO_PIPELINE
+    range 2 16
+    default 6
+    help
+        Six descriptors absorb network jitter without adding noticeable
+        latency. Higher values increase RAM use.
+
+config AUDIO_PIPELINE_DMA_FRAME_COUNT
+    int "PCM frames per I2S DMA descriptor"
+    depends on FEATURE_AUDIO_PIPELINE
+    range 32 512
+    default 128
+
+config AUDIO_PIPELINE_CAPTURE_TIMEOUT_MS
+    int "Microphone read timeout in milliseconds"
+    depends on FEATURE_AUDIO_PIPELINE && AUDIO_PIPELINE_INPUT_ENABLED
+    range 20 2000
+    default 200
+
+config AUDIO_PIPELINE_PLAYBACK_TIMEOUT_MS
+    int "Speaker write timeout in milliseconds"
+    depends on FEATURE_AUDIO_PIPELINE && AUDIO_PIPELINE_OUTPUT_ENABLED
+    range 20 2000
+    default 500
+
+endmenu
