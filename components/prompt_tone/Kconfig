@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_PROMPT_TONE
+    bool "Enable local system prompt tones"
+    default y
+    depends on FEATURE_AUDIO_CODEC
+    help
+        Generate wake, capture, error, network, battery, and safety cues
+        locally. Cues go through the playback queue when it is enabled, so
+        safety announcements keep their priority and cannot be silenced.
+
+endmenu

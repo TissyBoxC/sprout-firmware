@@ -119,23 +119,28 @@ function Test-OptionalModuleRemoval {
     try {
         New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
         Get-ChildItem -Force -LiteralPath $ProjectPath |
-            Where-Object { $_.Name -notin @('.git', 'bgen') } |
+            Where-Object { $_.Name -notin @('.git', '.pio', 'bgen') } |
             Copy-Item -Destination $temporaryRoot -Recurse
-        Remove-OptionalModule `
-            -ProjectPath $temporaryRoot `
-            -ModuleName 'ui_text'
-        Remove-OptionalModule `
-            -ProjectPath $temporaryRoot `
-            -ModuleName 'device_provisioning'
-        Remove-OptionalModule `
-            -ProjectPath $temporaryRoot `
-            -ModuleName 'device_runtime_reporter'
-        Remove-OptionalModule `
-            -ProjectPath $temporaryRoot `
-            -ModuleName 'network_quality'
-        Remove-OptionalModule `
-            -ProjectPath $temporaryRoot `
-            -ModuleName 'offline_fallback'
+        # Remove dependents before the modules they require, so the remaining
+        # CMake graph never references a component that is already gone.
+        foreach ($moduleName in @(
+            'ui_text'
+            'device_runtime_reporter'
+            'device_provisioning'
+            'offline_fallback'
+            'network_quality'
+            'prompt_tone'
+            'playback_queue'
+            'volume_control'
+            'audio_pipeline'
+            'audio_codec'
+            'cloud_auth'
+            'time_sync'
+        )) {
+            Remove-OptionalModule `
+                -ProjectPath $temporaryRoot `
+                -ModuleName $moduleName
+        }
         Invoke-PlatformIoBuild `
             -ProjectPath $temporaryRoot `
             -Environments @('esp32-s3-n16r8') `

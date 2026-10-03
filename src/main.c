@@ -16,6 +16,15 @@
 #if CONFIG_FEATURE_AUDIO_PIPELINE
 #include "audio_pipeline.h"
 #endif
+#if CONFIG_FEATURE_VOLUME_CONTROL
+#include "volume_control.h"
+#endif
+#if CONFIG_FEATURE_PLAYBACK_QUEUE
+#include "playback_queue.h"
+#endif
+#if CONFIG_FEATURE_PROMPT_TONE
+#include "prompt_tone.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_BINDING_CLIENT
 #include "device_binding_client.h"
 #endif
@@ -116,6 +125,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_AUDIO_PIPELINE
     ESP_ERROR_CHECK(module_registry_add(audio_pipeline_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_VOLUME_CONTROL
+    ESP_ERROR_CHECK(module_registry_add(volume_control_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PLAYBACK_QUEUE
+    ESP_ERROR_CHECK(module_registry_add(playback_queue_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PROMPT_TONE
+    ESP_ERROR_CHECK(module_registry_add(prompt_tone_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
     ESP_ERROR_CHECK(module_registry_add(error_recovery_module_descriptor()));

@@ -22,6 +22,18 @@ if(CONFIG_FEATURE_AUDIO_PIPELINE)
     list(APPEND app_requires "audio_pipeline")
 endif()
 
+if(CONFIG_FEATURE_VOLUME_CONTROL)
+    list(APPEND app_requires "volume_control")
+endif()
+
+if(CONFIG_FEATURE_PLAYBACK_QUEUE)
+    list(APPEND app_requires "playback_queue")
+endif()
+
+if(CONFIG_FEATURE_PROMPT_TONE)
+    list(APPEND app_requires "prompt_tone")
+endif()
+
 if(CONFIG_FEATURE_DEVICE_PROVISIONING)
     list(APPEND app_requires "device_provisioning")
 endif()

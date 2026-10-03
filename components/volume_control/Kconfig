@@ -1,0 +1,26 @@
+menu "Sprout feature modules"
+
+config FEATURE_VOLUME_CONTROL
+    bool "Enable speaker volume control"
+    default y
+    help
+        Own the speaker volume and the guardian maximum in percent. Persist the
+        value through config_store when that module is present, and clamp every
+        change to the policy limit so a loud request can never exceed it.
+
+config VOLUME_CONTROL_DEFAULT_PERCENT
+    int "Default volume percent on first boot"
+    depends on FEATURE_VOLUME_CONTROL
+    range 0 100
+    default 40
+
+config VOLUME_CONTROL_MAX_PERCENT
+    int "Default maximum volume percent"
+    depends on FEATURE_VOLUME_CONTROL
+    range 0 100
+    default 70
+    help
+        Conservative ceiling until the platform delivers the family policy.
+        Lowering this value immediately reduces the live volume.
+
+endmenu

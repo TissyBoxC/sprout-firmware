@@ -1,0 +1,36 @@
+menu "Sprout feature modules"
+
+config FEATURE_PLAYBACK_QUEUE
+    bool "Enable prioritized audio playback queue"
+    default y
+    depends on FEATURE_AUDIO_PIPELINE
+    help
+        Queue outbound audio by priority, preempt and resume conversations, and
+        keep safety announcements on the speaker. The queue scales each frame
+        with volume_control when that module is enabled.
+
+config PLAYBACK_QUEUE_CAPACITY
+    int "Pending playback items"
+    depends on FEATURE_PLAYBACK_QUEUE
+    range 2 16
+    default 6
+    help
+        Six items cover a reply, a prompt, and a reminder without letting a
+        stalled network grow the queue without bound.
+
+config PLAYBACK_QUEUE_TASK_STACK_SIZE
+    int "Playback worker stack size in bytes"
+    depends on FEATURE_PLAYBACK_QUEUE
+    range 2048 16384
+    default 4096
+
+config PLAYBACK_QUEUE_TASK_PRIORITY
+    int "Playback worker task priority"
+    depends on FEATURE_PLAYBACK_QUEUE
+    range 1 20
+    default 6
+    help
+        The worker sits above the network tasks but below the I2S and watchdog
+        paths, so a stalled socket cannot starve audio output.
+
+endmenu
