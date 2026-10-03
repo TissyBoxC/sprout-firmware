@@ -96,6 +96,17 @@ bool device_binding_client_is_bound(void);
 bool device_binding_client_is_registered(void);
 
 /**
+ * @brief Copy the configured platform HTTPS base URL.
+ *
+ * Allows authenticated feature modules to reuse the single platform endpoint
+ * without duplicating the storage key. The caller owns the output buffer.
+ */
+esp_err_t device_binding_client_get_platform_base_url(
+    char *output,
+    size_t output_size
+);
+
+/**
  * @brief Register the binding completion observer.
  *
  * Passing NULL clears the observer. The callback runs on the caller task.

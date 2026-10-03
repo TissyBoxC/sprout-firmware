@@ -22,8 +22,8 @@ extern "C" {
 #define DEVICE_BINDING_KEY_BOUND "device_bound"
 #define DEVICE_BINDING_KEY_SESSION_TOKEN "device_session"
 #define DEVICE_BINDING_KEY_REGISTERED "device_registered"
-#define DEVICE_BINDING_KEY_REGISTRATION_TOKEN "device_registration_token"
-#define DEVICE_BINDING_PLATFORM_KEY "platform_base_url"
+#define DEVICE_BINDING_KEY_REGISTRATION_TOKEN "dev_reg_token"
+#define DEVICE_BINDING_PLATFORM_KEY "platform_url"
 #define DEVICE_BINDING_HTTP_TIMEOUT_MS 15000
 #define DEVICE_BINDING_RESPONSE_SIZE 4096
 #define DEVICE_BINDING_URL_SIZE 320
@@ -78,6 +78,23 @@ static esp_err_t device_binding_client_ensure_platform_url(void) {
     return config_store_set_string(
         DEVICE_BINDING_PLATFORM_KEY,
         configured_url
+    );
+}
+
+esp_err_t device_binding_client_get_platform_base_url(
+    char *output,
+    size_t output_size
+) {
+    if (output == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!device_binding_is_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return config_store_get_string(
+        DEVICE_BINDING_PLATFORM_KEY,
+        output,
+        output_size
     );
 }
 
