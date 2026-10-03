@@ -1,0 +1,7 @@
+version: "1.0.0"
+description: Realtime 16 kHz mono Opus codec for 如此萌屋 初芽.
+dependencies:
+  idf:
+    version: ">=6.0"
+  espressif/esp_audio_codec:
+    version: "2.6.2"

@@ -14,6 +14,10 @@ if(CONFIG_FEATURE_DEVICE_CAPABILITIES)
     list(APPEND app_requires "device_capabilities")
 endif()
 
+if(CONFIG_FEATURE_AUDIO_CODEC)
+    list(APPEND app_requires "audio_codec")
+endif()
+
 if(CONFIG_FEATURE_DEVICE_PROVISIONING)
     list(APPEND app_requires "device_provisioning")
 endif()
