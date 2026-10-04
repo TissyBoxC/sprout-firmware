@@ -18,6 +18,15 @@ static SemaphoreHandle_t audio_pipeline_mutex;
 static bool audio_pipeline_ready;
 static bool audio_pipeline_is_capture_active;
 static bool audio_pipeline_is_playback_active;
+
+// The reference sink is copied under a critical section instead of a mutex so a
+// sink can be registered while the playback task runs, without holding a lock
+// across the callback body the caller owns.
+static portMUX_TYPE audio_pipeline_reference_lock =
+    portMUX_INITIALIZER_UNLOCKED;
+static audio_pipeline_reference_sink_t audio_pipeline_reference_sink;
+static void *audio_pipeline_reference_context;
+
 static audio_pipeline_snapshot_t audio_pipeline_snapshot = {
     .state = AUDIO_PIPELINE_STATE_STOPPED,
 };
@@ -212,6 +221,22 @@ audio_codec_error_t audio_pipeline_play_frame(
     }
 
     audio_pipeline_snapshot.played_frames++;
+
+    // Publish the signal only after it reached I2S: that is the waveform the
+    // microphone will actually hear and therefore the correct echo reference.
+    audio_pipeline_reference_sink_t reference_sink;
+    void *reference_context;
+    portENTER_CRITICAL(&audio_pipeline_reference_lock);
+    reference_sink = audio_pipeline_reference_sink;
+    reference_context = audio_pipeline_reference_context;
+    portEXIT_CRITICAL(&audio_pipeline_reference_lock);
+    if (reference_sink != NULL) {
+        reference_sink(
+            frame->pcm,
+            AUDIO_CODEC_SAMPLES_PER_FRAME * AUDIO_CODEC_CHANNEL_COUNT,
+            reference_context
+        );
+    }
     return AUDIO_CODEC_OK;
 }
 
@@ -288,6 +313,17 @@ bool audio_pipeline_is_playing(void) {
 
 audio_pipeline_snapshot_t audio_pipeline_get_snapshot(void) {
     return audio_pipeline_snapshot;
+}
+
+esp_err_t audio_pipeline_set_reference_sink(
+    audio_pipeline_reference_sink_t sink,
+    void *context
+) {
+    portENTER_CRITICAL(&audio_pipeline_reference_lock);
+    audio_pipeline_reference_sink = sink;
+    audio_pipeline_reference_context = sink == NULL ? NULL : context;
+    portEXIT_CRITICAL(&audio_pipeline_reference_lock);
+    return ESP_OK;
 }
 
 const module_descriptor_t *audio_pipeline_module_descriptor(void) {

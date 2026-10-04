@@ -95,6 +95,31 @@ bool audio_pipeline_is_playing(void);
 /** @brief Return the bounded pipeline snapshot. */
 audio_pipeline_snapshot_t audio_pipeline_get_snapshot(void);
 
+/**
+ * @brief Receive each PCM frame after it has been written to the speaker.
+ *
+ * The callback runs synchronously on the playback task, so it must copy any
+ * samples it keeps and return quickly. It receives the exact signal the
+ * loudspeaker played, which makes it usable as an acoustic echo reference.
+ */
+typedef void (*audio_pipeline_reference_sink_t)(
+    const int16_t *samples,
+    size_t sample_count,
+    void *context
+);
+
+/**
+ * @brief Register or clear the speaker reference sink.
+ *
+ * Passing a NULL sink clears the registration and ignores the context. The
+ * callback is never invoked before this function returns. Registration is safe
+ * while playback is active; the change takes effect at the next frame boundary.
+ */
+esp_err_t audio_pipeline_set_reference_sink(
+    audio_pipeline_reference_sink_t sink,
+    void *context
+);
+
 /** @brief Return the removable-module descriptor for audio_pipeline. */
 const module_descriptor_t *audio_pipeline_module_descriptor(void);
 
