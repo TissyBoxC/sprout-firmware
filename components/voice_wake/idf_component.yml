@@ -1,0 +1,7 @@
+version: "1.0.0"
+description: Local always-on wake detection for 如此萌屋 初芽.
+dependencies:
+  idf:
+    version: ">=6.1"
+  espressif/esp-sr:
+    version: "2.5.5"

@@ -1,0 +1,121 @@
+menu "Sprout feature modules"
+
+config FEATURE_VOICE_WAKE
+    bool "Enable always-on local voice wake detection"
+    default y
+    depends on FEATURE_AUDIO_PIPELINE
+    help
+        Detect the configured wake word locally with ESP-SR AFE and WakeNet,
+        or with a deterministic energy detector for CI and removable-module
+        builds. The microphone starts disabled and is enabled only while the
+        wake engine is armed.
+
+choice VOICE_WAKE_BACKEND
+    prompt "Voice wake detector backend"
+    depends on FEATURE_VOICE_WAKE
+    default VOICE_WAKE_BACKEND_ESP_SR
+    help
+        ESP-SR is the production detector and requires the model partition and
+        model-loading options documented in the component README. The
+        deterministic backend uses bounded energy and zero-crossing evidence
+        so CI and removal checks can exercise the same event contract without
+        model data or platform DSP.
+
+config VOICE_WAKE_BACKEND_ESP_SR
+    bool "ESP-SR AFE + WakeNet"
+
+config VOICE_WAKE_BACKEND_DETERMINISTIC
+    bool "Deterministic energy detector"
+
+endchoice
+
+choice VOICE_WAKE_AFE_MODE
+    prompt "ESP-SR AFE operating mode"
+    depends on FEATURE_VOICE_WAKE && VOICE_WAKE_BACKEND_ESP_SR
+    default VOICE_WAKE_AFE_MODE_LOW_COST
+    help
+        Low-cost mode keeps wake detection resident with a smaller compute and
+        memory footprint. High-performance mode can improve recognition in
+        difficult acoustics at the cost of CPU and PSRAM.
+
+config VOICE_WAKE_AFE_MODE_LOW_COST
+    bool "Low cost"
+
+config VOICE_WAKE_AFE_MODE_HIGH_PERF
+    bool "High performance"
+
+endchoice
+
+config VOICE_WAKE_MIN_CONFIDENCE_MILLI
+    int "Minimum accepted detection confidence (0..1000)"
+    depends on FEATURE_VOICE_WAKE
+    range 0 1000
+    default 600
+    help
+        Detections below this confidence are rejected and counted. ESP-SR
+        reports the configured WakeNet threshold because its fetch result does
+        not expose a finer confidence value.
+
+config VOICE_WAKE_COOLDOWN_MS
+    int "Detection cooldown in milliseconds"
+    depends on FEATURE_VOICE_WAKE
+    range 0 60000
+    default 2000
+    help
+        Suppresses a second event for this long after an accepted detection.
+
+config VOICE_WAKE_PLAYBACK_IGNORE_MS
+    int "Ignore window after speaker playback in milliseconds"
+    depends on FEATURE_VOICE_WAKE
+    range 0 10000
+    default 300
+    help
+        Prevents the speaker tail from immediately retriggering the detector.
+
+config VOICE_WAKE_TASK_STACK_SIZE
+    int "Wake capture task stack size in bytes"
+    depends on FEATURE_VOICE_WAKE
+    range 4096 32768
+    default 8192
+
+config VOICE_WAKE_TASK_PRIORITY
+    int "Wake capture task priority"
+    depends on FEATURE_VOICE_WAKE
+    range 1 24
+    default 7
+
+config VOICE_WAKE_FRAME_TIMEOUT_MS
+    int "Microphone frame timeout in milliseconds"
+    depends on FEATURE_VOICE_WAKE
+    range 20 2000
+    default 200
+
+config VOICE_WAKE_WAKENET_THRESHOLD_MILLI
+    int "WakeNet threshold (0.4..0.9999 represented as milli)"
+    depends on FEATURE_VOICE_WAKE && VOICE_WAKE_BACKEND_ESP_SR
+    range 400 999
+    default 700
+    help
+        WakeNet accepts thresholds from 0.4 to 0.9999. This build exposes
+        three decimal places, which is the precision used by the model
+        metadata and avoids floating-point Kconfig values.
+
+config VOICE_WAKE_DETERMINISTIC_RMS_THRESHOLD
+    int "Deterministic detector RMS threshold"
+    depends on FEATURE_VOICE_WAKE && VOICE_WAKE_BACKEND_DETERMINISTIC
+    range 1 32767
+    default 900
+    help
+        A candidate must exceed this RMS level and show a speech-like
+        zero-crossing rate before it can produce a wake event.
+
+config VOICE_WAKE_DETERMINISTIC_MIN_RUN_FRAMES
+    int "Deterministic detector run length in frames"
+    depends on FEATURE_VOICE_WAKE && VOICE_WAKE_BACKEND_DETERMINISTIC
+    range 1 100
+    default 4
+    help
+        Four consecutive 20 ms frames is 80 ms of sustained speech-like
+        evidence, which rejects isolated clicks and impulse noise.
+
+endmenu

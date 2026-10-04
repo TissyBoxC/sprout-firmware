@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_WAKE_FEEDBACK
+    bool "Enable wake feedback"
+    default y
+    depends on FEATURE_VOICE_WAKE
+    help
+        Turn one accepted local wake event into immediate device feedback:
+        play the short wake cue, show the listening indicator, and record the
+        bounded wake interaction event for the next authenticated heartbeat.
+        Raw audio and wake confidence are not persisted.
+
+endmenu
