@@ -15,10 +15,13 @@ extern "C" {
 #include "device_binding_client.h"
 #include "device_identity.h"
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "network_manager.h"
@@ -39,8 +42,17 @@ extern "C" {
 #define DEVICE_RUNTIME_HAS_PARENT_POLICY 0
 #endif
 
+#if CONFIG_FEATURE_FACTORY_RESET && __has_include("factory_reset.h")
+#define DEVICE_RUNTIME_HAS_FACTORY_RESET 1
+#else
+#define DEVICE_RUNTIME_HAS_FACTORY_RESET 0
+#endif
+
 #if DEVICE_RUNTIME_HAS_PARENT_POLICY
 #include "parent_policy.h"
+#endif
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+#include "factory_reset.h"
 #endif
 #include "time_sync.h"
 
@@ -50,20 +62,169 @@ extern "C" {
 #define DEVICE_RUNTIME_HEARTBEAT_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_LIMIT 4
+#define DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE 256
+#define DEVICE_RUNTIME_FACTORY_RESET_COMPLETED_MAGIC 0x52535431u
 
 static const char *const TAG = "device_runtime";
 
 typedef struct {
-    char body[DEVICE_RUNTIME_RESPONSE_SIZE];
+    char *body;
+    size_t body_capacity;
     size_t body_length;
-} device_runtime_response_t;
+    bool overflowed;
+} device_runtime_response_buffer_t;
 
 typedef struct {
     char id[DEVICE_RUNTIME_COMMAND_ID_SIZE];
     char type[32];
 } device_runtime_command_t;
 
+typedef enum {
+    DEVICE_RUNTIME_COMMAND_ACK_OK = 0,
+    DEVICE_RUNTIME_COMMAND_ACK_ALREADY_HANDLED,
+    DEVICE_RUNTIME_COMMAND_ACK_RETRYABLE,
+    DEVICE_RUNTIME_COMMAND_ACK_UNAUTHORIZED,
+    DEVICE_RUNTIME_COMMAND_ACK_INVALID,
+} device_runtime_command_ack_result_t;
+
+typedef enum {
+    DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED = 0,
+    DEVICE_RUNTIME_COMMAND_EXECUTION_COMPLETED,
+} device_runtime_command_execution_t;
+
 static bool device_runtime_ready;
+
+// The factory-reset operation erases the NVS partition, so its guard cannot
+// live there. RTC memory survives a software reset long enough to retry a
+// failed ACK; a full power loss also removes the cloud session and binding,
+// which prevents the same command from being polled again.
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+static RTC_NOINIT_ATTR uint32_t
+    device_runtime_factory_reset_completed_magic;
+static RTC_NOINIT_ATTR char device_runtime_factory_reset_completed_command_id[
+    DEVICE_RUNTIME_COMMAND_ID_SIZE
+];
+#endif
+
+static void *device_runtime_allocate_buffer(size_t size) {
+    if (size == 0) {
+        return NULL;
+    }
+    return heap_caps_malloc_prefer(
+        size,
+        2,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+        MALLOC_CAP_8BIT
+    );
+}
+
+static void device_runtime_clear_and_free(
+    void *buffer,
+    size_t size
+) {
+    if (buffer == NULL) {
+        return;
+    }
+    if (size > 0) {
+        memset(buffer, 0, size);
+    }
+    free(buffer);
+}
+
+static esp_err_t device_runtime_response_buffer_init(
+    device_runtime_response_buffer_t *buffer,
+    size_t capacity
+) {
+    if (buffer == NULL || capacity == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(buffer, 0, sizeof(*buffer));
+    buffer->body = (char *)device_runtime_allocate_buffer(capacity);
+    if (buffer->body == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    buffer->body_capacity = capacity;
+    buffer->body[0] = '\0';
+    return ESP_OK;
+}
+
+static void device_runtime_response_buffer_destroy(
+    device_runtime_response_buffer_t *buffer
+) {
+    if (buffer == NULL) {
+        return;
+    }
+    device_runtime_clear_and_free(buffer->body, buffer->body_capacity);
+    memset(buffer, 0, sizeof(*buffer));
+}
+
+static size_t device_runtime_response_buffer_remaining(
+    const device_runtime_response_buffer_t *buffer
+) {
+    if (buffer == NULL || buffer->body == NULL ||
+        buffer->body_length >= buffer->body_capacity) {
+        return 0;
+    }
+    return buffer->body_capacity - 1 - buffer->body_length;
+}
+
+static bool device_runtime_response_buffer_is_terminated(
+    const device_runtime_response_buffer_t *buffer
+) {
+    return buffer != NULL && buffer->body != NULL &&
+        buffer->body_length < buffer->body_capacity &&
+        buffer->body[buffer->body_length] == '\0';
+}
+
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+static bool device_runtime_factory_reset_completed_matches(
+    const char *command_id
+) {
+    if (command_id == NULL || command_id[0] == '\0') {
+        return false;
+    }
+    return device_runtime_factory_reset_completed_magic ==
+            DEVICE_RUNTIME_FACTORY_RESET_COMPLETED_MAGIC &&
+        device_runtime_factory_reset_completed_command_id[
+            sizeof(device_runtime_factory_reset_completed_command_id) - 1
+        ] == '\0' &&
+        strcmp(
+            device_runtime_factory_reset_completed_command_id,
+            command_id
+        ) == 0;
+}
+
+static esp_err_t device_runtime_mark_factory_reset_completed(
+    const char *command_id
+) {
+    if (command_id == NULL || command_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(
+        device_runtime_factory_reset_completed_command_id,
+        0,
+        sizeof(device_runtime_factory_reset_completed_command_id)
+    );
+    snprintf(
+        device_runtime_factory_reset_completed_command_id,
+        sizeof(device_runtime_factory_reset_completed_command_id),
+        "%s",
+        command_id
+    );
+    device_runtime_factory_reset_completed_magic =
+        DEVICE_RUNTIME_FACTORY_RESET_COMPLETED_MAGIC;
+    return ESP_OK;
+}
+
+static void device_runtime_clear_factory_reset_completed(void) {
+    device_runtime_factory_reset_completed_magic = 0;
+    memset(
+        device_runtime_factory_reset_completed_command_id,
+        0,
+        sizeof(device_runtime_factory_reset_completed_command_id)
+    );
+}
+#endif
 
 static esp_err_t device_runtime_apply_platform_time(
     JsonDocument *response
@@ -72,20 +233,24 @@ static esp_err_t device_runtime_apply_platform_time(
 static esp_err_t device_runtime_response_handler(
     esp_http_client_event_t *event
 ) {
-    device_runtime_response_t *response =
-        (device_runtime_response_t *)event->user_data;
+    device_runtime_response_buffer_t *response =
+        (device_runtime_response_buffer_t *)event->user_data;
     if (event->event_id != HTTP_EVENT_ON_DATA || response == NULL ||
         event->data_len <= 0) {
         return ESP_OK;
     }
     const size_t remaining =
-        sizeof(response->body) - 1 - response->body_length;
+        device_runtime_response_buffer_remaining(response);
     const size_t copy_length =
         (size_t)event->data_len < remaining
             ? (size_t)event->data_len
             : remaining;
     if (copy_length == 0) {
+        response->overflowed = true;
         return ESP_OK;
+    }
+    if (copy_length < (size_t)event->data_len) {
+        response->overflowed = true;
     }
     memcpy(
         response->body + response->body_length,
@@ -128,7 +293,14 @@ static esp_err_t device_runtime_platform_request(
         return ESP_ERR_INVALID_SIZE;
     }
 
-    device_runtime_response_t response{};
+    device_runtime_response_buffer_t response = {};
+    result = device_runtime_response_buffer_init(
+        &response,
+        DEVICE_RUNTIME_RESPONSE_SIZE
+    );
+    if (result != ESP_OK) {
+        return result;
+    }
     esp_http_client_config_t client_config = {};
     client_config.url = url;
     client_config.method = HTTP_METHOD_GET;
@@ -141,6 +313,7 @@ static esp_err_t device_runtime_platform_request(
     }
     esp_http_client_handle_t client = esp_http_client_init(&client_config);
     if (client == NULL) {
+        device_runtime_response_buffer_destroy(&response);
         return ESP_FAIL;
     }
     esp_http_client_set_header(client, "Accept", "application/json");
@@ -177,6 +350,7 @@ static esp_err_t device_runtime_platform_request(
         *status_code_out = status_code;
     }
     if (result != ESP_OK) {
+        device_runtime_response_buffer_destroy(&response);
         ESP_LOGW(
             TAG,
             "runtime request failed: %s",
@@ -185,23 +359,33 @@ static esp_err_t device_runtime_platform_request(
         return result;
     }
     if (status_code < 200 || status_code >= 300) {
+        device_runtime_response_buffer_destroy(&response);
         ESP_LOGW(TAG, "runtime request returned status %d", status_code);
         return status_code == 401 ? ESP_ERR_INVALID_STATE
                                   : ESP_ERR_INVALID_RESPONSE;
     }
     if (response_document == NULL) {
+        device_runtime_response_buffer_destroy(&response);
         return ESP_OK;
+    }
+    if (response.overflowed ||
+        !device_runtime_response_buffer_is_terminated(&response)) {
+        device_runtime_response_buffer_destroy(&response);
+        return ESP_ERR_INVALID_RESPONSE;
     }
     JsonDocument envelope;
     if (deserializeJson(envelope, response.body) !=
         DeserializationError::Ok) {
+        device_runtime_response_buffer_destroy(&response);
         return ESP_ERR_INVALID_RESPONSE;
     }
     JsonVariant data = envelope["data"];
     if (!data.is<JsonObjectConst>()) {
+        device_runtime_response_buffer_destroy(&response);
         return ESP_ERR_INVALID_RESPONSE;
     }
     response_document->set(data);
+    device_runtime_response_buffer_destroy(&response);
     return ESP_OK;
 }
 
@@ -368,25 +552,33 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     payload["offline"]["pending_telemetry"] = offline.pending_telemetry;
 
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
-    diagnostic_reporter_snapshot_t diagnostics{};
+    diagnostic_reporter_snapshot_t *diagnostics =
+        (diagnostic_reporter_snapshot_t *)device_runtime_allocate_buffer(
+            sizeof(diagnostic_reporter_snapshot_t)
+        );
+    if (diagnostics == NULL) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_NO_MEM;
+    }
+    memset(diagnostics, 0, sizeof(*diagnostics));
     const esp_err_t diagnostics_result =
-        diagnostic_reporter_get_snapshot(&diagnostics);
+        diagnostic_reporter_get_snapshot(diagnostics);
     if (diagnostics_result == ESP_OK) {
         JsonObject diagnostics_object =
             payload["diagnostics"].to<JsonObject>();
         diagnostics_object["schema_version"] = "1.0.0";
         diagnostics_object["newest_sequence"] =
-            diagnostics.newest_sequence;
+            diagnostics->newest_sequence;
         diagnostics_object["dropped_boot_events"] =
-            diagnostics.dropped_boot_events;
+            diagnostics->dropped_boot_events;
 
         JsonArray boot_events =
             diagnostics_object["boot_events"].to<JsonArray>();
         for (size_t index = 0;
-             index < diagnostics.boot_event_count;
+             index < diagnostics->boot_event_count;
              ++index) {
             const diagnostic_reporter_boot_event_t *event =
-                &diagnostics.boot_events[index];
+                &diagnostics->boot_events[index];
             JsonObject item = boot_events.add<JsonObject>();
             item["event_id"] = event->event_id;
             item["event_type"] = "boot";
@@ -397,7 +589,7 @@ static esp_err_t device_runtime_send_heartbeat(void) {
             item["firmware_version"] = event->firmware_version;
         }
 
-        if (diagnostics.has_failure) {
+        if (diagnostics->has_failure) {
             JsonObject failure = diagnostics_object["latest_failure"]
                                      .to<JsonObject>();
             char failure_event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE] = {0};
@@ -405,26 +597,26 @@ static esp_err_t device_runtime_send_heartbeat(void) {
                 failure_event_id,
                 sizeof(failure_event_id),
                 "failure_%08lx",
-                (unsigned long)diagnostics.failure.sequence
+                (unsigned long)diagnostics->failure.sequence
             );
             failure["event_id"] = failure_event_id;
             failure["event_type"] = "module_failure";
-            failure["sequence"] = diagnostics.failure.sequence;
-            failure["module_name"] = diagnostics.failure.module_name;
-            failure["error_code"] = diagnostics.failure.error_code;
-            failure["failure_count"] = diagnostics.failure.failure_count;
+            failure["sequence"] = diagnostics->failure.sequence;
+            failure["module_name"] = diagnostics->failure.module_name;
+            failure["error_code"] = diagnostics->failure.error_code;
+            failure["failure_count"] = diagnostics->failure.failure_count;
             failure["firmware_version"] =
-                diagnostics.failure.firmware_version;
+                diagnostics->failure.firmware_version;
             memset(failure_event_id, 0, sizeof(failure_event_id));
         }
 
         JsonArray recovery_events =
             diagnostics_object["recovery_events"].to<JsonArray>();
         for (size_t index = 0;
-             index < diagnostics.recovery_event_count;
+             index < diagnostics->recovery_event_count;
              ++index) {
             const diagnostic_reporter_recovery_event_t *event =
-                &diagnostics.recovery_events[index];
+                &diagnostics->recovery_events[index];
             JsonObject item = recovery_events.add<JsonObject>();
             item["event_id"] = event->event_id;
             item["event_type"] = "module_recovered";
@@ -435,10 +627,10 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         JsonArray interaction_events =
             diagnostics_object["interaction_events"].to<JsonArray>();
         for (size_t index = 0;
-             index < diagnostics.interaction_event_count;
+             index < diagnostics->interaction_event_count;
              ++index) {
             const diagnostic_reporter_interaction_event_t *event =
-                &diagnostics.interaction_events[index];
+                &diagnostics->interaction_events[index];
             JsonObject item = interaction_events.add<JsonObject>();
             item["event_id"] = event->event_id;
             item["event_type"] = event->event_type;
@@ -456,9 +648,30 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     }
 #endif
 
-    char request_body[DEVICE_RUNTIME_RESPONSE_SIZE] = {0};
-    const size_t request_length = serializeJson(payload, request_body);
-    if (request_length == 0 || request_length >= sizeof(request_body)) {
+    char *request_body = (char *)device_runtime_allocate_buffer(
+        DEVICE_RUNTIME_RESPONSE_SIZE
+    );
+    if (request_body == NULL) {
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+#endif
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_NO_MEM;
+    }
+    const size_t request_length = serializeJson(
+        payload,
+        request_body,
+        DEVICE_RUNTIME_RESPONSE_SIZE
+    );
+    if (request_length == 0 ||
+        request_length >= DEVICE_RUNTIME_RESPONSE_SIZE) {
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+#endif
+        device_runtime_clear_and_free(
+            request_body,
+            DEVICE_RUNTIME_RESPONSE_SIZE
+        );
         memset(session_token, 0, sizeof(session_token));
         return ESP_ERR_INVALID_SIZE;
     }
@@ -470,6 +683,13 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         device_id
     );
     if (path_written <= 0 || (size_t)path_written >= sizeof(path)) {
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+#endif
+        device_runtime_clear_and_free(
+            request_body,
+            DEVICE_RUNTIME_RESPONSE_SIZE
+        );
         memset(session_token, 0, sizeof(session_token));
         return ESP_ERR_INVALID_SIZE;
     }
@@ -483,9 +703,15 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         &response,
         &status_code
     );
-    memset(request_body, 0, sizeof(request_body));
+    device_runtime_clear_and_free(
+        request_body,
+        DEVICE_RUNTIME_RESPONSE_SIZE
+    );
     memset(session_token, 0, sizeof(session_token));
     if (status_code == 401) {
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+#endif
         cloud_auth_mark_unauthorized();
         return ESP_ERR_INVALID_STATE;
     }
@@ -496,7 +722,7 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         // pending for a later heartbeat.
         const esp_err_t acknowledge_result =
             diagnostic_reporter_acknowledge(
-                diagnostics.newest_sequence
+                diagnostics->newest_sequence
             );
         if (acknowledge_result != ESP_OK) {
             ESP_LOGW(
@@ -505,13 +731,21 @@ static esp_err_t device_runtime_send_heartbeat(void) {
                 esp_err_to_name(acknowledge_result)
             );
         }
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+        diagnostics = nullptr;
 #endif
         result = device_runtime_apply_platform_time(&response);
     }
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+    if (result != ESP_OK) {
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+    }
+#endif
     return result;
 }
 
-static esp_err_t device_runtime_acknowledge_command(
+static device_runtime_command_ack_result_t
+device_runtime_acknowledge_command(
     const char *device_id,
     const char *command_id,
     const char *status,
@@ -521,10 +755,10 @@ static esp_err_t device_runtime_acknowledge_command(
     JsonDocument payload;
     payload["status"] = status;
     payload["result_code"] = result_code;
-    char request_body[DEVICE_RUNTIME_RESPONSE_SIZE] = {0};
+    char request_body[DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE] = {0};
     const size_t request_length = serializeJson(payload, request_body);
     if (request_length == 0 || request_length >= sizeof(request_body)) {
-        return ESP_ERR_INVALID_SIZE;
+        return DEVICE_RUNTIME_COMMAND_ACK_INVALID;
     }
     char path[DEVICE_RUNTIME_URL_SIZE] = {0};
     const int written = snprintf(
@@ -535,7 +769,7 @@ static esp_err_t device_runtime_acknowledge_command(
         command_id
     );
     if (written <= 0 || (size_t)written >= sizeof(path)) {
-        return ESP_ERR_INVALID_SIZE;
+        return DEVICE_RUNTIME_COMMAND_ACK_INVALID;
     }
     // The platform ignores the path device id and resolves the owner from the
     // device session token, so the command ack uses the same authenticated
@@ -550,10 +784,25 @@ static esp_err_t device_runtime_acknowledge_command(
         &status_code
     );
     memset(request_body, 0, sizeof(request_body));
-    return status_code == 401 ? ESP_ERR_INVALID_STATE : result;
+    if (status_code == 401) {
+        cloud_auth_mark_unauthorized();
+        return DEVICE_RUNTIME_COMMAND_ACK_UNAUTHORIZED;
+    }
+    if (status_code == 409) {
+        // The platform acknowledges a command exactly once. If the success
+        // response was lost, the retry receives "already handled"; that is
+        // idempotent success and must not hold back a completed reset.
+        return DEVICE_RUNTIME_COMMAND_ACK_ALREADY_HANDLED;
+    }
+    if (result != ESP_OK) {
+        return status_code >= 500 || status_code == 0
+            ? DEVICE_RUNTIME_COMMAND_ACK_RETRYABLE
+            : DEVICE_RUNTIME_COMMAND_ACK_INVALID;
+    }
+    return DEVICE_RUNTIME_COMMAND_ACK_OK;
 }
 
-static esp_err_t device_runtime_execute_command(
+static device_runtime_command_execution_t device_runtime_execute_command(
     const char *device_id,
     const device_runtime_command_t *command,
     const char *session_token
@@ -570,21 +819,75 @@ static esp_err_t device_runtime_execute_command(
 #else
         result = ESP_OK;
 #endif
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+    } else if (strcmp(command->type, "factory_reset") == 0) {
+        if (device_runtime_factory_reset_completed_matches(command->id)) {
+            // The previous attempt erased device-owned state but did not
+            // receive an ACK. Retry only the ACK path; never erase twice.
+            result = ESP_OK;
+        } else {
+            const factory_reset_error_t request_result =
+                factory_reset_request(
+                    FACTORY_RESET_REASON_GUARDIAN_REQUEST
+                );
+            if (request_result != FACTORY_RESET_OK) {
+                result = ESP_ERR_INVALID_STATE;
+                result_code = factory_reset_error_name(request_result);
+            } else {
+                const factory_reset_error_t confirm_result =
+                    factory_reset_confirm();
+                result = confirm_result == FACTORY_RESET_OK
+                    ? ESP_OK
+                    : ESP_ERR_INVALID_STATE;
+                if (confirm_result != FACTORY_RESET_OK) {
+                    result_code = factory_reset_error_name(confirm_result);
+                } else {
+                    result = device_runtime_mark_factory_reset_completed(
+                        command->id
+                    );
+                    if (result != ESP_OK) {
+                        result_code = "factory_reset_state_error";
+                    }
+                }
+            }
+        }
+#endif
     } else {
-        result = ESP_ERR_INVALID_ARG;
+        return DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED;
     }
     const char *status = result == ESP_OK ? "acknowledged" : "failed";
-    if (result != ESP_OK) {
+    if (result != ESP_OK && strcmp(result_code, "ok") == 0) {
         result_code = esp_err_to_name(result);
     }
-    const esp_err_t ack_result = device_runtime_acknowledge_command(
-        device_id,
-        command->id,
-        status,
-        result_code,
-        session_token
-    );
-    return ack_result == ESP_OK ? result : ack_result;
+    const device_runtime_command_ack_result_t ack_result =
+        device_runtime_acknowledge_command(
+            device_id,
+            command->id,
+            status,
+            result_code,
+            session_token
+        );
+    const bool ack_completed =
+        ack_result == DEVICE_RUNTIME_COMMAND_ACK_OK ||
+        ack_result == DEVICE_RUNTIME_COMMAND_ACK_ALREADY_HANDLED;
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+    if (result == ESP_OK &&
+        strcmp(command->type, "factory_reset") == 0) {
+        // The acknowledgement must reach the platform before the device
+        // restarts; otherwise the operation would be retried indefinitely.
+        if (ack_completed) {
+            device_runtime_clear_factory_reset_completed();
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
+        }
+    }
+#endif
+    if (result != ESP_OK) {
+        return DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED;
+    }
+    return ack_completed
+        ? DEVICE_RUNTIME_COMMAND_EXECUTION_COMPLETED
+        : DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED;
 }
 
 static esp_err_t device_runtime_apply_platform_time(JsonDocument *response) {
@@ -646,13 +949,22 @@ static esp_err_t device_runtime_poll_commands(const char *session_token) {
         const char *command_id = command_value["command_id"] | "";
         const char *command_type = command_value["command_type"] | "";
         const char *command_status = command_value["status"] | "";
+        const bool is_executable_status =
+            strcmp(command_status, "pending") == 0 ||
+            strcmp(command_status, "delivered") == 0;
         if (command_id[0] == '\0' || command_type[0] == '\0' ||
-            strcmp(command_status, "pending") != 0) {
+            !is_executable_status ||
+            strlen(command_id) >= DEVICE_RUNTIME_COMMAND_ID_SIZE ||
+            strlen(command_type) >= sizeof(command.type)) {
             continue;
         }
         snprintf(command.id, sizeof(command.id), "%s", command_id);
         snprintf(command.type, sizeof(command.type), "%s", command_type);
-        device_runtime_execute_command(device_id, &command, session_token);
+        (void)device_runtime_execute_command(
+            device_id,
+            &command,
+            session_token
+        );
         ++processed;
     }
     return ESP_OK;

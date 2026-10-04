@@ -367,7 +367,7 @@ esp_err_t playback_queue_init(void) {
     if (!audio_pipeline_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
-#if CONFIG_FEATURE_AUDIO_OUTPUT
+#if PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
     if (!audio_output_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }

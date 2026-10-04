@@ -77,8 +77,8 @@ static const prompt_tone_segment_t VOLUME_LIMIT_SEGMENTS[] = {
     {520, 80, 40},
 };
 static const prompt_tone_segment_t NETWORK_LOST_SEGMENTS[] = {
-    {392, 160, 45},
-    {294, 220, 45},
+    {392, 140, 45},
+    {294, 160, 45},
 };
 static const prompt_tone_segment_t NETWORK_RESTORED_SEGMENTS[] = {
     {392, 90, 40},
@@ -90,11 +90,25 @@ static const prompt_tone_segment_t BATTERY_LOW_SEGMENTS[] = {
     {247, 180, 45},
 };
 static const prompt_tone_segment_t SAFETY_ANNOUNCEMENT_SEGMENTS[] = {
-    {1046, 180, 55},
-    {0, 80, 0},
-    {1046, 180, 55},
-    {0, 80, 0},
-    {1046, 260, 55},
+    {1046, 90, 55},
+    {0, 30, 0},
+    {1046, 90, 55},
+    {0, 30, 0},
+    {1046, 80, 55},
+};
+static const prompt_tone_segment_t FACTORY_RESET_ARMED_SEGMENTS[] = {
+    {440, 120, 50},
+    {0, 50, 0},
+    {440, 120, 50},
+};
+static const prompt_tone_segment_t FACTORY_RESET_CANCELLED_SEGMENTS[] = {
+    {660, 80, 45},
+    {440, 140, 45},
+};
+static const prompt_tone_segment_t FACTORY_RESET_COMPLETED_SEGMENTS[] = {
+    {523, 60, 50},
+    {659, 60, 50},
+    {784, 180, 50},
 };
 
 static const prompt_tone_definition_t PROMPT_TONE_DEFINITIONS
@@ -140,6 +154,21 @@ static const prompt_tone_definition_t PROMPT_TONE_DEFINITIONS
             sizeof(SAFETY_ANNOUNCEMENT_SEGMENTS) /
                 sizeof(SAFETY_ANNOUNCEMENT_SEGMENTS[0]),
         },
+        [PROMPT_TONE_FACTORY_RESET_ARMED] = {
+            FACTORY_RESET_ARMED_SEGMENTS,
+            sizeof(FACTORY_RESET_ARMED_SEGMENTS) /
+                sizeof(FACTORY_RESET_ARMED_SEGMENTS[0]),
+        },
+        [PROMPT_TONE_FACTORY_RESET_CANCELLED] = {
+            FACTORY_RESET_CANCELLED_SEGMENTS,
+            sizeof(FACTORY_RESET_CANCELLED_SEGMENTS) /
+                sizeof(FACTORY_RESET_CANCELLED_SEGMENTS[0]),
+        },
+        [PROMPT_TONE_FACTORY_RESET_COMPLETED] = {
+            FACTORY_RESET_COMPLETED_SEGMENTS,
+            sizeof(FACTORY_RESET_COMPLETED_SEGMENTS) /
+                sizeof(FACTORY_RESET_COMPLETED_SEGMENTS[0]),
+        },
 };
 
 static bool prompt_tone_ready;
@@ -160,7 +189,8 @@ static bool prompt_tone_is_valid(prompt_tone_t tone) {
  *
  * Returns the number of whole 20 ms frames written. A trailing partial frame
  * is padded with silence rather than shortened, because the playback path only
- * accepts whole frames.
+ * accepts whole frames. Returns zero when the cue does not fit, so an
+ * oversized definition is rejected instead of playing a misleading prefix.
  */
 static size_t prompt_tone_render(
     prompt_tone_t tone,
@@ -169,9 +199,21 @@ static size_t prompt_tone_render(
 ) {
     const prompt_tone_definition_t definition = PROMPT_TONE_DEFINITIONS[tone];
     const size_t samples_per_frame = AUDIO_CODEC_SAMPLES_PER_FRAME;
-    const size_t total_frames = frame_capacity < PROMPT_TONE_MAX_FRAMES
-        ? frame_capacity
-        : PROMPT_TONE_MAX_FRAMES;
+    size_t required_samples = 0;
+    for (size_t segment_index = 0; segment_index < definition.segment_count;
+         ++segment_index) {
+        required_samples +=
+            ((size_t)definition.segments[segment_index].duration_ms *
+             AUDIO_CODEC_SAMPLE_RATE_HZ) /
+            1000;
+    }
+    const size_t required_frames =
+        (required_samples + samples_per_frame - 1) / samples_per_frame;
+    if (required_frames == 0 || required_frames > frame_capacity ||
+        required_frames > PROMPT_TONE_MAX_FRAMES) {
+        return 0;
+    }
+    const size_t total_frames = required_frames;
 
     size_t frame_index = 0;
     size_t sample_index = 0;
@@ -179,9 +221,6 @@ static size_t prompt_tone_render(
 
     for (size_t segment_index = 0; segment_index < definition.segment_count;
          ++segment_index) {
-        if (frame_index >= total_frames) {
-            break;
-        }
         const prompt_tone_segment_t segment = definition.segments[segment_index];
         const size_t segment_samples =
             ((size_t)segment.duration_ms * AUDIO_CODEC_SAMPLE_RATE_HZ) / 1000;
@@ -196,10 +235,6 @@ static size_t prompt_tone_render(
         uint32_t phase = 0;
 
         for (size_t index = 0; index < segment_samples; ++index) {
-            if (frame_index >= total_frames) {
-                break;
-            }
-
             int16_t sample = 0;
             if (segment.frequency_hz != 0) {
                 const size_t table_index = (phase >> 16) & 63U;
@@ -458,6 +493,12 @@ const char *prompt_tone_name(prompt_tone_t tone) {
             return "battery_low";
         case PROMPT_TONE_SAFETY_ANNOUNCEMENT:
             return "safety_announcement";
+        case PROMPT_TONE_FACTORY_RESET_ARMED:
+            return "factory_reset_armed";
+        case PROMPT_TONE_FACTORY_RESET_CANCELLED:
+            return "factory_reset_cancelled";
+        case PROMPT_TONE_FACTORY_RESET_COMPLETED:
+            return "factory_reset_completed";
         default:
             return "unknown";
     }

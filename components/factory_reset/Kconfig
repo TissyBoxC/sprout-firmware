@@ -20,6 +20,17 @@ config FACTORY_RESET_PENDING_TIMEOUT_SECONDS
         explicit confirmation, so an accidental gesture cannot leave the
         device armed indefinitely.
 
+config FACTORY_RESET_LOCAL_CONFIRM_WINDOW_SECONDS
+    int "Local confirmation window in seconds"
+    depends on FEATURE_FACTORY_RESET
+    range 1 120
+    default 5
+    help
+        After a local request, the secondary button must be short-pressed
+        within this window to confirm the erase. The primary button cancels
+        while the request is armed. This is separate from the overall pending
+        request timeout so an accidental gesture cannot erase by itself.
+
 config FACTORY_RESET_NVS_PARTITION
     string "NVS partition erased by factory reset"
     depends on FEATURE_FACTORY_RESET

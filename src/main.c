@@ -1,5 +1,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 
 #if CONFIG_FEATURE_ERROR_CODE
 #include "error_code.h"
@@ -100,6 +102,113 @@
 
 static const char *const TAG = "sprout_main";
 
+#if CONFIG_FEATURE_FACTORY_RESET
+// A cached sdkconfig from an older firmware revision may predate this Kconfig
+// symbol. Fall back to the documented default so an incremental build still
+// matches the erase-safety contract instead of failing to compile.
+#ifndef CONFIG_FACTORY_RESET_LOCAL_CONFIRM_WINDOW_SECONDS
+#define CONFIG_FACTORY_RESET_LOCAL_CONFIRM_WINDOW_SECONDS 5
+#endif
+#define FACTORY_RESET_LOCAL_CONFIRM_WINDOW_MS \
+    (CONFIG_FACTORY_RESET_LOCAL_CONFIRM_WINDOW_SECONDS * 1000)
+
+static bool factory_reset_local_confirm_armed;
+static esp_timer_handle_t factory_reset_local_confirm_timer;
+
+static void factory_reset_local_finish_cancelled(void) {
+    factory_reset_local_confirm_armed = false;
+#if CONFIG_FEATURE_LED_INDICATOR
+    (void)led_indicator_set_state(LED_INDICATOR_STATE_IDLE);
+#endif
+#if CONFIG_FEATURE_PROMPT_TONE
+    (void)prompt_tone_play(PROMPT_TONE_FACTORY_RESET_CANCELLED);
+#endif
+}
+
+static void factory_reset_local_confirm_timeout(void *argument) {
+    (void)argument;
+    if (!factory_reset_local_confirm_armed) {
+        return;
+    }
+    // factory_reset_cancel records the cancellation event itself; emitting it
+    // here as well would create two audit records for one transition.
+    (void)factory_reset_cancel();
+    factory_reset_local_finish_cancelled();
+}
+
+static void factory_reset_local_timeout_start(void) {
+    if (factory_reset_local_confirm_timer == NULL) {
+        const esp_timer_create_args_t timer_config = {
+            .callback = factory_reset_local_confirm_timeout,
+            .arg = NULL,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "factory_reset_local",
+            .skip_unhandled_events = true,
+        };
+        if (esp_timer_create(
+                &timer_config,
+                &factory_reset_local_confirm_timer
+            ) != ESP_OK) {
+            factory_reset_local_confirm_timer = NULL;
+            return;
+        }
+    }
+    (void)esp_timer_stop(factory_reset_local_confirm_timer);
+    (void)esp_timer_start_once(
+        factory_reset_local_confirm_timer,
+        (uint64_t)FACTORY_RESET_LOCAL_CONFIRM_WINDOW_MS * 1000ULL
+    );
+}
+
+static void factory_reset_local_timeout_stop(void) {
+    if (factory_reset_local_confirm_timer != NULL) {
+        (void)esp_timer_stop(factory_reset_local_confirm_timer);
+    }
+}
+
+static void factory_reset_local_report_cancelled(void) {
+    factory_reset_local_timeout_stop();
+    factory_reset_local_finish_cancelled();
+}
+
+static void factory_reset_local_arm(void) {
+    factory_reset_local_confirm_armed = true;
+    factory_reset_local_timeout_start();
+#if CONFIG_FEATURE_LED_INDICATOR
+    (void)led_indicator_set_state(LED_INDICATOR_STATE_FACTORY_RESET);
+#endif
+#if CONFIG_FEATURE_PROMPT_TONE
+    (void)prompt_tone_play(PROMPT_TONE_FACTORY_RESET_ARMED);
+#endif
+}
+
+static void factory_reset_local_confirm(void) {
+    if (!factory_reset_local_confirm_armed) {
+        return;
+    }
+    factory_reset_local_confirm_armed = false;
+    factory_reset_local_timeout_stop();
+    const factory_reset_error_t result = factory_reset_confirm();
+#if CONFIG_FEATURE_LED_INDICATOR
+    (void)led_indicator_set_state(
+        result == FACTORY_RESET_OK
+            ? LED_INDICATOR_STATE_FACTORY_RESET
+            : LED_INDICATOR_STATE_ERROR
+    );
+#endif
+#if CONFIG_FEATURE_PROMPT_TONE
+    (void)prompt_tone_play(
+        result == FACTORY_RESET_OK
+            ? PROMPT_TONE_FACTORY_RESET_COMPLETED
+            : PROMPT_TONE_FACTORY_RESET_CANCELLED
+    );
+#endif
+    if (result == FACTORY_RESET_OK) {
+        esp_restart();
+    }
+}
+#endif
+
 #if CONFIG_FEATURE_BUTTON_INPUT && CONFIG_FEATURE_MODULE_REGISTRY
 // The button task owns one handler for the whole application. Keeping the
 // mapping here avoids coupling gesture policy to the input driver.
@@ -116,9 +225,26 @@ static void handle_button_gesture(const button_input_event_t *event) {
 #endif
 #if CONFIG_FEATURE_FACTORY_RESET
     if (event->gesture == BUTTON_INPUT_GESTURE_VERY_LONG_PRESS) {
-        // A very-long press only arms the confirmed reset flow; erasing still
-        // requires an explicit confirmation through factory_reset_confirm.
-        (void)factory_reset_request(FACTORY_RESET_REASON_BUTTON_GESTURE);
+        // A very-long press only arms the guarded flow. The physical confirm
+        // step is a short press of the other button within the local window.
+        if (event->button_index == 0) {
+            const factory_reset_error_t result =
+                factory_reset_request(
+                    FACTORY_RESET_REASON_BUTTON_GESTURE
+                );
+            if (result == FACTORY_RESET_OK) {
+                factory_reset_local_arm();
+            }
+        }
+    } else if (factory_reset_local_confirm_armed) {
+        if (event->gesture == BUTTON_INPUT_GESTURE_SHORT_PRESS &&
+            event->button_index == 1) {
+            factory_reset_local_confirm();
+        } else if (event->gesture == BUTTON_INPUT_GESTURE_SHORT_PRESS &&
+                   event->button_index == 0) {
+            (void)factory_reset_cancel();
+            factory_reset_local_report_cancelled();
+        }
     }
 #endif
 }

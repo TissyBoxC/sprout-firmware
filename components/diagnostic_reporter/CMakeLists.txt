@@ -1,7 +1,10 @@
 set(diagnostic_reporter_sources "")
 
 if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER)
-    list(APPEND diagnostic_reporter_sources "src/diagnostic_reporter.cpp")
+    list(APPEND diagnostic_reporter_sources
+        "src/diagnostic_reporter.cpp"
+        "src/diagnostic_reporter_state.cpp"
+    )
 endif()
 
 idf_component_register(

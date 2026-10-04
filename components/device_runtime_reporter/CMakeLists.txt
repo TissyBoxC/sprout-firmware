@@ -29,6 +29,11 @@ if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER AND EXISTS
     list(APPEND device_runtime_reporter_requires "diagnostic_reporter")
 endif()
 
+if(CONFIG_FEATURE_FACTORY_RESET AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../factory_reset/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "factory_reset")
+endif()
+
 idf_component_register(
     SRCS ${device_runtime_reporter_sources}
     INCLUDE_DIRS "include"

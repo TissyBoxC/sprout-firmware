@@ -1,4 +1,5 @@
 #include "diagnostic_reporter.h"
+#include "diagnostic_reporter_state.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -16,109 +17,11 @@
 #include "version_info.h"
 
 #define DIAGNOSTIC_REPORTER_NVS_KEY "diag_state"
-#define DIAGNOSTIC_REPORTER_STATE_MAGIC 0x53444731u
-#define DIAGNOSTIC_REPORTER_STATE_VERSION 5u
-#define DIAGNOSTIC_REPORTER_STATE_VERSION_V4 4u
-#define DIAGNOSTIC_REPORTER_STATE_VERSION_V3 3u
-#define DIAGNOSTIC_REPORTER_MAX_STATE_SIZE 8192u
 
 static_assert(
     sizeof(DIAGNOSTIC_REPORTER_NVS_KEY) <= NVS_KEY_NAME_MAX_SIZE,
     "diagnostic state key must fit the ESP-IDF NVS key limit"
 );
-
-// Failure and recovery records keep the source transition counters so a
-// reboot or a repeated observation cannot create a second diagnostic event.
-typedef struct {
-    uint32_t sequence;
-    uint32_t failure_count;
-    uint32_t source_transition_count;
-    uint8_t pending;
-    char module_name[DIAGNOSTIC_REPORTER_MODULE_NAME_SIZE];
-    char error_code[DIAGNOSTIC_REPORTER_ERROR_CODE_SIZE];
-    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
-} diagnostic_reporter_failure_state_t;
-
-typedef struct {
-    uint32_t sequence;
-    uint32_t source_transition_count;
-    char event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE];
-    char module_name[DIAGNOSTIC_REPORTER_MODULE_NAME_SIZE];
-    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
-} diagnostic_reporter_recovery_state_t;
-
-typedef struct {
-    uint32_t sequence;
-    uint32_t duration_ms;
-    char event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE];
-    char event_type[DIAGNOSTIC_REPORTER_EVENT_TYPE_SIZE];
-    char detail_code[DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE];
-    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
-} diagnostic_reporter_interaction_state_t;
-
-// v3 predates interaction events. Keep its exact layout so an in-place
-// firmware upgrade can migrate boot, failure, and recovery history.
-typedef struct {
-    uint32_t magic;
-    uint16_t version;
-    uint16_t boot_event_count;
-    uint32_t next_sequence;
-    uint32_t boot_count;
-    uint32_t dropped_boot_events;
-    uint32_t source_boot_count;
-    uint32_t last_failure_transition_count;
-    uint32_t last_recovery_transition_count;
-    diagnostic_reporter_failure_state_t failure;
-    uint16_t recovery_event_count;
-    diagnostic_reporter_recovery_state_t
-        recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
-    diagnostic_reporter_boot_event_t
-        boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
-} diagnostic_reporter_state_v3_t;
-
-// v4 is the current v5 layout with the older version value. Keeping the
-// exact type makes the migration a version upgrade instead of a field copy.
-typedef struct {
-    uint32_t magic;
-    uint16_t version;
-    uint16_t boot_event_count;
-    uint32_t next_sequence;
-    uint32_t boot_count;
-    uint32_t dropped_boot_events;
-    uint32_t source_boot_count;
-    uint32_t last_failure_transition_count;
-    uint32_t last_recovery_transition_count;
-    uint16_t interaction_event_count;
-    diagnostic_reporter_failure_state_t failure;
-    uint16_t recovery_event_count;
-    diagnostic_reporter_recovery_state_t
-        recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
-    diagnostic_reporter_interaction_state_t
-        interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
-    diagnostic_reporter_boot_event_t
-        boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
-} diagnostic_reporter_state_v4_t;
-
-typedef struct {
-    uint32_t magic;
-    uint16_t version;
-    uint16_t boot_event_count;
-    uint32_t next_sequence;
-    uint32_t boot_count;
-    uint32_t dropped_boot_events;
-    uint32_t source_boot_count;
-    uint32_t last_failure_transition_count;
-    uint32_t last_recovery_transition_count;
-    uint16_t interaction_event_count;
-    diagnostic_reporter_failure_state_t failure;
-    uint16_t recovery_event_count;
-    diagnostic_reporter_recovery_state_t
-        recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
-    diagnostic_reporter_interaction_state_t
-        interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
-    diagnostic_reporter_boot_event_t
-        boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
-} diagnostic_reporter_state_t;
 
 static_assert(
     sizeof(diagnostic_reporter_state_t) <= DIAGNOSTIC_REPORTER_MAX_STATE_SIZE,
@@ -231,108 +134,34 @@ static void diagnostic_reporter_clear_state_locked(void) {
     diagnostic_reporter_state.next_sequence = 1;
 }
 
-static bool diagnostic_reporter_v3_is_valid(
-    const diagnostic_reporter_state_v3_t *state
-) {
-    return state->magic == DIAGNOSTIC_REPORTER_STATE_MAGIC &&
-        state->version == DIAGNOSTIC_REPORTER_STATE_VERSION_V3 &&
-        state->boot_event_count <= DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY &&
-        state->recovery_event_count <=
-            DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY &&
-        state->source_boot_count <= state->boot_count &&
-        state->failure.pending <= 1;
-}
-
-static bool diagnostic_reporter_v4_is_valid(
-    const diagnostic_reporter_state_v4_t *state
-) {
-    return state->magic == DIAGNOSTIC_REPORTER_STATE_MAGIC &&
-        state->version == DIAGNOSTIC_REPORTER_STATE_VERSION_V4 &&
-        state->boot_event_count <= DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY &&
-        state->recovery_event_count <=
-            DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY &&
-        state->interaction_event_count <=
-            DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY &&
-        state->source_boot_count <= state->boot_count &&
-        state->failure.pending <= 1;
-}
-
-static void diagnostic_reporter_migrate_v3_locked(
-    const diagnostic_reporter_state_v3_t *old_state
-) {
-    diagnostic_reporter_clear_state_locked();
-    diagnostic_reporter_state.boot_event_count = old_state->boot_event_count;
-    diagnostic_reporter_state.next_sequence = old_state->next_sequence;
-    diagnostic_reporter_state.boot_count = old_state->boot_count;
-    diagnostic_reporter_state.dropped_boot_events =
-        old_state->dropped_boot_events;
-    diagnostic_reporter_state.source_boot_count = old_state->source_boot_count;
-    diagnostic_reporter_state.last_failure_transition_count =
-        old_state->last_failure_transition_count;
-    diagnostic_reporter_state.last_recovery_transition_count =
-        old_state->last_recovery_transition_count;
-    diagnostic_reporter_state.failure = old_state->failure;
-    diagnostic_reporter_state.recovery_event_count =
-        old_state->recovery_event_count;
-    memcpy(
-        diagnostic_reporter_state.recovery_events,
-        old_state->recovery_events,
-        sizeof(diagnostic_reporter_state.recovery_events)
-    );
-    memcpy(
-        diagnostic_reporter_state.boot_events,
-        old_state->boot_events,
-        sizeof(diagnostic_reporter_state.boot_events)
-    );
-}
-
-static void diagnostic_reporter_migrate_v4_locked(
-    const diagnostic_reporter_state_v4_t *old_state
-) {
-    diagnostic_reporter_state.magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
-    diagnostic_reporter_state.version = DIAGNOSTIC_REPORTER_STATE_VERSION;
-    diagnostic_reporter_state.boot_event_count = old_state->boot_event_count;
-    diagnostic_reporter_state.next_sequence = old_state->next_sequence;
-    diagnostic_reporter_state.boot_count = old_state->boot_count;
-    diagnostic_reporter_state.dropped_boot_events =
-        old_state->dropped_boot_events;
-    diagnostic_reporter_state.source_boot_count = old_state->source_boot_count;
-    diagnostic_reporter_state.last_failure_transition_count =
-        old_state->last_failure_transition_count;
-    diagnostic_reporter_state.last_recovery_transition_count =
-        old_state->last_recovery_transition_count;
-    diagnostic_reporter_state.interaction_event_count =
-        old_state->interaction_event_count;
-    diagnostic_reporter_state.failure = old_state->failure;
-    diagnostic_reporter_state.recovery_event_count =
-        old_state->recovery_event_count;
-    memcpy(
-        diagnostic_reporter_state.recovery_events,
-        old_state->recovery_events,
-        sizeof(diagnostic_reporter_state.recovery_events)
-    );
-    memcpy(
-        diagnostic_reporter_state.interaction_events,
-        old_state->interaction_events,
-        sizeof(diagnostic_reporter_state.interaction_events)
-    );
-    memcpy(
-        diagnostic_reporter_state.boot_events,
-        old_state->boot_events,
-        sizeof(diagnostic_reporter_state.boot_events)
-    );
-}
-
 static esp_err_t diagnostic_reporter_load_state_locked(void) {
     // Probe into a separate buffer first so a different on-flash layout is
     // never reinterpreted as the current v5 structure.
     uint8_t raw_state[sizeof(diagnostic_reporter_state)] = {};
     size_t state_size = sizeof(raw_state);
-    const esp_err_t result = config_store_get_blob(
+    esp_err_t result = config_store_get_blob(
         DIAGNOSTIC_REPORTER_NVS_KEY,
         raw_state,
         &state_size
     );
+    if (result == ESP_ERR_NVS_INVALID_LENGTH) {
+        // config_store reports the required size. A legacy v3/v4 record is
+        // bounded and safe to read once into the current maximum buffer.
+        if (state_size == 0 || state_size > sizeof(raw_state)) {
+            ESP_LOGW(
+                TAG,
+                "stored diagnostic state is too large (%u); resetting",
+                (unsigned)state_size
+            );
+            diagnostic_reporter_clear_state_locked();
+            return ESP_ERR_INVALID_STATE;
+        }
+        result = config_store_get_blob(
+            DIAGNOSTIC_REPORTER_NVS_KEY,
+            raw_state,
+            &state_size
+        );
+    }
     if (result == CONFIG_STORE_ERR_NOT_FOUND) {
         return result;
     }
@@ -364,15 +193,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
     if (state_size == sizeof(diagnostic_reporter_state_t) &&
         version == DIAGNOSTIC_REPORTER_STATE_VERSION) {
         memcpy(&diagnostic_reporter_state, raw_state, state_size);
-        if (diagnostic_reporter_state.boot_event_count >
-                DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY ||
-            diagnostic_reporter_state.recovery_event_count >
-                DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY ||
-            diagnostic_reporter_state.interaction_event_count >
-                DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY ||
-            diagnostic_reporter_state.source_boot_count >
-                diagnostic_reporter_state.boot_count ||
-            diagnostic_reporter_state.failure.pending > 1) {
+        if (!diagnostic_reporter_v5_is_valid(&diagnostic_reporter_state)) {
             ESP_LOGW(TAG, "stored diagnostic state is invalid; resetting");
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
@@ -389,9 +210,22 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
         }
-        diagnostic_reporter_migrate_v3_locked(&old_state);
+        diagnostic_reporter_state_t migrated = {};
+        diagnostic_reporter_migrate_v3(&migrated, &old_state);
+        if (!diagnostic_reporter_v5_is_valid(&migrated)) {
+            ESP_LOGW(TAG, "migrated v3 diagnostic state is invalid; resetting");
+            diagnostic_reporter_clear_state_locked();
+            return ESP_ERR_INVALID_STATE;
+        }
+        diagnostic_reporter_state = migrated;
+        const esp_err_t save_result =
+            diagnostic_reporter_save_state_locked();
+        if (save_result != ESP_OK) {
+            diagnostic_reporter_clear_state_locked();
+            return save_result;
+        }
         ESP_LOGI(TAG, "migrated diagnostic state from v3 to v5");
-        return diagnostic_reporter_save_state_locked();
+        return ESP_OK;
     }
 
     if (state_size == sizeof(diagnostic_reporter_state_v4_t) &&
@@ -403,9 +237,22 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
         }
-        diagnostic_reporter_migrate_v4_locked(&old_state);
+        diagnostic_reporter_state_t migrated = {};
+        diagnostic_reporter_migrate_v4(&migrated, &old_state);
+        if (!diagnostic_reporter_v5_is_valid(&migrated)) {
+            ESP_LOGW(TAG, "migrated v4 diagnostic state is invalid; resetting");
+            diagnostic_reporter_clear_state_locked();
+            return ESP_ERR_INVALID_STATE;
+        }
+        diagnostic_reporter_state = migrated;
+        const esp_err_t save_result =
+            diagnostic_reporter_save_state_locked();
+        if (save_result != ESP_OK) {
+            diagnostic_reporter_clear_state_locked();
+            return save_result;
+        }
         ESP_LOGI(TAG, "migrated diagnostic state from v4 to v5");
-        return diagnostic_reporter_save_state_locked();
+        return ESP_OK;
     }
 
     ESP_LOGW(
@@ -553,10 +400,8 @@ static esp_err_t diagnostic_reporter_record_failure_locked(
     const error_recovery_snapshot_t *failure
 ) {
     diagnostic_reporter_failure_state_t next_failure = {};
-    const diagnostic_reporter_failure_state_t previous_failure =
-        diagnostic_reporter_state.failure;
-    const uint32_t previous_next_sequence =
-        diagnostic_reporter_state.next_sequence;
+    const diagnostic_reporter_state_t previous_state =
+        diagnostic_reporter_state;
 
     next_failure.sequence = diagnostic_reporter_next_sequence_locked();
     next_failure.failure_count = failure->failure_count;
@@ -582,8 +427,7 @@ static esp_err_t diagnostic_reporter_record_failure_locked(
 
     const esp_err_t result = diagnostic_reporter_save_state_locked();
     if (result != ESP_OK) {
-        diagnostic_reporter_state.failure = previous_failure;
-        diagnostic_reporter_state.next_sequence = previous_next_sequence;
+        diagnostic_reporter_state = previous_state;
     }
     return result;
 }
@@ -592,10 +436,8 @@ static esp_err_t diagnostic_reporter_record_recovery_locked(
     const error_recovery_recovery_t *recovery
 ) {
     diagnostic_reporter_recovery_state_t event = {};
-    const uint32_t previous_next_sequence =
-        diagnostic_reporter_state.next_sequence;
-    const uint16_t previous_event_count =
-        diagnostic_reporter_state.recovery_event_count;
+    const diagnostic_reporter_state_t previous_state =
+        diagnostic_reporter_state;
 
     event.sequence = diagnostic_reporter_next_sequence_locked();
     event.source_transition_count = recovery->transition_count;
@@ -619,49 +461,9 @@ static esp_err_t diagnostic_reporter_record_recovery_locked(
     diagnostic_reporter_append_recovery_event_locked(&event);
     const esp_err_t result = diagnostic_reporter_save_state_locked();
     if (result != ESP_OK) {
-        diagnostic_reporter_state.recovery_event_count =
-            previous_event_count;
-        diagnostic_reporter_state.next_sequence = previous_next_sequence;
+        diagnostic_reporter_state = previous_state;
     }
     return result;
-}
-
-static bool diagnostic_reporter_interaction_type_is_valid(
-    const char *event_type
-) {
-    if (event_type == NULL) {
-        return false;
-    }
-    return strcmp(event_type, "wake_detected") == 0 ||
-        strcmp(event_type, "wake_rejected") == 0 ||
-        strcmp(event_type, "button_gesture") == 0 ||
-        strcmp(event_type, "indicator_state") == 0 ||
-        strcmp(event_type, "factory_reset_requested") == 0 ||
-        strcmp(event_type, "factory_reset_cancelled") == 0 ||
-        strcmp(event_type, "factory_reset_completed") == 0 ||
-        strcmp(event_type, "factory_reset_failed") == 0;
-}
-
-static bool diagnostic_reporter_detail_code_is_valid(
-    const char *detail_code
-) {
-    const size_t length = strlen(detail_code);
-    if (length < 1 || length > DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE - 1) {
-        return false;
-    }
-    for (size_t index = 0; index < length; ++index) {
-        const char value = detail_code[index];
-        const bool is_ascii_letter =
-            (value >= 'a' && value <= 'z') ||
-            (value >= 'A' && value <= 'Z');
-        const bool is_ascii_digit = value >= '0' && value <= '9';
-        const bool is_symbol = value == '_' || value == '.' ||
-            value == ':' || value == '-';
-        if (!is_ascii_letter && !is_ascii_digit && !is_symbol) {
-            return false;
-        }
-    }
-    return true;
 }
 
 esp_err_t diagnostic_reporter_record_interaction(
@@ -670,10 +472,8 @@ esp_err_t diagnostic_reporter_record_interaction(
     uint32_t duration_ms
 ) {
     if (!diagnostic_reporter_ready ||
-        !diagnostic_reporter_interaction_type_is_valid(event_type) ||
         detail_code == NULL ||
         detail_code[0] == '\0' ||
-        !diagnostic_reporter_detail_code_is_valid(detail_code) ||
         duration_ms > 3600000u) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -682,10 +482,8 @@ esp_err_t diagnostic_reporter_record_interaction(
     }
 
     diagnostic_reporter_interaction_state_t event = {};
-    const uint32_t previous_next_sequence =
-        diagnostic_reporter_state.next_sequence;
-    const uint16_t previous_event_count =
-        diagnostic_reporter_state.interaction_event_count;
+    const diagnostic_reporter_state_t previous_state =
+        diagnostic_reporter_state;
 
     event.sequence = diagnostic_reporter_next_sequence_locked();
     event.duration_ms = duration_ms;
@@ -712,12 +510,21 @@ esp_err_t diagnostic_reporter_record_interaction(
         version.firmware_version
     );
 
+    // Reuse the persisted-state validator so live producers cannot introduce
+    // event types, detail codes, or field combinations that a restored device
+    // would reject later. The candidate append is rolled back if invalid.
+    diagnostic_reporter_append_interaction_event_locked(&event);
+    if (!diagnostic_reporter_v5_is_valid(&diagnostic_reporter_state)) {
+        diagnostic_reporter_state = previous_state;
+        diagnostic_reporter_unlock();
+        return ESP_ERR_INVALID_ARG;
+    }
+    diagnostic_reporter_state = previous_state;
+
     diagnostic_reporter_append_interaction_event_locked(&event);
     const esp_err_t result = diagnostic_reporter_save_state_locked();
     if (result != ESP_OK) {
-        diagnostic_reporter_state.interaction_event_count =
-            previous_event_count;
-        diagnostic_reporter_state.next_sequence = previous_next_sequence;
+        diagnostic_reporter_state = previous_state;
     }
     diagnostic_reporter_unlock();
     return result;
@@ -804,11 +611,11 @@ static esp_err_t diagnostic_reporter_observe_transitions_locked(void) {
     }
 
     if (result == ESP_OK && source_boot_changed && !changed) {
+        const diagnostic_reporter_state_t previous_state =
+            diagnostic_reporter_state;
         result = diagnostic_reporter_save_state_locked();
         if (result != ESP_OK) {
-            diagnostic_reporter_state.source_boot_count = 0;
-            diagnostic_reporter_state.last_failure_transition_count = 0;
-            diagnostic_reporter_state.last_recovery_transition_count = 0;
+            diagnostic_reporter_state = previous_state;
         }
     }
     return result;
@@ -1007,54 +814,17 @@ esp_err_t diagnostic_reporter_acknowledge(uint32_t through_sequence) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    size_t retained_count = 0;
-    for (size_t index = 0;
-         index < diagnostic_reporter_state.boot_event_count;
-         ++index) {
-        const diagnostic_reporter_boot_event_t *event =
-            &diagnostic_reporter_state.boot_events[index];
-        if (event->sequence > through_sequence) {
-            diagnostic_reporter_state.boot_events[retained_count++] = *event;
-        }
-    }
-    diagnostic_reporter_state.boot_event_count = retained_count;
-
-    size_t retained_recovery_count = 0;
-    for (size_t index = 0;
-         index < diagnostic_reporter_state.recovery_event_count;
-         ++index) {
-        const diagnostic_reporter_recovery_state_t *event =
-            &diagnostic_reporter_state.recovery_events[index];
-        if (event->sequence > through_sequence) {
-            diagnostic_reporter_state.recovery_events
-                [retained_recovery_count++] = *event;
-        }
-    }
-    diagnostic_reporter_state.recovery_event_count =
-        retained_recovery_count;
-
-    size_t retained_interaction_count = 0;
-    for (size_t index = 0;
-         index < diagnostic_reporter_state.interaction_event_count;
-         ++index) {
-        const diagnostic_reporter_interaction_state_t *event =
-            &diagnostic_reporter_state.interaction_events[index];
-        if (event->sequence > through_sequence) {
-            diagnostic_reporter_state.interaction_events
-                [retained_interaction_count++] = *event;
-        }
-    }
-    diagnostic_reporter_state.interaction_event_count =
-        retained_interaction_count;
-
-    if (diagnostic_reporter_state.failure.pending &&
-        diagnostic_reporter_state.failure.sequence <= through_sequence) {
-        // Keep the delivered identity so the same source transition is not
-        // emitted again on the next heartbeat.
-        diagnostic_reporter_state.failure.pending = 0;
-    }
+    const diagnostic_reporter_state_t previous_state =
+        diagnostic_reporter_state;
+    (void)diagnostic_reporter_acknowledge_state(
+        &diagnostic_reporter_state,
+        through_sequence
+    );
 
     const esp_err_t result = diagnostic_reporter_save_state_locked();
+    if (result != ESP_OK) {
+        diagnostic_reporter_state = previous_state;
+    }
     diagnostic_reporter_unlock();
     return result;
 }

@@ -33,6 +33,8 @@ typedef struct {
     bool is_pending;
     factory_reset_reason_t request_reason;
     int64_t requested_at_ms;
+    /** Milliseconds left before a pending request expires; zero when idle. */
+    uint32_t remaining_ms;
     factory_reset_error_t last_result;
     uint32_t completed_count;
     bool is_ready;

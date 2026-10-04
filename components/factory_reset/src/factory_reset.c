@@ -93,6 +93,21 @@ static void factory_reset_expire_locked(void) {
     factory_reset_last_result = FACTORY_RESET_ERR_EXPIRED;
 }
 
+static uint32_t factory_reset_remaining_ms_locked(void) {
+    if (!factory_reset_pending) {
+        return 0;
+    }
+    const int64_t elapsed_ms =
+        factory_reset_now_ms() - factory_reset_requested_at_ms;
+    if (elapsed_ms <= 0) {
+        return FACTORY_RESET_TIMEOUT_MS;
+    }
+    if (elapsed_ms >= FACTORY_RESET_TIMEOUT_MS) {
+        return 0;
+    }
+    return (uint32_t)(FACTORY_RESET_TIMEOUT_MS - elapsed_ms);
+}
+
 // Expiration can be observed from the timer task or from a public accessor.
 // Return the last reason through a local variable so the event write always
 // happens after releasing the state mutex.
@@ -398,6 +413,7 @@ factory_reset_snapshot_t factory_reset_get_snapshot(void) {
         .is_pending = false,
         .request_reason = FACTORY_RESET_REASON_GUARDIAN_REQUEST,
         .requested_at_ms = 0,
+        .remaining_ms = 0,
         .last_result = FACTORY_RESET_ERR_NOT_INITIALIZED,
         .completed_count = 0,
         .is_ready = false,
@@ -414,6 +430,7 @@ factory_reset_snapshot_t factory_reset_get_snapshot(void) {
     snapshot.is_pending = factory_reset_pending;
     snapshot.request_reason = factory_reset_pending_reason;
     snapshot.requested_at_ms = factory_reset_requested_at_ms;
+    snapshot.remaining_ms = factory_reset_remaining_ms_locked();
     snapshot.last_result = factory_reset_last_result;
     snapshot.completed_count = factory_reset_completed_count;
     snapshot.is_ready = factory_reset_ready;

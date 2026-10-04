@@ -177,7 +177,10 @@ $diagnosticHeader = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/diagnostic_reporter/include/diagnostic_reporter.h'
 )
 $diagnosticSource = Get-Content -Raw -LiteralPath (
-    Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter.cpp'
+    Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter_state.cpp'
+)
+$diagnosticStateHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter_state.h'
 )
 $voiceWakeSource = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/voice_wake/src/voice_wake.c'
@@ -222,18 +225,18 @@ $playbackQueueHeader = Get-Content -Raw -LiteralPath (
 $contractChecks = @(
     @{
         Name = 'diagnostic state layout version'
-        Text = $diagnosticSource
+        Text = $diagnosticStateHeader
         Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 5u'
     },
     @{
         Name = 'v3 diagnostic state migration'
         Text = $diagnosticSource
-        Pattern = 'diagnostic_reporter_migrate_v3_locked'
+        Pattern = 'diagnostic_reporter_migrate_v3'
     },
     @{
         Name = 'v4 diagnostic state migration'
         Text = $diagnosticSource
-        Pattern = 'diagnostic_reporter_migrate_v4_locked'
+        Pattern = 'diagnostic_reporter_migrate_v4'
     },
     @{
         Name = 'detail code contract validation'
@@ -258,12 +261,12 @@ $contractChecks = @(
     @{
         Name = 'factory reset requested producer'
         Text = $factoryResetSource
-        Pattern = '"factory_reset_requested"'
+        Pattern = 'factory_reset_report_event\(\s*"factory_reset_requested"'
     },
     @{
         Name = 'factory reset cancelled producer'
         Text = $factoryResetSource
-        Pattern = '"factory_reset_cancelled"'
+        Pattern = 'factory_reset_report_event\(\s*"factory_reset_cancelled"'
     },
     @{
         Name = 'factory reset completed producer'
@@ -274,6 +277,13 @@ $contractChecks = @(
         Name = 'factory reset failed producer'
         Text = $factoryResetSource
         Pattern = '"factory_reset_failed"'
+    },
+    @{
+        Name = 'wake detected producer'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/wake_feedback/src/wake_feedback.c'
+        ))
+        Pattern = 'diagnostic_reporter_record_interaction\(\s+"wake_detected"'
     },
     @{
         Name = 'indicator state producer'
@@ -309,6 +319,36 @@ $contractChecks = @(
         Name = 'recovery acknowledgement'
         Text = $diagnosticSource
         Pattern = 'recovery_event_count =\s+retained_recovery_count;'
+    },
+    @{
+        Name = 'interaction acknowledgement'
+        Text = $diagnosticSource
+        Pattern = 'interaction_event_count = retained_interaction_count;'
+    },
+    @{
+        Name = 'factory reset ack uses the same command id'
+        Text = $runtimeSource
+        Pattern = 'device_runtime_mark_factory_reset_completed\([\s\S]*command->id'
+    },
+    @{
+        Name = 'factory reset ack retry survives restart'
+        Text = $runtimeSource
+        Pattern = 'RTC_NOINIT_ATTR[\s\S]*device_runtime_factory_reset_completed_command_id'
+    },
+    @{
+        Name = 'interaction events stay bounded'
+        Text = $diagnosticHeader
+        Pattern = '#define DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY 16'
+    },
+    @{
+        Name = 'interaction detail code validation'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_detail_code_is_valid'
+    },
+    @{
+        Name = 'interaction event type validation'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_interaction_type_is_valid'
     },
     @{
         Name = 'recovery callback registration'
