@@ -125,6 +125,7 @@ function Test-OptionalModuleRemoval {
         # CMake graph never references a component that is already gone.
         foreach ($moduleName in @(
             'ui_text'
+            'diagnostic_reporter'
             'device_runtime_reporter'
             'parent_policy'
             'device_provisioning'
@@ -163,6 +164,85 @@ Invoke-PlatformIoBuild `
     -ProjectPath $firmwareRoot `
     -Environments $environments `
     -PlatformIoCommand $platformIoCommand
+
+Write-Host 'Verifying recovery diagnostic contract.'
+$diagnosticHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/diagnostic_reporter/include/diagnostic_reporter.h'
+)
+$diagnosticSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter.cpp'
+)
+$runtimeSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/device_runtime_reporter/src/device_runtime_reporter.cpp'
+)
+$recoveryHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/error_recovery/include/error_recovery.h'
+)
+$recoverySource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/error_recovery/src/error_recovery.c'
+)
+$registryHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/module_registry/include/module_registry.h'
+)
+
+$contractChecks = @(
+    @{
+        Name = 'diagnostic state layout version'
+        Text = $diagnosticSource
+        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 3u'
+    },
+    @{
+        Name = 'bounded recovery capacity'
+        Text = $diagnosticHeader
+        Pattern = '#define DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY 8'
+    },
+    @{
+        Name = 'bounded recovery transition queue'
+        Text = $recoveryHeader
+        Pattern = '#define ERROR_RECOVERY_RECOVERY_EVENT_CAPACITY 8'
+    },
+    @{
+        Name = 'shared transition ordering'
+        Text = $recoverySource
+        Pattern = 'transition_count'
+    },
+    @{
+        Name = 'recovery event type'
+        Text = $runtimeSource
+        Pattern = 'item\["event_type"\] = "module_recovered";'
+    },
+    @{
+        Name = 'recovery event module name'
+        Text = $runtimeSource
+        Pattern = 'item\["module_name"\] = event->module_name;'
+    },
+    @{
+        Name = 'recovery acknowledgement'
+        Text = $diagnosticSource
+        Pattern = 'recovery_event_count =\s+retained_recovery_count;'
+    },
+    @{
+        Name = 'recovery callback registration'
+        Text = $recoverySource
+        Pattern = 'module_registry_set_recovery_handler\(error_recovery_module_recovered\);'
+    },
+    @{
+        Name = 'ordered transition observation'
+        Text = $diagnosticSource
+        Pattern = 'last_recovery_transition_count'
+    },
+    @{
+        Name = 'explicit single-module retry API'
+        Text = $registryHeader
+        Pattern = 'module_registry_initialize_module'
+    }
+)
+
+foreach ($contractCheck in $contractChecks) {
+    if ($contractCheck.Text -notmatch $contractCheck.Pattern) {
+        throw "Recovery diagnostic contract check failed: $($contractCheck.Name)."
+    }
+}
 
 Test-OptionalModuleRemoval `
     -ProjectPath $firmwareRoot `

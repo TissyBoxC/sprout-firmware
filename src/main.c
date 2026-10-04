@@ -37,6 +37,9 @@
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
 #include "device_runtime_reporter.h"
 #endif
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
+#include "diagnostic_reporter.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
 #include "device_capabilities.h"
 #endif
@@ -113,6 +116,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CLOUD_AUTH
     ESP_ERROR_CHECK(module_registry_add(cloud_auth_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
+    ESP_ERROR_CHECK(module_registry_add(diagnostic_reporter_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
     ESP_ERROR_CHECK(module_registry_add(device_runtime_reporter_module_descriptor()));

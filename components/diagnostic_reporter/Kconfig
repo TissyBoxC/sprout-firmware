@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_DIAGNOSTIC_REPORTER
+    bool "Enable boot and module failure diagnostics"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_ERROR_RECOVERY && FEATURE_VERSION_INFO
+    help
+        Records bounded boot events and the latest removable-module failure
+        in non-volatile storage. The runtime reporter includes pending
+        diagnostics in its authenticated heartbeat and acknowledges them only
+        after the platform accepts the report.
+
+endmenu

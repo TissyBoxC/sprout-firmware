@@ -17,8 +17,16 @@ set(device_runtime_reporter_requires
 
 # Keep the optional integration buildable when parent_policy is deleted. The
 # source guard removes the calls at the same time.
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../parent_policy/CMakeLists.txt")
+if(CONFIG_FEATURE_PARENT_POLICY AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../parent_policy/CMakeLists.txt")
     list(APPEND device_runtime_reporter_requires "parent_policy")
+endif()
+
+# Diagnostics are optional and remain compatible with the original heartbeat
+# contract when this component is removed.
+if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../diagnostic_reporter/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "diagnostic_reporter")
 endif()
 
 idf_component_register(

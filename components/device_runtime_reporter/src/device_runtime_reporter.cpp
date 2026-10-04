@@ -24,7 +24,22 @@ extern "C" {
 #include "network_manager.h"
 #include "network_quality.h"
 #include "offline_fallback.h"
-#if CONFIG_FEATURE_PARENT_POLICY
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER && __has_include("diagnostic_reporter.h")
+#define DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER 1
+#else
+#define DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER 0
+#endif
+
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+#include "diagnostic_reporter.h"
+#endif
+#if CONFIG_FEATURE_PARENT_POLICY && __has_include("parent_policy.h")
+#define DEVICE_RUNTIME_HAS_PARENT_POLICY 1
+#else
+#define DEVICE_RUNTIME_HAS_PARENT_POLICY 0
+#endif
+
+#if DEVICE_RUNTIME_HAS_PARENT_POLICY
 #include "parent_policy.h"
 #endif
 #include "time_sync.h"
@@ -352,6 +367,80 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     payload["offline"]["fallback_active"] = offline.fallback_active;
     payload["offline"]["pending_telemetry"] = offline.pending_telemetry;
 
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+    diagnostic_reporter_snapshot_t diagnostics{};
+    const esp_err_t diagnostics_result =
+        diagnostic_reporter_get_snapshot(&diagnostics);
+    if (diagnostics_result == ESP_OK) {
+        JsonObject diagnostics_object =
+            payload["diagnostics"].to<JsonObject>();
+        diagnostics_object["schema_version"] = "1.0.0";
+        diagnostics_object["newest_sequence"] =
+            diagnostics.newest_sequence;
+        diagnostics_object["dropped_boot_events"] =
+            diagnostics.dropped_boot_events;
+
+        JsonArray boot_events =
+            diagnostics_object["boot_events"].to<JsonArray>();
+        for (size_t index = 0;
+             index < diagnostics.boot_event_count;
+             ++index) {
+            const diagnostic_reporter_boot_event_t *event =
+                &diagnostics.boot_events[index];
+            JsonObject item = boot_events.add<JsonObject>();
+            item["event_id"] = event->event_id;
+            item["event_type"] = "boot";
+            item["sequence"] = event->sequence;
+            item["uptime_ms"] = event->uptime_ms;
+            item["boot_count"] = event->boot_count;
+            item["reset_reason"] = event->reset_reason;
+            item["firmware_version"] = event->firmware_version;
+        }
+
+        if (diagnostics.has_failure) {
+            JsonObject failure = diagnostics_object["latest_failure"]
+                                     .to<JsonObject>();
+            char failure_event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE] = {0};
+            snprintf(
+                failure_event_id,
+                sizeof(failure_event_id),
+                "failure_%08lx",
+                (unsigned long)diagnostics.failure.sequence
+            );
+            failure["event_id"] = failure_event_id;
+            failure["event_type"] = "module_failure";
+            failure["sequence"] = diagnostics.failure.sequence;
+            failure["module_name"] = diagnostics.failure.module_name;
+            failure["error_code"] = diagnostics.failure.error_code;
+            failure["failure_count"] = diagnostics.failure.failure_count;
+            failure["firmware_version"] =
+                diagnostics.failure.firmware_version;
+            memset(failure_event_id, 0, sizeof(failure_event_id));
+        }
+
+        JsonArray recovery_events =
+            diagnostics_object["recovery_events"].to<JsonArray>();
+        for (size_t index = 0;
+             index < diagnostics.recovery_event_count;
+             ++index) {
+            const diagnostic_reporter_recovery_event_t *event =
+                &diagnostics.recovery_events[index];
+            JsonObject item = recovery_events.add<JsonObject>();
+            item["event_id"] = event->event_id;
+            item["event_type"] = "module_recovered";
+            item["sequence"] = event->sequence;
+            item["module_name"] = event->module_name;
+            item["firmware_version"] = event->firmware_version;
+        }
+    } else if (diagnostics_result != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(
+            TAG,
+            "diagnostic snapshot unavailable: %s",
+            esp_err_to_name(diagnostics_result)
+        );
+    }
+#endif
+
     char request_body[DEVICE_RUNTIME_RESPONSE_SIZE] = {0};
     const size_t request_length = serializeJson(payload, request_body);
     if (request_length == 0 || request_length >= sizeof(request_body)) {
@@ -386,6 +475,22 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         return ESP_ERR_INVALID_STATE;
     }
     if (result == ESP_OK) {
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        // Acknowledge only after the platform accepted the complete
+        // heartbeat. A lost response leaves the same diagnostic records
+        // pending for a later heartbeat.
+        const esp_err_t acknowledge_result =
+            diagnostic_reporter_acknowledge(
+                diagnostics.newest_sequence
+            );
+        if (acknowledge_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "diagnostic acknowledgement failed: %s",
+                esp_err_to_name(acknowledge_result)
+            );
+        }
+#endif
         result = device_runtime_apply_platform_time(&response);
     }
     return result;
@@ -445,7 +550,7 @@ static esp_err_t device_runtime_execute_command(
     } else if (strcmp(command->type, "resync_time") == 0) {
         result = time_sync_resynchronize();
     } else if (strcmp(command->type, "refresh_configuration") == 0) {
-#if CONFIG_FEATURE_PARENT_POLICY
+#if DEVICE_RUNTIME_HAS_PARENT_POLICY
         result = parent_policy_refresh();
 #else
         result = ESP_OK;
@@ -548,7 +653,7 @@ static void device_runtime_work_task(void *argument) {
                 device_runtime_send_heartbeat();
             if (heartbeat_result == ESP_OK) {
                 offline_fallback_mark_recovered();
-#if CONFIG_FEATURE_PARENT_POLICY
+#if DEVICE_RUNTIME_HAS_PARENT_POLICY
                 const esp_err_t policy_result =
                     parent_policy_refresh_if_due();
                 if (policy_result != ESP_OK &&
