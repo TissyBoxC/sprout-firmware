@@ -282,13 +282,16 @@ void test_ack_keeps_newer_records() {
     state.source_boot_count = 1;
     state.boot_event_count = 2;
     state.boot_events[0] = make_boot_event(1);
-    state.boot_events[1] = make_boot_event(2);
-    state.failure = make_failure(3);
+    // The acknowledgement below covers sequence 3, so sequence 1 must be
+    // dropped while sequence 5 survives; keeping both directions in one
+    // fixture proves compaction removes only confirmed records.
+    state.boot_events[1] = make_boot_event(5);
+    state.failure = make_failure(2);
     state.recovery_event_count = 1;
-    state.recovery_events[0] = make_recovery(4);
+    state.recovery_events[0] = make_recovery(3);
     state.interaction_event_count = 1;
     state.interaction_events[0] = make_interaction(
-        5,
+        4,
         "indicator_state",
         "listening"
     );
@@ -298,18 +301,17 @@ void test_ack_keeps_newer_records() {
         "validated ACK compaction must succeed"
     );
     check(
-        state.boot_event_count == 1 && state.boot_events[0].sequence == 2,
+        state.boot_event_count == 1 && state.boot_events[0].sequence == 5,
         "ack must retain newer boot records"
     );
     check(!state.failure.pending, "ack must mark the delivered failure");
     check(
-        state.recovery_event_count == 1 &&
-            state.recovery_events[0].sequence == 4,
-        "ack must retain newer recovery records"
+        state.recovery_event_count == 0,
+        "ack must drop acknowledged recovery records"
     );
     check(
         state.interaction_event_count == 1 &&
-            state.interaction_events[0].sequence == 5,
+            state.interaction_events[0].sequence == 4,
         "ack must retain newer interaction records"
     );
     check(
