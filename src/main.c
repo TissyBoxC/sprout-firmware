@@ -22,6 +22,9 @@
 #if CONFIG_FEATURE_VOLUME_CONTROL
 #include "volume_control.h"
 #endif
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+#include "audio_output.h"
+#endif
 #if CONFIG_FEATURE_PLAYBACK_QUEUE
 #include "playback_queue.h"
 #endif
@@ -143,6 +146,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_VOLUME_CONTROL
     ESP_ERROR_CHECK(module_registry_add(volume_control_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+    ESP_ERROR_CHECK(module_registry_add(audio_output_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PARENT_POLICY
     ESP_ERROR_CHECK(module_registry_add(parent_policy_module_descriptor()));

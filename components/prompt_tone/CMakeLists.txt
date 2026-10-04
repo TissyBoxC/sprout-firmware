@@ -14,3 +14,7 @@ idf_component_register(
         module_registry
         playback_queue
 )
+
+if(CONFIG_FEATURE_AUDIO_OUTPUT)
+    idf_component_optional_requires(PRIVATE audio_output)
+endif()

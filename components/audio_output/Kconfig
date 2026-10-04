@@ -1,0 +1,75 @@
+menu "Sprout feature modules"
+
+config FEATURE_AUDIO_OUTPUT
+    bool "Enable speaker mixing and volume-managed audio output"
+    default y
+    depends on FEATURE_AUDIO_PIPELINE
+    help
+        Own the final speaker output path: mix concurrent PCM sources, apply
+        the effective volume, protect safety announcements from mute, and feed
+        the mixed frame to the I2S pipeline. The module keeps the playback
+        queue separate so scheduling policy and audio rendering stay
+        independently testable.
+
+config AUDIO_OUTPUT_QUEUE_FRAMES
+    int "Queued frames per output priority"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 2 32
+    default 8
+    help
+        Bounds each priority lane to eight 20 ms frames (160 ms). This absorbs
+        network jitter without adding noticeable conversation latency.
+
+config AUDIO_OUTPUT_TASK_STACK_SIZE
+    int "Mix task stack size in bytes"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 4096 16384
+    default 6144
+
+config AUDIO_OUTPUT_TASK_PRIORITY
+    int "Mix task priority"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 1 24
+    default 8
+    help
+        The mix task must keep the I2S write cadence ahead of network tasks
+        while leaving the high-priority watchdog and DMA paths above it.
+
+config AUDIO_OUTPUT_FALLBACK_VOLUME_PERCENT
+    int "Fallback volume percent without volume_control"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 0 100
+    default 70
+    help
+        Used only when the removable volume_control module is absent. The
+        guardian maximum should remain the normal policy source.
+
+config AUDIO_OUTPUT_SAFETY_MIN_PERCENT
+    int "Minimum safety announcement volume percent"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 1 100
+    default 60
+    help
+        Safety announcements bypass mute and are raised to at least this
+        percentage. If the guardian maximum is higher, that maximum is used.
+
+config AUDIO_OUTPUT_SUBMIT_TIMEOUT_MS
+    int "Submit retry timeout in milliseconds"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 0 1000
+    default 100
+    help
+        A producer waits this long for a full priority lane before reporting a
+        queue error. Zero makes submission non-blocking.
+
+config AUDIO_OUTPUT_RENDER_TIMEOUT_MS
+    int "Frame render timeout in milliseconds"
+    depends on FEATURE_AUDIO_OUTPUT
+    range 100 5000
+    default 1000
+    help
+        Bounds how long a blocking submit waits for the mixer to send its exact
+        frame to I2S. The bound prevents a stalled hardware path from hanging
+        the playback queue indefinitely.
+
+endmenu

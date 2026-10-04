@@ -30,6 +30,10 @@ if(CONFIG_FEATURE_VOLUME_CONTROL)
     list(APPEND app_requires "volume_control")
 endif()
 
+if(CONFIG_FEATURE_AUDIO_OUTPUT)
+    list(APPEND app_requires "audio_output")
+endif()
+
 if(CONFIG_FEATURE_PLAYBACK_QUEUE)
     list(APPEND app_requires "playback_queue")
 endif()

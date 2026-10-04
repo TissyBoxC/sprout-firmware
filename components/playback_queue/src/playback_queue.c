@@ -9,8 +9,17 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#if CONFIG_FEATURE_VOLUME_CONTROL
+#if CONFIG_FEATURE_AUDIO_OUTPUT && __has_include("audio_output.h")
+#include "audio_output.h"
+#define PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT 1
+#else
+#define PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT 0
+#endif
+#if CONFIG_FEATURE_VOLUME_CONTROL && __has_include("volume_control.h")
 #include "volume_control.h"
+#define PLAYBACK_QUEUE_HAS_VOLUME_CONTROL 1
+#else
+#define PLAYBACK_QUEUE_HAS_VOLUME_CONTROL 0
 #endif
 
 static const char *const TAG = "playback_queue";
@@ -26,8 +35,10 @@ static playback_queue_item_t *playback_queue_active;
 static playback_queue_snapshot_t playback_queue_snapshot;
 static SemaphoreHandle_t playback_queue_mutex;
 static SemaphoreHandle_t playback_queue_signal;
+static SemaphoreHandle_t playback_queue_task_exit;
 static TaskHandle_t playback_queue_worker;
-static bool playback_queue_ready;
+static volatile bool playback_queue_ready;
+static volatile bool playback_queue_running;
 static bool playback_queue_is_paused;
 
 /** Reason the worker must stop before finishing the active item. */
@@ -100,6 +111,40 @@ static bool playback_queue_contains_id_locked(const char *item_id) {
     return false;
 }
 
+#if PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
+/**
+ * @brief Map the queue policy class to the matching mixer lane.
+ *
+ * The enums intentionally use the same order, but the conversion is explicit
+ * so a future addition to either contract fails at compile time instead of
+ * silently changing the speaking lane.
+ */
+static audio_output_priority_t playback_queue_output_priority(
+    playback_priority_t priority
+) {
+    switch (priority) {
+        case PLAYBACK_PRIORITY_SAFETY:
+            return AUDIO_OUTPUT_PRIORITY_SAFETY;
+        case PLAYBACK_PRIORITY_PROMPT:
+            return AUDIO_OUTPUT_PRIORITY_PROMPT;
+        case PLAYBACK_PRIORITY_CONVERSATION:
+            return AUDIO_OUTPUT_PRIORITY_CONVERSATION;
+        case PLAYBACK_PRIORITY_AMBIENT:
+        default:
+            return AUDIO_OUTPUT_PRIORITY_AMBIENT;
+    }
+}
+
+static void playback_queue_discard_output_priority(
+    playback_priority_t priority
+) {
+    (void)audio_output_discard_priority(
+        playback_queue_output_priority(priority),
+        NULL
+    );
+}
+#endif
+
 // requeue_remaining_locked returns the unplayed tail of an interrupted item to
 // the pending set. The copy keeps the original identifier, which is safe
 // because the interrupted item has already left the pending set.
@@ -152,12 +197,14 @@ static void playback_queue_drop_pending_suppressible_locked(bool include_safety)
  * which keeps preemption and mute behaviour separate from audio I/O.
  */
 static size_t playback_queue_play_active_item(void) {
+#if !PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
     // Playback must be enabled explicitly; a muted or disabled speaker is a
     // normal state, so a failure here only drops the item.
     if (audio_pipeline_set_playing(true) != ESP_OK) {
         ESP_LOGW(TAG, "speaker enable failed; dropping item");
         return 0;
     }
+#endif
 
     size_t frames_played = 0;
     for (; frames_played < playback_queue_active->frame_count;
@@ -171,7 +218,7 @@ static size_t playback_queue_play_active_item(void) {
             break;
         }
 
-#if CONFIG_FEATURE_VOLUME_CONTROL
+#if !PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT && PLAYBACK_QUEUE_HAS_VOLUME_CONTROL
         if (volume_control_is_muted() &&
             playback_queue_active->priority != PLAYBACK_PRIORITY_SAFETY) {
             if (xSemaphoreTake(playback_queue_mutex, portMAX_DELAY) == pdTRUE) {
@@ -183,10 +230,28 @@ static size_t playback_queue_play_active_item(void) {
 #endif
 
         // The stored frame stays unscaled so a resumed item is scaled exactly
-        // once by the volume that is active when it finally plays.
+        // once by the output stage or fallback volume that is active when it
+        // finally plays.
         audio_codec_pcm_frame_t frame =
             playback_queue_active->frames[frames_played];
-#if CONFIG_FEATURE_VOLUME_CONTROL
+#if PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
+        const audio_output_error_t output_result =
+            audio_output_submit_blocking(
+                &frame,
+                playback_queue_output_priority(
+                    playback_queue_active->priority
+                )
+            );
+        if (output_result != AUDIO_OUTPUT_OK) {
+            ESP_LOGW(
+                TAG,
+                "mixer frame failed: %s",
+                audio_output_error_name(output_result)
+            );
+            break;
+        }
+#else
+#if PLAYBACK_QUEUE_HAS_VOLUME_CONTROL
         volume_control_apply_gain(
             frame.pcm,
             frame.pcm_size / sizeof(int16_t)
@@ -201,6 +266,7 @@ static size_t playback_queue_play_active_item(void) {
             );
             break;
         }
+#endif
     }
     return frames_played;
 }
@@ -216,6 +282,11 @@ static bool playback_queue_retire_active_locked(size_t frames_played) {
     playback_queue_stop_reason = PLAYBACK_STOP_NONE;
 
     if (stop_reason == PLAYBACK_STOP_PREEMPT) {
+#if PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
+        playback_queue_discard_output_priority(
+            playback_queue_active->priority
+        );
+#endif
         playback_queue_requeue_remaining_locked(
             playback_queue_active,
             frames_played
@@ -238,12 +309,13 @@ static bool playback_queue_retire_active_locked(size_t frames_played) {
 static void playback_queue_worker_main(void *context) {
     (void)context;
 
-    for (;;) {
-        if (xSemaphoreTake(playback_queue_signal, portMAX_DELAY) != pdTRUE) {
+    while (playback_queue_running) {
+        if (xSemaphoreTake(playback_queue_signal, pdMS_TO_TICKS(100)) !=
+            pdTRUE) {
             continue;
         }
 
-        for (;;) {
+        while (playback_queue_running) {
             if (xSemaphoreTake(playback_queue_mutex, portMAX_DELAY) != pdTRUE) {
                 break;
             }
@@ -280,6 +352,12 @@ static void playback_queue_worker_main(void *context) {
             }
         }
     }
+
+    if (playback_queue_task_exit != NULL) {
+        xSemaphoreGive(playback_queue_task_exit);
+    }
+    playback_queue_worker = NULL;
+    vTaskDelete(NULL);
 }
 
 esp_err_t playback_queue_init(void) {
@@ -289,13 +367,21 @@ esp_err_t playback_queue_init(void) {
     if (!audio_pipeline_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+    if (!audio_output_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
 
     playback_queue_mutex = xSemaphoreCreateMutex();
     playback_queue_signal = xSemaphoreCreateBinary();
-    if (playback_queue_mutex == NULL || playback_queue_signal == NULL) {
+    playback_queue_task_exit = xSemaphoreCreateBinary();
+    if (playback_queue_mutex == NULL || playback_queue_signal == NULL ||
+        playback_queue_task_exit == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
+    playback_queue_running = true;
     const BaseType_t created = xTaskCreate(
         playback_queue_worker_main,
         "audio_playback",
@@ -305,6 +391,7 @@ esp_err_t playback_queue_init(void) {
         &playback_queue_worker
     );
     if (created != pdPASS) {
+        playback_queue_running = false;
         return ESP_ERR_NO_MEM;
     }
 
@@ -315,6 +402,48 @@ esp_err_t playback_queue_init(void) {
 
 bool playback_queue_is_ready(void) {
     return playback_queue_ready;
+}
+
+void playback_queue_shutdown(void) {
+    if (!playback_queue_ready && playback_queue_worker == NULL) {
+        return;
+    }
+
+    playback_queue_ready = false;
+    playback_queue_running = false;
+    playback_queue_is_paused = false;
+    playback_queue_signal_worker();
+
+    if (playback_queue_worker != NULL) {
+        if (xSemaphoreTake(
+                playback_queue_task_exit,
+                pdMS_TO_TICKS(5000)
+            ) != pdTRUE) {
+            // Keep the mutex and queue storage alive if the worker is still
+            // unwinding. A later shutdown call can retry once it exits.
+            ESP_LOGE(TAG, "playback worker did not stop; keeping resources");
+            return;
+        }
+        playback_queue_worker = NULL;
+    }
+    if (playback_queue_mutex != NULL) {
+        (void)xSemaphoreTake(playback_queue_mutex, portMAX_DELAY);
+        playback_queue_drop_pending_suppressible_locked(true);
+        playback_queue_free_item(playback_queue_active);
+        playback_queue_active = NULL;
+        xSemaphoreGive(playback_queue_mutex);
+        vSemaphoreDelete(playback_queue_mutex);
+        playback_queue_mutex = NULL;
+    }
+    if (playback_queue_signal != NULL) {
+        vSemaphoreDelete(playback_queue_signal);
+        playback_queue_signal = NULL;
+    }
+    if (playback_queue_task_exit != NULL) {
+        vSemaphoreDelete(playback_queue_task_exit);
+        playback_queue_task_exit = NULL;
+    }
+    playback_queue_snapshot = (playback_queue_snapshot_t){0};
 }
 
 playback_queue_error_t playback_queue_enqueue(
@@ -413,6 +542,11 @@ esp_err_t playback_queue_clear(bool include_safety) {
         (include_safety ||
          playback_queue_active->priority != PLAYBACK_PRIORITY_SAFETY)) {
         playback_queue_stop_reason = PLAYBACK_STOP_DISCARD;
+#if PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT
+        playback_queue_discard_output_priority(
+            playback_queue_active->priority
+        );
+#endif
     }
     playback_queue_snapshot.pending_items = playback_queue_pending_count;
     xSemaphoreGive(playback_queue_mutex);
@@ -476,7 +610,7 @@ const module_descriptor_t *playback_queue_module_descriptor(void) {
         .module_name = "playback_queue",
         .version = "1.0.0",
         .initialize = playback_queue_init,
-        .shutdown = NULL,
+        .shutdown = playback_queue_shutdown,
     };
     return &descriptor;
 }

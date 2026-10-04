@@ -132,6 +132,7 @@ function Test-OptionalModuleRemoval {
             'offline_fallback'
             'network_quality'
             'prompt_tone'
+            'audio_output'
             'playback_queue'
             'volume_control'
             'audio_input'
@@ -193,6 +194,15 @@ $audioInputSource = Get-Content -Raw -LiteralPath (
 )
 $audioPipelineHeader = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/audio_pipeline/include/audio_pipeline.h'
+)
+$audioOutputHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/audio_output/include/audio_output.h'
+)
+$audioOutputSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/audio_output/src/audio_output.c'
+)
+$playbackQueueHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/playback_queue/include/playback_queue.h'
 )
 
 $contractChecks = @(
@@ -285,6 +295,55 @@ $contractChecks = @(
         Name = 'audio pipeline reference sink API'
         Text = $audioPipelineHeader
         Pattern = 'audio_pipeline_set_reference_sink\('
+    },
+    @{
+        Name = 'audio output priority lanes'
+        Text = $audioOutputHeader
+        Pattern = 'AUDIO_OUTPUT_PRIORITY_SAFETY'
+    },
+    @{
+        Name = 'audio output blocking frame submission'
+        Text = $audioOutputHeader
+        Pattern = 'audio_output_submit_blocking\('
+    },
+    @{
+        Name = 'audio output priority discard'
+        Text = $audioOutputHeader
+        Pattern = 'audio_output_discard_priority\('
+    },
+    @{
+        Name = 'audio output saturating mix'
+        Text = $audioOutputSource
+        Pattern = 'audio_output_saturate_add\('
+    },
+    @{
+        Name = 'audio output safety bypasses mute'
+        Text = $audioOutputSource
+        Pattern = 'CONFIG_AUDIO_OUTPUT_SAFETY_MIN_PERCENT'
+    },
+    @{
+        Name = 'audio output feeds the reference sink'
+        Text = $audioOutputSource
+        Pattern = 'audio_pipeline_play_frame\('
+    },
+    @{
+        Name = 'playback queue routes through mixer'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/playback_queue/src/playback_queue.c'
+        ))
+        Pattern = 'audio_output_submit_blocking\('
+    },
+    @{
+        Name = 'playback queue exposes shutdown'
+        Text = $playbackQueueHeader
+        Pattern = 'playback_queue_shutdown\('
+    },
+    @{
+        Name = 'prompt tone mixes with active conversation'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/prompt_tone/src/prompt_tone.c'
+        ))
+        Pattern = 'prompt_tone_play_mixed\('
     }
 )
 

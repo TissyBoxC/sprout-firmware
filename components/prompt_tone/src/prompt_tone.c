@@ -14,6 +14,12 @@
 #if CONFIG_FEATURE_PLAYBACK_QUEUE
 #include "playback_queue.h"
 #endif
+#if CONFIG_FEATURE_AUDIO_OUTPUT && __has_include("audio_output.h")
+#include "audio_output.h"
+#define PROMPT_TONE_HAS_AUDIO_OUTPUT 1
+#else
+#define PROMPT_TONE_HAS_AUDIO_OUTPUT 0
+#endif
 
 static const char *const TAG = "prompt_tone";
 
@@ -229,6 +235,49 @@ static playback_priority_t prompt_tone_priority(prompt_tone_t tone) {
 }
 #endif
 
+#if PROMPT_TONE_HAS_AUDIO_OUTPUT
+/**
+ * @brief Render one cue into the mixer without disturbing the active reply.
+ *
+ * The cue is submitted frame by frame to its priority lane. A prompt therefore
+ * rides over conversation audio, while a safety announcement uses the safety
+ * lane and bypasses mute in audio_output.
+ */
+static prompt_tone_error_t prompt_tone_play_mixed(
+    prompt_tone_t tone,
+    size_t rendered_count
+) {
+    if (!audio_output_is_ready()) {
+        return PROMPT_TONE_ERR_QUEUE;
+    }
+
+    const audio_output_priority_t priority =
+        tone == PROMPT_TONE_SAFETY_ANNOUNCEMENT
+            ? AUDIO_OUTPUT_PRIORITY_SAFETY
+            : AUDIO_OUTPUT_PRIORITY_PROMPT;
+
+    for (size_t index = 0; index < rendered_count; ++index) {
+        const audio_output_error_t result = audio_output_submit(
+            &prompt_tone_render_buffer[index],
+            priority
+        );
+        if (result != AUDIO_OUTPUT_OK) {
+            ESP_LOGW(
+                TAG,
+                "prompt mix submit failed: %s",
+                audio_output_error_name(result)
+            );
+            // A cue is either heard in full or not at all. The lane is
+            // serialized by prompt_tone_mutex, so no unrelated prompt is
+            // discarded by this rollback.
+            (void)audio_output_discard_priority(priority, NULL);
+            return PROMPT_TONE_ERR_QUEUE;
+        }
+    }
+    return PROMPT_TONE_OK;
+}
+#endif
+
 esp_err_t prompt_tone_init(void) {
     if (prompt_tone_ready) {
         return ESP_OK;
@@ -270,6 +319,32 @@ prompt_tone_error_t prompt_tone_play(prompt_tone_t tone) {
         xSemaphoreGive(prompt_tone_mutex);
         return PROMPT_TONE_ERR_INVALID_TONE;
     }
+
+#if PROMPT_TONE_HAS_AUDIO_OUTPUT
+    {
+        const prompt_tone_error_t mixed_result = prompt_tone_play_mixed(
+            tone,
+            rendered_count
+        );
+        if (mixed_result == PROMPT_TONE_OK) {
+            ++prompt_tone_snapshot.tones_played;
+            if (tone == PROMPT_TONE_SAFETY_ANNOUNCEMENT) {
+                ++prompt_tone_snapshot.safety_tones_played;
+            }
+            xSemaphoreGive(prompt_tone_mutex);
+            return PROMPT_TONE_OK;
+        }
+        bool can_fallback_to_queue = false;
+#if CONFIG_FEATURE_PLAYBACK_QUEUE
+        can_fallback_to_queue = playback_queue_is_ready();
+#endif
+        if (!can_fallback_to_queue) {
+            ++prompt_tone_snapshot.tones_rejected;
+            xSemaphoreGive(prompt_tone_mutex);
+            return mixed_result;
+        }
+    }
+#endif
 
 #if CONFIG_FEATURE_PLAYBACK_QUEUE
     if (playback_queue_is_ready()) {

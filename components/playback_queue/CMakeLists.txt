@@ -7,10 +7,17 @@ endif()
 idf_component_register(
     SRCS ${playback_queue_sources}
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES esp_driver_i2s freertos heap
+    PRIV_REQUIRES freertos heap
     REQUIRES
         audio_codec
         audio_pipeline
         module_registry
-        volume_control
 )
+
+if(CONFIG_FEATURE_AUDIO_OUTPUT)
+    idf_component_optional_requires(PRIVATE audio_output)
+endif()
+
+if(CONFIG_FEATURE_VOLUME_CONTROL)
+    idf_component_optional_requires(PRIVATE volume_control)
+endif()

@@ -75,6 +75,15 @@ esp_err_t playback_queue_init(void);
 bool playback_queue_is_ready(void);
 
 /**
+ * @brief Stop the worker, discard queued items, and release queue resources.
+ *
+ * Callers must stop producers before shutdown. The function waits for the
+ * active frame submission to finish so the audio_output mixer is never used
+ * after it has released its lanes.
+ */
+void playback_queue_shutdown(void);
+
+/**
  * @brief Copy one item into the queue.
  *
  * The queue copies the frames, so the caller may reuse its buffer immediately.
