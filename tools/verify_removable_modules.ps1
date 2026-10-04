@@ -134,6 +134,7 @@ function Test-OptionalModuleRemoval {
             'prompt_tone'
             'playback_queue'
             'volume_control'
+            'audio_input'
             'audio_pipeline'
             'audio_codec'
             'cloud_auth'
@@ -183,6 +184,15 @@ $recoverySource = Get-Content -Raw -LiteralPath (
 )
 $registryHeader = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/module_registry/include/module_registry.h'
+)
+$audioInputHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/audio_input/include/audio_input.h'
+)
+$audioInputSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/audio_input/src/audio_input.c'
+)
+$audioPipelineHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/audio_pipeline/include/audio_pipeline.h'
 )
 
 $contractChecks = @(
@@ -235,6 +245,46 @@ $contractChecks = @(
         Name = 'explicit single-module retry API'
         Text = $registryHeader
         Pattern = 'module_registry_initialize_module'
+    },
+    @{
+        Name = 'audio input stream lifecycle API'
+        Text = $audioInputHeader
+        Pattern = 'audio_input_start\(\s+uint32_t stream_id'
+    },
+    @{
+        Name = 'audio input echo and gain diagnostics'
+        Text = $audioInputHeader
+        Pattern = 'aec_convergence_q10'
+    },
+    @{
+        Name = 'audio input gain diagnostic'
+        Text = $audioInputHeader
+        Pattern = 'agc_gain_q8'
+    },
+    @{
+        Name = 'audio input encodes opus frames'
+        Text = $audioInputSource
+        Pattern = 'audio_codec_encode_frame\('
+    },
+    @{
+        Name = 'audio input capture starts only on start'
+        Text = $audioInputSource
+        Pattern = 'audio_pipeline_set_capturing\(true\)'
+    },
+    @{
+        Name = 'audio input capture stops and clears reference on stop'
+        Text = $audioInputSource
+        Pattern = 'audio_pipeline_set_capturing\(false\)'
+    },
+    @{
+        Name = 'audio input clears the reference sink on stop'
+        Text = $audioInputSource
+        Pattern = 'audio_pipeline_set_reference_sink\(NULL, NULL\)'
+    },
+    @{
+        Name = 'audio pipeline reference sink API'
+        Text = $audioPipelineHeader
+        Pattern = 'audio_pipeline_set_reference_sink\('
     }
 )
 
