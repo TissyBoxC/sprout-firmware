@@ -29,8 +29,17 @@ identity until a successful heartbeat acknowledges it.
 
 Recovery events use stable `recovery_<sequence>` IDs and are retained until a
 successful authenticated heartbeat acknowledges their sequence. The persisted
-state version is bumped whenever the on-flash layout changes, so an older blob
-is discarded instead of being interpreted with a newer structure.
+state version is bumped whenever the on-flash layout changes. Known v3 and v4
+layouts are migrated to v5: boot events, the latest pending failure, and
+recovery events are retained with their existing sequence identities. Only an
+unknown or corrupt layout is discarded.
+
+Interaction events are accepted only for the eight platform event types.
+`detail_code` must match the platform symbolic identifier pattern, and
+`duration_ms` represents real elapsed time only. Instantaneous events such as
+wake detection, rejection, indicator changes, and factory-reset transitions
+use zero. Wake confidence is encoded in the stable detail code instead of
+being misrepresented as a duration.
 
 `CONFIG_FEATURE_DIAGNOSTIC_REPORTER` controls source inclusion. Removing this
 component disables diagnostics without changing the base heartbeat contract.

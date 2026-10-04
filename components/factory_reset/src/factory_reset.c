@@ -12,6 +12,13 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER && __has_include("diagnostic_reporter.h")
+#include "diagnostic_reporter.h"
+#define FACTORY_RESET_HAS_DIAGNOSTIC_REPORTER 1
+#else
+#define FACTORY_RESET_HAS_DIAGNOSTIC_REPORTER 0
+#endif
+
 #if CONFIG_FEATURE_CONFIG_STORE && __has_include("config_store.h")
 #include "config_store.h"
 #define FACTORY_RESET_HAS_CONFIG_STORE 1
@@ -46,6 +53,24 @@ static int64_t factory_reset_requested_at_ms;
 static factory_reset_error_t factory_reset_last_result;
 static uint32_t factory_reset_completed_count;
 
+static void factory_reset_report_event(
+    const char *event_type,
+    const char *detail_code
+) {
+#if FACTORY_RESET_HAS_DIAGNOSTIC_REPORTER
+    // Reset events are instantaneous state transitions. Keep duration zero
+    // and use stable reason/error names as the detail code.
+    (void)diagnostic_reporter_record_interaction(
+        event_type,
+        detail_code,
+        0
+    );
+#else
+    (void)event_type;
+    (void)detail_code;
+#endif
+}
+
 static bool factory_reset_reason_is_valid(factory_reset_reason_t reason) {
     return reason >= FACTORY_RESET_REASON_GUARDIAN_REQUEST &&
         reason <= FACTORY_RESET_REASON_INTERNAL_RECOVERY;
@@ -66,6 +91,22 @@ static bool factory_reset_pending_is_expired_locked(void) {
 static void factory_reset_expire_locked(void) {
     factory_reset_pending = false;
     factory_reset_last_result = FACTORY_RESET_ERR_EXPIRED;
+}
+
+// Expiration can be observed from the timer task or from a public accessor.
+// Return the last reason through a local variable so the event write always
+// happens after releasing the state mutex.
+static bool factory_reset_expire_with_reason_locked(
+    factory_reset_reason_t *reason_out
+) {
+    if (!factory_reset_pending_is_expired_locked()) {
+        return false;
+    }
+    if (reason_out != NULL) {
+        *reason_out = factory_reset_pending_reason;
+    }
+    factory_reset_expire_locked();
+    return true;
 }
 
 #if FACTORY_RESET_HAS_CONFIG_STORE
@@ -174,11 +215,17 @@ static void factory_reset_timeout_callback(void *argument) {
     if (factory_reset_mutex == NULL) {
         return;
     }
+    bool expired = false;
+    factory_reset_reason_t reason = FACTORY_RESET_REASON_GUARDIAN_REQUEST;
     if (xSemaphoreTake(factory_reset_mutex, portMAX_DELAY) == pdTRUE) {
-        if (factory_reset_pending_is_expired_locked()) {
-            factory_reset_expire_locked();
-        }
+        expired = factory_reset_expire_with_reason_locked(&reason);
         xSemaphoreGive(factory_reset_mutex);
+    }
+    if (expired) {
+        factory_reset_report_event(
+            "factory_reset_cancelled",
+            factory_reset_reason_name(reason)
+        );
     }
 }
 
@@ -254,9 +301,17 @@ factory_reset_error_t factory_reset_request(factory_reset_reason_t reason) {
         factory_reset_pending = false;
         factory_reset_last_result = FACTORY_RESET_ERR_STORAGE;
         factory_reset_release();
+        factory_reset_report_event(
+            "factory_reset_failed",
+            "factory_reset_storage_error"
+        );
         return FACTORY_RESET_ERR_STORAGE;
     }
     factory_reset_release();
+    factory_reset_report_event(
+        "factory_reset_requested",
+        factory_reset_reason_name(reason)
+    );
     return FACTORY_RESET_OK;
 }
 
@@ -270,14 +325,28 @@ factory_reset_error_t factory_reset_confirm(void) {
         return FACTORY_RESET_ERR_NO_PENDING_RESET;
     }
     if (factory_reset_pending_is_expired_locked()) {
+        const factory_reset_reason_t reason = factory_reset_pending_reason;
         factory_reset_expire_locked();
         factory_reset_release();
+        factory_reset_report_event(
+            "factory_reset_cancelled",
+            factory_reset_reason_name(reason)
+        );
         return FACTORY_RESET_ERR_EXPIRED;
     }
 
     (void)esp_timer_stop(factory_reset_timer);
+    const factory_reset_reason_t reason = factory_reset_pending_reason;
     const factory_reset_error_t result = factory_reset_perform_locked();
     factory_reset_release();
+    factory_reset_report_event(
+        result == FACTORY_RESET_OK
+            ? "factory_reset_completed"
+            : "factory_reset_failed",
+        result == FACTORY_RESET_OK
+            ? factory_reset_reason_name(reason)
+            : factory_reset_error_name(result)
+    );
     return result;
 }
 
@@ -289,10 +358,17 @@ factory_reset_error_t factory_reset_cancel(void) {
     const factory_reset_error_t result =
         factory_reset_pending ? FACTORY_RESET_OK
                               : FACTORY_RESET_ERR_NO_PENDING_RESET;
+    const factory_reset_reason_t reason = factory_reset_pending_reason;
     factory_reset_pending = false;
     factory_reset_last_result = result;
     (void)esp_timer_stop(factory_reset_timer);
     factory_reset_release();
+    if (result == FACTORY_RESET_OK) {
+        factory_reset_report_event(
+            "factory_reset_cancelled",
+            factory_reset_reason_name(reason)
+        );
+    }
     return result;
 }
 
@@ -300,11 +376,20 @@ bool factory_reset_is_pending(void) {
     if (!factory_reset_acquire()) {
         return false;
     }
+    bool expired = false;
+    factory_reset_reason_t expired_reason =
+        FACTORY_RESET_REASON_GUARDIAN_REQUEST;
     if (factory_reset_pending_is_expired_locked()) {
-        factory_reset_expire_locked();
+        expired = factory_reset_expire_with_reason_locked(&expired_reason);
     }
     const bool pending = factory_reset_pending;
     factory_reset_release();
+    if (expired) {
+        factory_reset_report_event(
+            "factory_reset_cancelled",
+            factory_reset_reason_name(expired_reason)
+        );
+    }
     return pending;
 }
 
@@ -320,8 +405,11 @@ factory_reset_snapshot_t factory_reset_get_snapshot(void) {
     if (!factory_reset_acquire()) {
         return snapshot;
     }
+    bool expired = false;
+    factory_reset_reason_t expired_reason =
+        FACTORY_RESET_REASON_GUARDIAN_REQUEST;
     if (factory_reset_pending_is_expired_locked()) {
-        factory_reset_expire_locked();
+        expired = factory_reset_expire_with_reason_locked(&expired_reason);
     }
     snapshot.is_pending = factory_reset_pending;
     snapshot.request_reason = factory_reset_pending_reason;
@@ -330,6 +418,12 @@ factory_reset_snapshot_t factory_reset_get_snapshot(void) {
     snapshot.completed_count = factory_reset_completed_count;
     snapshot.is_ready = factory_reset_ready;
     factory_reset_release();
+    if (expired) {
+        factory_reset_report_event(
+            "factory_reset_cancelled",
+            factory_reset_reason_name(expired_reason)
+        );
+    }
     return snapshot;
 }
 

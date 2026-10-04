@@ -15,6 +15,9 @@ extern "C" {
 /** @brief Longest wake word name copied into a wake event, including NUL. */
 #define VOICE_WAKE_WORD_NAME_SIZE 32
 
+/** @brief Longest stable ASCII detail code copied into a wake event, including NUL. */
+#define VOICE_WAKE_DETAIL_CODE_SIZE 64
+
 /** @brief Fixed rate accepted from audio_pipeline capture. */
 #define VOICE_WAKE_SAMPLE_RATE_HZ AUDIO_CODEC_SAMPLE_RATE_HZ
 
@@ -43,6 +46,7 @@ typedef enum {
 typedef struct {
     uint32_t wake_word_id;
     char wake_word_name[VOICE_WAKE_WORD_NAME_SIZE];
+    char detail_code[VOICE_WAKE_DETAIL_CODE_SIZE];
     /** Confidence on a 0..1000 scale. */
     uint32_t confidence_milli;
     uint64_t detected_at_ms;

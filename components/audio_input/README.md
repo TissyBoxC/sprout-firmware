@@ -26,6 +26,9 @@ hands the packet to the voice session.
 
 - The microphone is disabled at boot and only enabled between `audio_input_start`
   and `audio_input_stop`.
+- `audio_input_start` acquires the shared capture lease for the conversation;
+  if wake detection still owns it, start fails instead of splitting the I2S
+  stream.
 - The reference sink is cleared on stop, and the capture task joins with a
   bounded timeout before resources are released.
 - Frame buffers are fixed size; a stalled consumer cannot grow memory without

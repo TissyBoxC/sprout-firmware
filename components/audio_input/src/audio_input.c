@@ -196,7 +196,10 @@ static void audio_input_capture_task(void *argument) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
-        if (audio_pipeline_capture_frame(&captured) != AUDIO_CODEC_OK) {
+        if (audio_pipeline_capture_frame(
+                AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT,
+                &captured
+            ) != AUDIO_CODEC_OK) {
             audio_input_increment(&audio_input_state.snapshot.dropped_frames);
             continue;
         }
@@ -385,10 +388,17 @@ esp_err_t audio_input_start(
                 &audio_input_state
             );
             if (result == ESP_OK) {
-                result = audio_pipeline_set_capturing(true);
+                result = audio_pipeline_capture_acquire(
+                    AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT
+                );
             }
             if (result != ESP_OK) {
                 audio_input_state.is_running = false;
+                // Release is safe after a failed acquire: it can only succeed
+                // when this module actually owns the lease.
+                (void)audio_pipeline_capture_release(
+                    AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT
+                );
                 (void)audio_pipeline_set_reference_sink(NULL, NULL);
                 (void)xSemaphoreTake(
                     audio_input_state.task_exit_semaphore,
@@ -417,7 +427,9 @@ static esp_err_t audio_input_stop_locked(void) {
 
     // Stop capturing first so the blocked I2S read returns and the task can
     // observe the cleared running flag.
-    (void)audio_pipeline_set_capturing(false);
+    (void)audio_pipeline_capture_release(
+        AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT
+    );
     (void)audio_pipeline_set_reference_sink(NULL, NULL);
 
     esp_err_t result = ESP_OK;

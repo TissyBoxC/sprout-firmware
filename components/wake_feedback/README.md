@@ -12,10 +12,12 @@ microphone. `wake_feedback` never starts capture, stops capture, or reads raw
 audio. Its callback runs on the wake task, so it performs only bounded local
 work and never blocks on the network.
 
-The wake word name is used only as a short symbolic detail code. Wake
-confidence is passed as the event duration field only because the shared
-diagnostic envelope has no numeric confidence field; it is never logged,
-persisted as raw audio, or associated with a child identity.
+The raw wake word name is never sent to the platform. The event carries the
+stable ASCII code produced by `voice_wake`, such as
+`wake_1_confidence_0700`. `duration_ms` is zero because the detection is
+instantaneous; confidence is encoded in the detail code rather than being
+misrepresented as a duration. The event is never logged as raw audio or
+associated with a child identity.
 
 Each optional integration is guarded by its Kconfig symbol. A build without
 `prompt_tone`, `led_indicator`, or `diagnostic_reporter` still accepts wake

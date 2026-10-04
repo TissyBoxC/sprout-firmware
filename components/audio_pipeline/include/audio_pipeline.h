@@ -26,6 +26,13 @@ typedef enum {
     AUDIO_PIPELINE_STATE_ERROR,
 } audio_pipeline_state_t;
 
+/** @brief Stable logical owner of the shared microphone capture stream. */
+typedef enum {
+    AUDIO_PIPELINE_CAPTURE_OWNER_NONE = 0,
+    AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE,
+    AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT,
+} audio_pipeline_capture_owner_t;
+
 /** @brief Bounded counters for telemetry and diagnostics. */
 typedef struct {
     audio_pipeline_state_t state;
@@ -52,12 +59,38 @@ bool audio_pipeline_is_ready(void);
  * @brief Read exactly one 20 ms PCM frame from the microphone.
  *
  * Returns ESP_ERR_TIMEOUT when the DMA does not deliver a full frame before
- * the configured timeout. The caller must check audio_pipeline_is_capturing()
- * before retrying so a disabled microphone never spins.
+ * the configured timeout. The caller must identify itself with the same owner
+ * that holds the capture lease; a different or ownerless reader is rejected
+ * before I2S is touched so two tasks cannot interleave a 20 ms frame.
  */
 audio_codec_error_t audio_pipeline_capture_frame(
+    audio_pipeline_capture_owner_t owner,
     audio_codec_pcm_frame_t *frame_out
 );
+
+/**
+ * @brief Atomically acquire the shared microphone capture lease.
+ *
+ * Exactly one owner may hold the lease. Returns ESP_ERR_INVALID_STATE when
+ * another owner already holds it, and ESP_ERR_NOT_SUPPORTED when this build
+ * has no input direction. Acquisition also enables the I2S capture direction.
+ */
+esp_err_t audio_pipeline_capture_acquire(
+    audio_pipeline_capture_owner_t owner
+);
+
+/**
+ * @brief Release the shared microphone capture lease.
+ *
+ * The caller must pass the same owner that acquired the lease. A mismatch
+ * returns ESP_ERR_INVALID_STATE and leaves the current owner untouched.
+ */
+esp_err_t audio_pipeline_capture_release(
+    audio_pipeline_capture_owner_t owner
+);
+
+/** @brief Return the current microphone capture owner. */
+audio_pipeline_capture_owner_t audio_pipeline_capture_get_owner(void);
 
 /**
  * @brief Write exactly one 20 ms PCM frame to the speaker.
@@ -72,9 +105,11 @@ audio_codec_error_t audio_pipeline_play_frame(
 /**
  * @brief Enable or disable microphone capture.
  *
- * Disabling releases the capture direction so a muted device draws no
- * microphone power. Returns ESP_ERR_NOT_SUPPORTED when the compiled firmware
- * has no input direction.
+ * This compatibility gate still enables and disables the raw I2S direction,
+ * but it does not create a capture owner. Disabling while a lease is held
+ * returns ESP_ERR_INVALID_STATE; the owner must use
+ * audio_pipeline_capture_release instead. Returns ESP_ERR_NOT_SUPPORTED when
+ * the compiled firmware has no input direction.
  */
 esp_err_t audio_pipeline_set_capturing(bool is_capturing);
 

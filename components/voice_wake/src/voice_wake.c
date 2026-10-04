@@ -13,6 +13,13 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER && __has_include("diagnostic_reporter.h")
+#include "diagnostic_reporter.h"
+#define VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER 1
+#else
+#define VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER 0
+#endif
+
 #if CONFIG_VOICE_WAKE_BACKEND_ESP_SR
 #include "esp_afe_config.h"
 #include "esp_afe_sr_iface.h"
@@ -23,6 +30,17 @@
 static const char *const TAG = "voice_wake";
 
 #define VOICE_WAKE_MODEL_PARTITION "model"
+
+typedef enum {
+    VOICE_WAKE_REJECTION_INVALID_WORD = 0,
+    VOICE_WAKE_REJECTION_LOW_CONFIDENCE,
+    VOICE_WAKE_REJECTION_SUSPENDED,
+    VOICE_WAKE_REJECTION_PLAYBACK,
+    VOICE_WAKE_REJECTION_COOLDOWN,
+    VOICE_WAKE_REJECTION_DISARMED,
+    VOICE_WAKE_REJECTION_SUPPRESSED,
+    VOICE_WAKE_REJECTION_COUNT,
+} voice_wake_rejection_reason_t;
 
 typedef struct {
     atomic_bool is_ready;
@@ -37,6 +55,7 @@ typedef struct {
     atomic_uint session_nonce;
     atomic_ullong playback_stopped_at_ms;
     atomic_ullong cooldown_until_ms;
+    atomic_ullong rejection_event_allowed_at_ms[VOICE_WAKE_REJECTION_COUNT];
     atomic_uint deterministic_run_frames;
     atomic_bool task_stop_requested;
     atomic_bool is_running;
@@ -74,6 +93,102 @@ static uint32_t voice_wake_confidence_milli(void) {
 #endif
 }
 
+#if VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER
+static const char *voice_wake_rejection_reason_code(
+    voice_wake_rejection_reason_t reason
+) {
+    switch (reason) {
+        case VOICE_WAKE_REJECTION_INVALID_WORD:
+            return "invalid_word";
+        case VOICE_WAKE_REJECTION_LOW_CONFIDENCE:
+            return "low_confidence";
+        case VOICE_WAKE_REJECTION_SUSPENDED:
+            return "suspended";
+        case VOICE_WAKE_REJECTION_PLAYBACK:
+            return "playback";
+        case VOICE_WAKE_REJECTION_COOLDOWN:
+            return "cooldown";
+        case VOICE_WAKE_REJECTION_DISARMED:
+            return "disarmed";
+        case VOICE_WAKE_REJECTION_SUPPRESSED:
+            return "suppressed";
+        default:
+            return "unknown";
+    }
+}
+#endif
+
+static void voice_wake_format_detail_code(
+    char *output,
+    size_t output_size,
+    uint32_t wake_word_id,
+    uint32_t confidence_milli
+) {
+    if (output == NULL || output_size == 0) {
+        return;
+    }
+    output[0] = '\0';
+    // The detail code is the outward diagnostic identity. Keep it ASCII-only
+    // and bounded even when the ESP-SR model name contains Chinese text or
+    // semicolons that the platform symbolic-text contract rejects.
+    snprintf(
+        output,
+        output_size,
+        "wake_%lu_confidence_%04lu",
+        (unsigned long)wake_word_id,
+        (unsigned long)(confidence_milli > 1000u ? 1000u : confidence_milli)
+    );
+}
+
+// Rejection diagnostics are sampled rather than emitted per frame: the
+// detector may reject many frames per second during playback or cooldown, and
+// the interaction queue is deliberately small.
+static void voice_wake_report_rejection(
+    voice_wake_rejection_reason_t reason,
+    uint32_t wake_word_id,
+    uint32_t confidence_milli
+) {
+    atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
+#if VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER
+    if (reason < 0 || reason >= VOICE_WAKE_REJECTION_COUNT) {
+        return;
+    }
+    const uint64_t now_ms = voice_wake_now_ms();
+    const uint64_t previous_allowed =
+        atomic_load(&voice_wake_state.rejection_event_allowed_at_ms[reason]);
+    if (now_ms < previous_allowed) {
+        return;
+    }
+    atomic_store(
+        &voice_wake_state.rejection_event_allowed_at_ms[reason],
+        now_ms + CONFIG_VOICE_WAKE_REJECTION_EVENT_INTERVAL_MS
+    );
+
+    char detail_code[VOICE_WAKE_DETAIL_CODE_SIZE] = {0};
+    if (reason == VOICE_WAKE_REJECTION_INVALID_WORD ||
+        reason == VOICE_WAKE_REJECTION_LOW_CONFIDENCE) {
+        voice_wake_format_detail_code(
+            detail_code,
+            sizeof(detail_code),
+            wake_word_id,
+            confidence_milli
+        );
+    } else {
+        snprintf(
+            detail_code,
+            sizeof(detail_code),
+            "wake_rejected_%s",
+            voice_wake_rejection_reason_code(reason)
+        );
+    }
+    (void)diagnostic_reporter_record_interaction(
+        "wake_rejected",
+        detail_code,
+        0
+    );
+#endif
+}
+
 static bool voice_wake_word_is_valid(uint32_t wake_word_id) {
     return wake_word_id > 0;
 }
@@ -85,23 +200,53 @@ static void voice_wake_publish_detection(
     uint64_t detected_at_ms
 ) {
     if (!voice_wake_word_is_valid(wake_word_id)) {
-        atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_INVALID_WORD,
+            wake_word_id,
+            confidence_milli
+        );
         return;
     }
     if (confidence_milli < CONFIG_VOICE_WAKE_MIN_CONFIDENCE_MILLI) {
-        atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_LOW_CONFIDENCE,
+            wake_word_id,
+            confidence_milli
+        );
         return;
     }
-    if (atomic_load(&voice_wake_state.is_suspended) ||
-        audio_pipeline_is_playing() ||
+    if (atomic_load(&voice_wake_state.is_suspended)) {
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_SUSPENDED,
+            wake_word_id,
+            confidence_milli
+        );
+        return;
+    }
+    if (audio_pipeline_is_playing() ||
         detected_at_ms < atomic_load(&voice_wake_state.playback_stopped_at_ms) +
-            CONFIG_VOICE_WAKE_PLAYBACK_IGNORE_MS ||
-        detected_at_ms < atomic_load(&voice_wake_state.cooldown_until_ms)) {
-        atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
+            CONFIG_VOICE_WAKE_PLAYBACK_IGNORE_MS) {
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_PLAYBACK,
+            wake_word_id,
+            confidence_milli
+        );
+        return;
+    }
+    if (detected_at_ms < atomic_load(&voice_wake_state.cooldown_until_ms)) {
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_COOLDOWN,
+            wake_word_id,
+            confidence_milli
+        );
         return;
     }
     if (!atomic_load(&voice_wake_state.is_armed)) {
-        atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_DISARMED,
+            wake_word_id,
+            confidence_milli
+        );
         return;
     }
 
@@ -110,6 +255,12 @@ static void voice_wake_publish_detection(
     event.confidence_milli = confidence_milli;
     event.detected_at_ms = detected_at_ms;
     event.session_nonce = atomic_load(&voice_wake_state.session_nonce);
+    voice_wake_format_detail_code(
+        event.detail_code,
+        sizeof(event.detail_code),
+        wake_word_id,
+        confidence_milli
+    );
     if (wake_word_name != NULL) {
         strncpy(
             event.wake_word_name,
@@ -346,9 +497,12 @@ static void voice_wake_esp_sr_feed(
         if (result->wakeup_state != WAKENET_DETECTED ||
             detection_allowed == false) {
             if (result->wakeup_state == WAKENET_DETECTED) {
-                atomic_fetch_add(
-                    &voice_wake_state.false_wake_rejections,
-                    1u
+                voice_wake_report_rejection(
+                    VOICE_WAKE_REJECTION_SUPPRESSED,
+                    result->wake_word_index > 0
+                        ? (uint32_t)result->wake_word_index
+                        : (uint32_t)result->wakenet_model_index,
+                    voice_wake_confidence_milli()
                 );
             }
             continue;
@@ -447,7 +601,10 @@ static void voice_wake_task(void *argument) {
             continue;
         }
 
-        if (audio_pipeline_capture_frame(&frame) != AUDIO_CODEC_OK) {
+        if (audio_pipeline_capture_frame(
+                AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE,
+                &frame
+            ) != AUDIO_CODEC_OK) {
             voice_wake_increment_rejected_frame();
             continue;
         }
@@ -521,6 +678,14 @@ esp_err_t voice_wake_init(void) {
         atomic_store(&voice_wake_state.session_nonce, 0);
         atomic_store(&voice_wake_state.playback_stopped_at_ms, 0);
         atomic_store(&voice_wake_state.cooldown_until_ms, 0);
+        for (size_t reason = 0;
+             reason < VOICE_WAKE_REJECTION_COUNT;
+             ++reason) {
+            atomic_store(
+                &voice_wake_state.rejection_event_allowed_at_ms[reason],
+                0
+            );
+        }
         atomic_store(&voice_wake_state.deterministic_run_frames, 0);
         atomic_store(&voice_wake_state.is_armed, false);
         atomic_store(&voice_wake_state.is_suspended, false);
@@ -564,7 +729,9 @@ static esp_err_t voice_wake_start_task_locked(void) {
 static esp_err_t voice_wake_stop_task_locked(void) {
     atomic_store(&voice_wake_state.is_running, false);
     atomic_store(&voice_wake_state.task_stop_requested, true);
-    const esp_err_t capture_result = audio_pipeline_set_capturing(false);
+    const esp_err_t capture_result = audio_pipeline_capture_release(
+        AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE
+    );
     if (voice_wake_state.task_handle == NULL) {
         return capture_result;
     }
@@ -622,7 +789,9 @@ esp_err_t voice_wake_start(void) {
         atomic_store(&voice_wake_state.is_armed, true);
         result = voice_wake_start_task_locked();
         if (result == ESP_OK) {
-            result = audio_pipeline_set_capturing(true);
+            result = audio_pipeline_capture_acquire(
+                AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE
+            );
         }
         if (result != ESP_OK) {
             atomic_store(&voice_wake_state.is_armed, false);
@@ -664,7 +833,9 @@ esp_err_t voice_wake_suspend(void) {
         result = ESP_ERR_INVALID_STATE;
     } else if (!atomic_load(&voice_wake_state.is_suspended)) {
         atomic_store(&voice_wake_state.is_suspended, true);
-        result = audio_pipeline_set_capturing(false);
+        result = audio_pipeline_capture_release(
+            AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE
+        );
     }
 
     xSemaphoreGive(voice_wake_state.lifecycle_mutex);
@@ -695,7 +866,9 @@ esp_err_t voice_wake_resume(void) {
 #else
             voice_wake_deterministic_reset();
 #endif
-            result = audio_pipeline_set_capturing(true);
+            result = audio_pipeline_capture_acquire(
+                AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE
+            );
         }
         if (result == ESP_OK) {
             atomic_store(&voice_wake_state.is_suspended, false);

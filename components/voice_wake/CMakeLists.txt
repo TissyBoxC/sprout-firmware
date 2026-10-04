@@ -12,6 +12,10 @@ if(CONFIG_FEATURE_VOICE_WAKE AND CONFIG_VOICE_WAKE_BACKEND_ESP_SR)
     list(APPEND voice_wake_private_requires esp-sr)
 endif()
 
+if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER)
+    idf_component_optional_requires(PRIVATE diagnostic_reporter)
+endif()
+
 idf_component_register(
     SRCS ${voice_wake_sources}
     INCLUDE_DIRS "include"

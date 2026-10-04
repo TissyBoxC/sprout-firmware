@@ -7,8 +7,10 @@ config FEATURE_AUDIO_PIPELINE
     help
         Own the I2S peripheral for the microphone and speaker. Capture reads
         one 20 ms PCM frame at a time; playback writes one decoded frame at a
-        time. The microphone is only enabled while a conversation is active, so
-        a device never records in the background.
+        time. Microphone capture has one logical owner at a time so wake
+        detection and conversation capture cannot interleave the same RX
+        stream. The microphone is only enabled while a conversation or wake
+        detector is active, so a device never records in the background.
 
 config AUDIO_PIPELINE_INPUT_ENABLED
     bool "Capture from the microphone"

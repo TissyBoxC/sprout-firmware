@@ -14,6 +14,19 @@ error instead of forwarding misaligned audio. Playback blocks at most
 `AUDIO_PIPELINE_PLAYBACK_TIMEOUT_MS`, which bounds back pressure when the
 network stalls.
 
+Capture has a single logical owner. Wake detection and conversation capture
+must call `audio_pipeline_capture_acquire` before reading and pass that same
+owner to `audio_pipeline_capture_frame`. The acquire and release operations are
+atomic, so a second owner is rejected with `ESP_ERR_INVALID_STATE` instead of
+interleaving bytes from the same I2S RX stream. The owner check and I2S read
+share one mutex, and releasing a lease is the only capture path that disables
+the channel while an owner is active.
+
+`audio_pipeline_set_capturing` remains available for low-level code that does
+not need a logical owner. It cannot disable capture while an owner holds a
+lease; the owner must release it through
+`audio_pipeline_capture_release`.
+
 Pins, DMA geometry, and timeouts come from Kconfig, so a board with a different
 microphone or amplifier is a configuration change and not a code change. The
 defaults match the ESP32-S3-N16R8 breadboard wiring and must be reviewed before

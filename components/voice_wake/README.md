@@ -26,10 +26,12 @@ floor, which keeps the public contract truthful without inventing a value.
 
 - `audio_pipeline` starts with the microphone disabled.
 - `voice_wake_start` and `voice_wake_resume` are the only operations that
-  enable capture.
+  acquire the shared capture lease for wake detection.
 - `voice_wake_stop` disables capture and leaves the backend disarmed.
 - `voice_wake_suspend` disables capture while preserving the armed flag;
-  `voice_wake_resume` enables it again only when armed.
+  `voice_wake_resume` reacquires it only when armed. A conversation path that
+  starts while this lease is held must fail cleanly rather than read the same
+  I2S channel concurrently.
 - The detector is suppressed during speaker playback and for
   `VOICE_WAKE_PLAYBACK_IGNORE_MS` after playback ends.
 - A threshold check, cooldown, and one bounded capture task prevent runaway
@@ -52,8 +54,18 @@ const char *voice_wake_error_name(voice_wake_error_t error);
 const module_descriptor_t *voice_wake_module_descriptor(void);
 ```
 
-The event contains a wake word id and name, confidence, timestamp, and a
-session nonce. The callback runs on the wake task and must return promptly.
+The event contains a wake word id, the raw detector display name, a stable
+ASCII `detail_code`, confidence, timestamp, and a session nonce. The stable
+code embeds the wake-word id and a confidence bucket, for example
+`wake_1_confidence_0700`; the raw name is for local display only and is never
+sent to the diagnostic heartbeat. The callback runs on the wake task and must
+return promptly.
+
+Rejected detections are counted locally by reason and emit at most one
+`wake_rejected` interaction event per reason within the configured
+`VOICE_WAKE_REJECTION_EVENT_INTERVAL_MS` window. `duration_ms` is always zero
+for these instantaneous events; confidence is encoded in the stable detail
+code rather than being misrepresented as a duration.
 
 ## ESP-SR model and partition
 

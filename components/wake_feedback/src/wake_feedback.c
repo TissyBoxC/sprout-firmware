@@ -71,14 +71,16 @@ static void wake_feedback_on_wake(
 #endif
 
 #if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
-    const char *detail_code = event->wake_word_name[0] != '\0'
-        ? event->wake_word_name
-        : "unknown";
+    const char *detail_code = event->detail_code[0] != '\0'
+        ? event->detail_code
+        : "wake_unknown";
+    // A wake is instantaneous. Confidence is encoded in the stable detail
+    // code because the platform interaction event has no confidence field.
     const esp_err_t telemetry_result =
         diagnostic_reporter_record_interaction(
             "wake_detected",
             detail_code,
-            event->confidence_milli
+            0
         );
     if (telemetry_result != ESP_OK) {
         atomic_fetch_add(&wake_feedback_telemetry_failures, 1u);

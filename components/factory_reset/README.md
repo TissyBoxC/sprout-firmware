@@ -11,6 +11,13 @@ only path that erases data. `factory_reset_cancel` clears the armed request.
 A one-shot `esp_timer` owns the timeout, and every state read checks expiry as
 well, so no caller can confirm an expired request.
 
+When `diagnostic_reporter` is present, the module emits the bounded
+`factory_reset_requested`, `factory_reset_cancelled`, `factory_reset_completed`,
+and `factory_reset_failed` interaction events at the real state transition.
+Timeouts are reported as cancellations with the original request reason.
+Events use the stable reason or error name as `detail_code`, `duration_ms` is
+zero, and no free text, credential, or child data is stored.
+
 The erase is deliberately narrow: it removes the public configuration keys
 through `config_store` when that removable module is present, then erases the
 single NVS partition named by `CONFIG_FACTORY_RESET_NVS_PARTITION` with

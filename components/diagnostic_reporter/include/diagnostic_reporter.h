@@ -85,7 +85,9 @@ typedef struct {
  * @brief Initialize persistent diagnostic state and record this boot.
  *
  * Requires config_store, error_recovery, and version_info to be initialized.
- * A corrupt or upgraded state record is replaced with a clean bounded record.
+ * A corrupt state record is replaced with a clean bounded record. A known
+ * older layout is migrated in place so pending boot, failure, and recovery
+ * history survives a firmware upgrade.
  */
 esp_err_t diagnostic_reporter_init(void);
 
@@ -111,9 +113,10 @@ esp_err_t diagnostic_reporter_acknowledge(uint32_t through_sequence);
  * @brief Record one bounded user-visible interaction event.
  *
  * event_type must be one of the interaction event types accepted by the
- * platform contract. detail_code is a short symbolic identifier such as a
- * wake word, button gesture, or indicator state; it must never contain free
- * text, audio, credentials, or child data.
+ * platform contract. detail_code must match the platform's stable symbolic
+ * identifier contract; it must never contain free text, audio, credentials,
+ * or child data. duration_ms is the real elapsed duration and must be zero
+ * for instantaneous events such as a wake detection or indicator change.
  */
 esp_err_t diagnostic_reporter_record_interaction(
     const char *event_type,

@@ -10,3 +10,7 @@ idf_component_register(
     REQUIRES module_registry
     PRIV_REQUIRES freertos esp_driver_ledc
 )
+
+if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER)
+    idf_component_optional_requires(PRIVATE diagnostic_reporter)
+endif()

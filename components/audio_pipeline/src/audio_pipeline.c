@@ -18,6 +18,8 @@ static SemaphoreHandle_t audio_pipeline_mutex;
 static bool audio_pipeline_ready;
 static bool audio_pipeline_is_capture_active;
 static bool audio_pipeline_is_playback_active;
+static audio_pipeline_capture_owner_t audio_pipeline_capture_owner =
+    AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
 
 // The reference sink is copied under a critical section instead of a mutex so a
 // sink can be registered while the playback task runs, without holding a lock
@@ -30,6 +32,23 @@ static void *audio_pipeline_reference_context;
 static audio_pipeline_snapshot_t audio_pipeline_snapshot = {
     .state = AUDIO_PIPELINE_STATE_STOPPED,
 };
+
+static bool audio_pipeline_capture_owner_is_valid(
+    audio_pipeline_capture_owner_t owner
+) {
+    return owner == AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE ||
+        owner == AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT;
+}
+
+static void audio_pipeline_update_state_locked(void) {
+    if (audio_pipeline_is_capture_active) {
+        audio_pipeline_snapshot.state = AUDIO_PIPELINE_STATE_CAPTURING;
+    } else if (audio_pipeline_is_playback_active) {
+        audio_pipeline_snapshot.state = AUDIO_PIPELINE_STATE_PLAYING;
+    } else {
+        audio_pipeline_snapshot.state = AUDIO_PIPELINE_STATE_STOPPED;
+    }
+}
 
 static i2s_std_gpio_config_t audio_pipeline_make_gpio_config(void) {
     i2s_std_gpio_config_t gpio_config = {
@@ -158,6 +177,7 @@ bool audio_pipeline_is_ready(void) {
 }
 
 audio_codec_error_t audio_pipeline_capture_frame(
+    audio_pipeline_capture_owner_t owner,
     audio_codec_pcm_frame_t *frame_out
 ) {
     if (!audio_pipeline_ready || audio_pipeline_rx_handle == NULL) {
@@ -166,7 +186,16 @@ audio_codec_error_t audio_pipeline_capture_frame(
     if (frame_out == NULL) {
         return AUDIO_CODEC_ERR_INVALID_ARGUMENT;
     }
-    if (!audio_pipeline_is_capture_active) {
+    if (xSemaphoreTake(audio_pipeline_mutex, portMAX_DELAY) != pdTRUE) {
+        return AUDIO_CODEC_ERR_NOT_INITIALIZED;
+    }
+    // Keep the owner check and the I2S read under the same lock. Release
+    // therefore cannot disable the channel or hand the lease to another owner
+    // while this 20 ms frame is being read.
+    if (!audio_pipeline_capture_owner_is_valid(owner) ||
+        audio_pipeline_capture_owner != owner ||
+        !audio_pipeline_is_capture_active) {
+        xSemaphoreGive(audio_pipeline_mutex);
         return AUDIO_CODEC_ERR_NOT_INITIALIZED;
     }
 
@@ -180,17 +209,20 @@ audio_codec_error_t audio_pipeline_capture_frame(
     );
     if (result != ESP_OK) {
         audio_pipeline_snapshot.capture_errors++;
+        xSemaphoreGive(audio_pipeline_mutex);
         return AUDIO_CODEC_ERR_DECODE_FAILED;
     }
     if (bytes_read != sizeof(frame_out->pcm)) {
         // A partial frame would desynchronise the 20 ms cadence, so it is
         // reported as a failure and never forwarded as valid audio.
         audio_pipeline_snapshot.capture_errors++;
+        xSemaphoreGive(audio_pipeline_mutex);
         return AUDIO_CODEC_ERR_INVALID_PCM_SIZE;
     }
 
     frame_out->pcm_size = bytes_read;
     audio_pipeline_snapshot.captured_frames++;
+    xSemaphoreGive(audio_pipeline_mutex);
     return AUDIO_CODEC_OK;
 }
 
@@ -253,23 +285,105 @@ esp_err_t audio_pipeline_set_capturing(bool is_capturing) {
         result = i2s_channel_enable(audio_pipeline_rx_handle);
         if (result == ESP_OK) {
             audio_pipeline_is_capture_active = true;
-            audio_pipeline_snapshot.state =
-                audio_pipeline_is_playback_active
-                    ? AUDIO_PIPELINE_STATE_CAPTURING
-                    : AUDIO_PIPELINE_STATE_CAPTURING;
+            audio_pipeline_update_state_locked();
         }
     } else if (!is_capturing && audio_pipeline_is_capture_active) {
-        result = i2s_channel_disable(audio_pipeline_rx_handle);
-        if (result == ESP_OK) {
-            audio_pipeline_is_capture_active = false;
-            audio_pipeline_snapshot.state = audio_pipeline_is_playback_active
-                ? AUDIO_PIPELINE_STATE_PLAYING
-                : AUDIO_PIPELINE_STATE_STOPPED;
+        // A lease is the authority for capture; the legacy Boolean gate must
+        // not be able to strand an active owner without a reader.
+        if (audio_pipeline_capture_owner !=
+            AUDIO_PIPELINE_CAPTURE_OWNER_NONE) {
+            result = ESP_ERR_INVALID_STATE;
+        } else {
+            result = i2s_channel_disable(audio_pipeline_rx_handle);
+            if (result == ESP_OK) {
+                audio_pipeline_is_capture_active = false;
+                audio_pipeline_update_state_locked();
+            }
         }
     }
 
     xSemaphoreGive(audio_pipeline_mutex);
     return result;
+}
+
+esp_err_t audio_pipeline_capture_acquire(
+    audio_pipeline_capture_owner_t owner
+) {
+    if (audio_pipeline_rx_handle == NULL) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (!audio_pipeline_capture_owner_is_valid(owner)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (xSemaphoreTake(audio_pipeline_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ESP_OK;
+    if (audio_pipeline_capture_owner !=
+        AUDIO_PIPELINE_CAPTURE_OWNER_NONE &&
+        audio_pipeline_capture_owner != owner) {
+        result = ESP_ERR_INVALID_STATE;
+    } else if (!audio_pipeline_is_capture_active) {
+        result = i2s_channel_enable(audio_pipeline_rx_handle);
+        if (result == ESP_OK) {
+            audio_pipeline_is_capture_active = true;
+        }
+    } else {
+        result = ESP_OK;
+    }
+    if (result == ESP_OK) {
+        audio_pipeline_capture_owner = owner;
+        audio_pipeline_update_state_locked();
+    }
+
+    xSemaphoreGive(audio_pipeline_mutex);
+    return result;
+}
+
+esp_err_t audio_pipeline_capture_release(
+    audio_pipeline_capture_owner_t owner
+) {
+    if (audio_pipeline_rx_handle == NULL) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (!audio_pipeline_capture_owner_is_valid(owner)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (xSemaphoreTake(audio_pipeline_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t result = ESP_OK;
+    if (audio_pipeline_capture_owner != owner) {
+        result = ESP_ERR_INVALID_STATE;
+    } else if (!audio_pipeline_is_capture_active) {
+        audio_pipeline_capture_owner = AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
+        audio_pipeline_update_state_locked();
+    } else {
+        result = i2s_channel_disable(audio_pipeline_rx_handle);
+        if (result == ESP_OK) {
+            audio_pipeline_capture_owner = AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
+            audio_pipeline_is_capture_active = false;
+            audio_pipeline_update_state_locked();
+        }
+    }
+
+    xSemaphoreGive(audio_pipeline_mutex);
+    return result;
+}
+
+audio_pipeline_capture_owner_t audio_pipeline_capture_get_owner(void) {
+    if (audio_pipeline_mutex == NULL) {
+        return AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
+    }
+    if (xSemaphoreTake(audio_pipeline_mutex, portMAX_DELAY) != pdTRUE) {
+        return AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
+    }
+    const audio_pipeline_capture_owner_t owner =
+        audio_pipeline_capture_owner;
+    xSemaphoreGive(audio_pipeline_mutex);
+    return owner;
 }
 
 esp_err_t audio_pipeline_set_playing(bool is_playing) {
@@ -285,17 +399,13 @@ esp_err_t audio_pipeline_set_playing(bool is_playing) {
         result = i2s_channel_enable(audio_pipeline_tx_handle);
         if (result == ESP_OK) {
             audio_pipeline_is_playback_active = true;
-            audio_pipeline_snapshot.state = audio_pipeline_is_capture_active
-                ? AUDIO_PIPELINE_STATE_CAPTURING
-                : AUDIO_PIPELINE_STATE_PLAYING;
+            audio_pipeline_update_state_locked();
         }
     } else if (!is_playing && audio_pipeline_is_playback_active) {
         result = i2s_channel_disable(audio_pipeline_tx_handle);
         if (result == ESP_OK) {
             audio_pipeline_is_playback_active = false;
-            audio_pipeline_snapshot.state = audio_pipeline_is_capture_active
-                ? AUDIO_PIPELINE_STATE_CAPTURING
-                : AUDIO_PIPELINE_STATE_STOPPED;
+            audio_pipeline_update_state_locked();
         }
     }
 

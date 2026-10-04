@@ -179,6 +179,15 @@ $diagnosticHeader = Get-Content -Raw -LiteralPath (
 $diagnosticSource = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter.cpp'
 )
+$voiceWakeSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/voice_wake/src/voice_wake.c'
+)
+$factoryResetSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/factory_reset/src/factory_reset.c'
+)
+$ledIndicatorSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/led_indicator/src/led_indicator.c'
+)
 $runtimeSource = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/device_runtime_reporter/src/device_runtime_reporter.cpp'
 )
@@ -214,7 +223,62 @@ $contractChecks = @(
     @{
         Name = 'diagnostic state layout version'
         Text = $diagnosticSource
-        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 4u'
+        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 5u'
+    },
+    @{
+        Name = 'v3 diagnostic state migration'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_migrate_v3_locked'
+    },
+    @{
+        Name = 'v4 diagnostic state migration'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_migrate_v4_locked'
+    },
+    @{
+        Name = 'detail code contract validation'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_detail_code_is_valid'
+    },
+    @{
+        Name = 'wake rejection producer'
+        Text = $voiceWakeSource
+        Pattern = 'diagnostic_reporter_record_interaction\(\s+"wake_rejected"'
+    },
+    @{
+        Name = 'wake rejected rate limit'
+        Text = $voiceWakeSource
+        Pattern = 'VOICE_WAKE_REJECTION_EVENT_INTERVAL_MS'
+    },
+    @{
+        Name = 'stable wake detail code'
+        Text = $voiceWakeSource
+        Pattern = 'wake_%lu_confidence_%04lu'
+    },
+    @{
+        Name = 'factory reset requested producer'
+        Text = $factoryResetSource
+        Pattern = '"factory_reset_requested"'
+    },
+    @{
+        Name = 'factory reset cancelled producer'
+        Text = $factoryResetSource
+        Pattern = '"factory_reset_cancelled"'
+    },
+    @{
+        Name = 'factory reset completed producer'
+        Text = $factoryResetSource
+        Pattern = '"factory_reset_completed"'
+    },
+    @{
+        Name = 'factory reset failed producer'
+        Text = $factoryResetSource
+        Pattern = '"factory_reset_failed"'
+    },
+    @{
+        Name = 'indicator state producer'
+        Text = $ledIndicatorSource
+        Pattern = 'diagnostic_reporter_record_interaction\(\s+"indicator_state"'
     },
     @{
         Name = 'bounded recovery capacity'
@@ -284,12 +348,36 @@ $contractChecks = @(
     @{
         Name = 'audio input capture starts only on start'
         Text = $audioInputSource
-        Pattern = 'audio_pipeline_set_capturing\(true\)'
+        Pattern = 'audio_pipeline_capture_acquire\(\s+AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT'
     },
     @{
         Name = 'audio input capture stops and clears reference on stop'
         Text = $audioInputSource
-        Pattern = 'audio_pipeline_set_capturing\(false\)'
+        Pattern = 'audio_pipeline_capture_release\(\s+AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT'
+    },
+    @{
+        Name = 'audio pipeline has a stable capture owner contract'
+        Text = $audioPipelineHeader
+        Pattern = 'AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE[\s\S]*AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT'
+    },
+    @{
+        Name = 'audio pipeline rejects ownerless frame reads'
+        Text = $audioPipelineHeader
+        Pattern = 'audio_pipeline_capture_frame\(\s+audio_pipeline_capture_owner_t owner'
+    },
+    @{
+        Name = 'audio pipeline locks owner validation with I2S reads'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/audio_pipeline/src/audio_pipeline.c'
+        ))
+        Pattern = 'audio_pipeline_capture_owner != owner'
+    },
+    @{
+        Name = 'voice wake uses the capture owner lease'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/voice_wake/src/voice_wake.c'
+        ))
+        Pattern = 'audio_pipeline_capture_acquire\(\s+AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE'
     },
     @{
         Name = 'audio input clears the reference sink on stop'

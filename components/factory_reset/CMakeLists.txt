@@ -18,3 +18,7 @@ endif()
 if(CONFIG_FEATURE_BUTTON_INPUT)
     idf_component_optional_requires(PRIVATE button_input)
 endif()
+
+if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER)
+    idf_component_optional_requires(PRIVATE diagnostic_reporter)
+endif()

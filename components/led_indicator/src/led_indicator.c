@@ -11,6 +11,13 @@
 #include "hal/gpio_types.h"
 #include "sdkconfig.h"
 
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER && __has_include("diagnostic_reporter.h")
+#include "diagnostic_reporter.h"
+#define LED_INDICATOR_HAS_DIAGNOSTIC_REPORTER 1
+#else
+#define LED_INDICATOR_HAS_DIAGNOSTIC_REPORTER 0
+#endif
+
 // Kconfig omits a `default n` bool from sdkconfig.h, so an active-high build
 // would fail to compile without an explicit fallback.
 #ifndef CONFIG_LED_INDICATOR_ACTIVE_LOW
@@ -219,6 +226,20 @@ static void led_indicator_record_error(esp_err_t error) {
         led_indicator_record_error_locked(error);
         xSemaphoreGive(led_indicator_mutex);
     }
+}
+
+static void led_indicator_report_state(led_indicator_state_t state) {
+#if LED_INDICATOR_HAS_DIAGNOSTIC_REPORTER
+    // The LED state is an instantaneous transition. Record the stable state
+    // name instead of a duration or a free-form description.
+    (void)diagnostic_reporter_record_interaction(
+        "indicator_state",
+        led_indicator_state_name(state),
+        0
+    );
+#else
+    (void)state;
+#endif
 }
 
 static void led_indicator_deconfigure_ledc(void) {
@@ -457,6 +478,7 @@ led_indicator_error_t led_indicator_set_state(
         led_indicator_active_state = LED_INDICATOR_STATE_COUNT;
         led_indicator_pattern_started_ms = 0U;
         led_indicator_pattern_phase_ms = 0U;
+        led_indicator_report_state(state);
     }
     xSemaphoreGive(led_indicator_mutex);
 
