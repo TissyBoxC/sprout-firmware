@@ -15,6 +15,8 @@ extern "C" {
 #define DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY 8
 /** Maximum number of pending recovery events retained across reboots. */
 #define DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY 8
+/** Maximum number of pending user interaction events retained across reboots. */
+#define DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY 16
 
 /** Bounded text sizes used in the diagnostic heartbeat extension. */
 #define DIAGNOSTIC_REPORTER_EVENT_ID_SIZE 40
@@ -22,6 +24,8 @@ extern "C" {
 #define DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE 20
 #define DIAGNOSTIC_REPORTER_MODULE_NAME_SIZE 32
 #define DIAGNOSTIC_REPORTER_ERROR_CODE_SIZE 32
+#define DIAGNOSTIC_REPORTER_EVENT_TYPE_SIZE 32
+#define DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE 64
 
 /** One boot event that remains pending until the platform accepts it. */
 typedef struct {
@@ -50,6 +54,16 @@ typedef struct {
     char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
 } diagnostic_reporter_recovery_event_t;
 
+/** One bounded user-visible interaction that remains pending until accepted. */
+typedef struct {
+    uint32_t sequence;
+    uint32_t duration_ms;
+    char event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE];
+    char event_type[DIAGNOSTIC_REPORTER_EVENT_TYPE_SIZE];
+    char detail_code[DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE];
+    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
+} diagnostic_reporter_interaction_event_t;
+
 /** One bounded diagnostic snapshot suitable for inclusion in a heartbeat. */
 typedef struct {
     size_t boot_event_count;
@@ -58,6 +72,9 @@ typedef struct {
     size_t recovery_event_count;
     diagnostic_reporter_recovery_event_t
         recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
+    size_t interaction_event_count;
+    diagnostic_reporter_interaction_event_t
+        interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
     uint32_t newest_sequence;
     uint32_t dropped_boot_events;
     bool has_failure;
@@ -89,6 +106,20 @@ esp_err_t diagnostic_reporter_get_snapshot(
  * caller must invoke this only after the platform accepted the heartbeat.
  */
 esp_err_t diagnostic_reporter_acknowledge(uint32_t through_sequence);
+
+/**
+ * @brief Record one bounded user-visible interaction event.
+ *
+ * event_type must be one of the interaction event types accepted by the
+ * platform contract. detail_code is a short symbolic identifier such as a
+ * wake word, button gesture, or indicator state; it must never contain free
+ * text, audio, credentials, or child data.
+ */
+esp_err_t diagnostic_reporter_record_interaction(
+    const char *event_type,
+    const char *detail_code,
+    uint32_t duration_ms
+);
 
 /** @brief Release runtime resources owned by the module. */
 void diagnostic_reporter_shutdown(void);

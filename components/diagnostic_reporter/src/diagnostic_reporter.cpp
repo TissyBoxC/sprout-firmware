@@ -17,8 +17,8 @@
 
 #define DIAGNOSTIC_REPORTER_NVS_KEY "diag_state"
 #define DIAGNOSTIC_REPORTER_STATE_MAGIC 0x53444731u
-#define DIAGNOSTIC_REPORTER_STATE_VERSION 3u
-#define DIAGNOSTIC_REPORTER_MAX_STATE_SIZE 2048u
+#define DIAGNOSTIC_REPORTER_STATE_VERSION 4u
+#define DIAGNOSTIC_REPORTER_MAX_STATE_SIZE 8192u
 
 static_assert(
     sizeof(DIAGNOSTIC_REPORTER_NVS_KEY) <= NVS_KEY_NAME_MAX_SIZE,
@@ -46,6 +46,15 @@ typedef struct {
 } diagnostic_reporter_recovery_state_t;
 
 typedef struct {
+    uint32_t sequence;
+    uint32_t duration_ms;
+    char event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE];
+    char event_type[DIAGNOSTIC_REPORTER_EVENT_TYPE_SIZE];
+    char detail_code[DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE];
+    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
+} diagnostic_reporter_interaction_state_t;
+
+typedef struct {
     uint32_t magic;
     uint16_t version;
     uint16_t boot_event_count;
@@ -55,10 +64,13 @@ typedef struct {
     uint32_t source_boot_count;
     uint32_t last_failure_transition_count;
     uint32_t last_recovery_transition_count;
+    uint16_t interaction_event_count;
     diagnostic_reporter_failure_state_t failure;
     uint16_t recovery_event_count;
     diagnostic_reporter_recovery_state_t
         recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
+    diagnostic_reporter_interaction_state_t
+        interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
     diagnostic_reporter_boot_event_t
         boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
 } diagnostic_reporter_state_t;
@@ -188,6 +200,8 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
             DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY ||
         diagnostic_reporter_state.recovery_event_count >
             DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY ||
+        diagnostic_reporter_state.interaction_event_count >
+            DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY ||
         diagnostic_reporter_state.source_boot_count >
             diagnostic_reporter_state.boot_count ||
         diagnostic_reporter_state.failure.pending > 1) {
@@ -278,6 +292,23 @@ static void diagnostic_reporter_append_recovery_event_locked(
         [diagnostic_reporter_state.recovery_event_count++] = *event;
 }
 
+static void diagnostic_reporter_append_interaction_event_locked(
+    const diagnostic_reporter_interaction_state_t *event
+) {
+    if (diagnostic_reporter_state.interaction_event_count ==
+        DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY) {
+        memmove(
+            &diagnostic_reporter_state.interaction_events[0],
+            &diagnostic_reporter_state.interaction_events[1],
+            sizeof(diagnostic_reporter_state.interaction_events[0]) *
+                (DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY - 1)
+        );
+        --diagnostic_reporter_state.interaction_event_count;
+    }
+    diagnostic_reporter_state.interaction_events
+        [diagnostic_reporter_state.interaction_event_count++] = *event;
+}
+
 static uint32_t diagnostic_reporter_newest_sequence_locked(void) {
     uint32_t newest = 0;
     for (size_t index = 0;
@@ -296,6 +327,15 @@ static uint32_t diagnostic_reporter_newest_sequence_locked(void) {
          ++index) {
         const uint32_t sequence =
             diagnostic_reporter_state.recovery_events[index].sequence;
+        if (sequence > newest) {
+            newest = sequence;
+        }
+    }
+    for (size_t index = 0;
+         index < diagnostic_reporter_state.interaction_event_count;
+         ++index) {
+        const uint32_t sequence =
+            diagnostic_reporter_state.interaction_events[index].sequence;
         if (sequence > newest) {
             newest = sequence;
         }
@@ -377,6 +417,80 @@ static esp_err_t diagnostic_reporter_record_recovery_locked(
             previous_event_count;
         diagnostic_reporter_state.next_sequence = previous_next_sequence;
     }
+    return result;
+}
+
+static bool diagnostic_reporter_interaction_type_is_valid(
+    const char *event_type
+) {
+    if (event_type == NULL) {
+        return false;
+    }
+    return strcmp(event_type, "wake_detected") == 0 ||
+        strcmp(event_type, "wake_rejected") == 0 ||
+        strcmp(event_type, "button_gesture") == 0 ||
+        strcmp(event_type, "indicator_state") == 0 ||
+        strcmp(event_type, "factory_reset_requested") == 0 ||
+        strcmp(event_type, "factory_reset_cancelled") == 0 ||
+        strcmp(event_type, "factory_reset_completed") == 0 ||
+        strcmp(event_type, "factory_reset_failed") == 0;
+}
+
+esp_err_t diagnostic_reporter_record_interaction(
+    const char *event_type,
+    const char *detail_code,
+    uint32_t duration_ms
+) {
+    if (!diagnostic_reporter_ready ||
+        !diagnostic_reporter_interaction_type_is_valid(event_type) ||
+        detail_code == NULL ||
+        detail_code[0] == '\0' ||
+        duration_ms > 3600000u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!diagnostic_reporter_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    diagnostic_reporter_interaction_state_t event = {};
+    const uint32_t previous_next_sequence =
+        diagnostic_reporter_state.next_sequence;
+    const uint16_t previous_event_count =
+        diagnostic_reporter_state.interaction_event_count;
+
+    event.sequence = diagnostic_reporter_next_sequence_locked();
+    event.duration_ms = duration_ms;
+    snprintf(
+        event.event_id,
+        sizeof(event.event_id),
+        "interaction_%08lx",
+        (unsigned long)event.sequence
+    );
+    diagnostic_reporter_copy_text(
+        event.event_type,
+        sizeof(event.event_type),
+        event_type
+    );
+    diagnostic_reporter_copy_text(
+        event.detail_code,
+        sizeof(event.detail_code),
+        detail_code
+    );
+    const version_info_t version = version_info_get();
+    diagnostic_reporter_copy_text(
+        event.firmware_version,
+        sizeof(event.firmware_version),
+        version.firmware_version
+    );
+
+    diagnostic_reporter_append_interaction_event_locked(&event);
+    const esp_err_t result = diagnostic_reporter_save_state_locked();
+    if (result != ESP_OK) {
+        diagnostic_reporter_state.interaction_event_count =
+            previous_event_count;
+        diagnostic_reporter_state.next_sequence = previous_next_sequence;
+    }
+    diagnostic_reporter_unlock();
     return result;
 }
 
@@ -591,6 +705,39 @@ esp_err_t diagnostic_reporter_get_snapshot(
                 event->firmware_version
             );
         }
+        snapshot->interaction_event_count =
+            diagnostic_reporter_state.interaction_event_count;
+        for (size_t index = 0;
+             index < diagnostic_reporter_state.interaction_event_count;
+             ++index) {
+            const diagnostic_reporter_interaction_state_t *event =
+                &diagnostic_reporter_state.interaction_events[index];
+            snapshot->interaction_events[index].sequence = event->sequence;
+            snapshot->interaction_events[index].duration_ms =
+                event->duration_ms;
+            diagnostic_reporter_copy_text(
+                snapshot->interaction_events[index].event_id,
+                sizeof(snapshot->interaction_events[index].event_id),
+                event->event_id
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->interaction_events[index].event_type,
+                sizeof(snapshot->interaction_events[index].event_type),
+                event->event_type
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->interaction_events[index].detail_code,
+                sizeof(snapshot->interaction_events[index].detail_code),
+                event->detail_code
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->interaction_events[index].firmware_version,
+                sizeof(
+                    snapshot->interaction_events[index].firmware_version
+                ),
+                event->firmware_version
+            );
+        }
         snapshot->has_failure =
             diagnostic_reporter_state.failure.pending != 0;
         if (snapshot->has_failure) {
@@ -656,6 +803,20 @@ esp_err_t diagnostic_reporter_acknowledge(uint32_t through_sequence) {
     }
     diagnostic_reporter_state.recovery_event_count =
         retained_recovery_count;
+
+    size_t retained_interaction_count = 0;
+    for (size_t index = 0;
+         index < diagnostic_reporter_state.interaction_event_count;
+         ++index) {
+        const diagnostic_reporter_interaction_state_t *event =
+            &diagnostic_reporter_state.interaction_events[index];
+        if (event->sequence > through_sequence) {
+            diagnostic_reporter_state.interaction_events
+                [retained_interaction_count++] = *event;
+        }
+    }
+    diagnostic_reporter_state.interaction_event_count =
+        retained_interaction_count;
 
     if (diagnostic_reporter_state.failure.pending &&
         diagnostic_reporter_state.failure.sequence <= through_sequence) {

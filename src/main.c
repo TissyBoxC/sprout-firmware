@@ -19,6 +19,21 @@
 #if CONFIG_FEATURE_AUDIO_INPUT
 #include "audio_input.h"
 #endif
+#if CONFIG_FEATURE_VOICE_WAKE
+#include "voice_wake.h"
+#endif
+#if CONFIG_FEATURE_WAKE_FEEDBACK
+#include "wake_feedback.h"
+#endif
+#if CONFIG_FEATURE_BUTTON_INPUT
+#include "button_input.h"
+#endif
+#if CONFIG_FEATURE_LED_INDICATOR
+#include "led_indicator.h"
+#endif
+#if CONFIG_FEATURE_FACTORY_RESET
+#include "factory_reset.h"
+#endif
 #if CONFIG_FEATURE_VOLUME_CONTROL
 #include "volume_control.h"
 #endif
@@ -85,6 +100,30 @@
 
 static const char *const TAG = "sprout_main";
 
+#if CONFIG_FEATURE_BUTTON_INPUT && CONFIG_FEATURE_MODULE_REGISTRY
+// The button task owns one handler for the whole application. Keeping the
+// mapping here avoids coupling gesture policy to the input driver.
+static void handle_button_gesture(const button_input_event_t *event) {
+    if (event == NULL) {
+        return;
+    }
+#if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
+    (void)diagnostic_reporter_record_interaction(
+        "button_gesture",
+        button_input_gesture_name(event->gesture),
+        event->held_ms
+    );
+#endif
+#if CONFIG_FEATURE_FACTORY_RESET
+    if (event->gesture == BUTTON_INPUT_GESTURE_VERY_LONG_PRESS) {
+        // A very-long press only arms the confirmed reset flow; erasing still
+        // requires an explicit confirmation through factory_reset_confirm.
+        (void)factory_reset_request(FACTORY_RESET_REASON_BUTTON_GESTURE);
+    }
+#endif
+}
+#endif
+
 #if CONFIG_FEATURE_MODULE_REGISTRY
 static void register_modules(void) {
 #if CONFIG_FEATURE_SYSTEM_CORE
@@ -144,6 +183,21 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_AUDIO_INPUT
     ESP_ERROR_CHECK(module_registry_add(audio_input_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_VOICE_WAKE
+    ESP_ERROR_CHECK(module_registry_add(voice_wake_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_WAKE_FEEDBACK
+    ESP_ERROR_CHECK(module_registry_add(wake_feedback_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_BUTTON_INPUT
+    ESP_ERROR_CHECK(module_registry_add(button_input_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_LED_INDICATOR
+    ESP_ERROR_CHECK(module_registry_add(led_indicator_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_FACTORY_RESET
+    ESP_ERROR_CHECK(module_registry_add(factory_reset_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_VOLUME_CONTROL
     ESP_ERROR_CHECK(module_registry_add(volume_control_module_descriptor()));
 #endif
@@ -168,6 +222,24 @@ static void register_modules(void) {
 }
 #endif
 
+static void start_voice_interaction(void) {
+#if CONFIG_FEATURE_VOICE_WAKE
+    const esp_err_t wake_result = voice_wake_start();
+    if (wake_result != ESP_OK) {
+        ESP_LOGE(TAG, "voice wake failed to start: %s",
+                 esp_err_to_name(wake_result));
+    }
+#endif
+#if CONFIG_FEATURE_BUTTON_INPUT && CONFIG_FEATURE_MODULE_REGISTRY
+    const esp_err_t handler_result =
+        button_input_set_event_handler(handle_button_gesture);
+    if (handler_result != ESP_OK) {
+        ESP_LOGE(TAG, "button handler registration failed: %s",
+                 esp_err_to_name(handler_result));
+    }
+#endif
+}
+
 void app_main(void) {
 #if CONFIG_FEATURE_MODULE_REGISTRY
     register_modules();
@@ -176,6 +248,8 @@ void app_main(void) {
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "one or more modules failed to initialize: %s",
                  esp_err_to_name(result));
+    } else {
+        start_voice_interaction();
     }
 #elif CONFIG_FEATURE_SYSTEM_CORE
     ESP_ERROR_CHECK(system_core_init());

@@ -432,6 +432,21 @@ static esp_err_t device_runtime_send_heartbeat(void) {
             item["module_name"] = event->module_name;
             item["firmware_version"] = event->firmware_version;
         }
+        JsonArray interaction_events =
+            diagnostics_object["interaction_events"].to<JsonArray>();
+        for (size_t index = 0;
+             index < diagnostics.interaction_event_count;
+             ++index) {
+            const diagnostic_reporter_interaction_event_t *event =
+                &diagnostics.interaction_events[index];
+            JsonObject item = interaction_events.add<JsonObject>();
+            item["event_id"] = event->event_id;
+            item["event_type"] = event->event_type;
+            item["sequence"] = event->sequence;
+            item["detail_code"] = event->detail_code;
+            item["duration_ms"] = event->duration_ms;
+            item["firmware_version"] = event->firmware_version;
+        }
     } else if (diagnostics_result != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(
             TAG,

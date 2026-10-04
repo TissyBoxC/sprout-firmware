@@ -125,6 +125,11 @@ function Test-OptionalModuleRemoval {
         # CMake graph never references a component that is already gone.
         foreach ($moduleName in @(
             'ui_text'
+            'factory_reset'
+            'led_indicator'
+            'button_input'
+            'wake_feedback'
+            'voice_wake'
             'diagnostic_reporter'
             'device_runtime_reporter'
             'parent_policy'
@@ -209,7 +214,7 @@ $contractChecks = @(
     @{
         Name = 'diagnostic state layout version'
         Text = $diagnosticSource
-        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 3u'
+        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 4u'
     },
     @{
         Name = 'bounded recovery capacity'

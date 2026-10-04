@@ -26,6 +26,26 @@ if(CONFIG_FEATURE_AUDIO_INPUT)
     list(APPEND app_requires "audio_input")
 endif()
 
+if(CONFIG_FEATURE_VOICE_WAKE)
+    list(APPEND app_requires "voice_wake")
+endif()
+
+if(CONFIG_FEATURE_WAKE_FEEDBACK)
+    list(APPEND app_requires "wake_feedback")
+endif()
+
+if(CONFIG_FEATURE_BUTTON_INPUT)
+    list(APPEND app_requires "button_input")
+endif()
+
+if(CONFIG_FEATURE_LED_INDICATOR)
+    list(APPEND app_requires "led_indicator")
+endif()
+
+if(CONFIG_FEATURE_FACTORY_RESET)
+    list(APPEND app_requires "factory_reset")
+endif()
+
 if(CONFIG_FEATURE_VOLUME_CONTROL)
     list(APPEND app_requires "volume_control")
 endif()
