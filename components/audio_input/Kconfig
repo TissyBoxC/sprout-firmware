@@ -1,0 +1,163 @@
+menu "Sprout feature modules"
+
+config FEATURE_AUDIO_INPUT
+    bool "Enable microphone capture, preprocessing, VAD, and Opus framing"
+    default y
+    depends on FEATURE_AUDIO_CODEC && FEATURE_AUDIO_PIPELINE
+    help
+        Own the conversation capture path: read 20 ms PCM frames, cancel
+        speaker echo, suppress steady noise, normalize gain, detect speech, and
+        emit Opus packets. The microphone is enabled only while a conversation
+        is active, so a device never records in the background.
+
+config AUDIO_INPUT_TASK_STACK_SIZE
+    int "Capture task stack size in bytes"
+    depends on FEATURE_AUDIO_INPUT
+    range 4096 32768
+    default 8192
+
+config AUDIO_INPUT_TASK_PRIORITY
+    int "Capture task priority"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 24
+    default 7
+
+config AUDIO_INPUT_REFERENCE_QUEUE_FRAMES
+    int "Buffered speaker reference frames"
+    depends on FEATURE_AUDIO_INPUT
+    range 4 32
+    default 12
+    help
+        Bounds how much speaker audio is queued for echo cancellation. The
+        queue never grows without limit, so a stalled capture task cannot
+        exhaust memory.
+
+config AUDIO_INPUT_AEC_REFERENCE_DELAY_FRAMES
+    int "Speaker reference delay in frames"
+    depends on FEATURE_AUDIO_INPUT
+    range 0 8
+    default 2
+    help
+        Compensates the acoustic round trip between the speaker and the
+        microphone. Two frames is 40 ms, which covers the reference hardware's
+        codec and DMA latency.
+
+config AUDIO_INPUT_AEC_FILTER_TAPS
+    int "Acoustic echo canceller length in samples"
+    depends on FEATURE_AUDIO_INPUT
+    range 320 2048
+    default 512
+    help
+        The canceller adapts over one whole frame, so the filter must hold at
+        least 320 samples. 512 taps model 32 ms of echo path at 16 kHz.
+
+config AUDIO_INPUT_AEC_STEP_PERMILLE
+    int "Acoustic echo canceller step size (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 10 1000
+    default 300
+
+config AUDIO_INPUT_AEC_LEAKAGE_PERMILLE
+    int "Acoustic echo canceller leakage (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 0 100
+    default 2
+
+config AUDIO_INPUT_AEC_DOUBLE_TALK_FACTOR_MILLI
+    int "Double-talk detection margin (milli)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1000 8000
+    default 1500
+    help
+        The near-end sample must exceed the recent reference peak by this
+        factor before adaptation freezes. 1500 is a 1.5x margin.
+
+config AUDIO_INPUT_NS_NOISE_DOWNWARD_PERMILLE
+    int "Noise floor downward tracking (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 500
+    default 100
+    help
+        Smaller values let the noise estimate follow a quieter room faster.
+
+config AUDIO_INPUT_NS_NOISE_UPWARD_PERMILLE
+    int "Noise floor upward tracking (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 500 999
+    default 980
+    help
+        Larger values stop speech from being absorbed into the noise estimate.
+
+config AUDIO_INPUT_NS_GAIN_SMOOTHING_PERMILLE
+    int "Noise suppression gain smoothing (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 999
+    default 700
+
+config AUDIO_INPUT_NS_FLOOR_GAIN_PERCENT
+    int "Noise suppression retained gain (percent)"
+    depends on FEATURE_AUDIO_INPUT
+    range 0 100
+    default 12
+
+config AUDIO_INPUT_AGC_TARGET_RMS
+    int "Gain calibration target RMS"
+    depends on FEATURE_AUDIO_INPUT
+    range 200 8000
+    default 1200
+
+config AUDIO_INPUT_AGC_MIN_GAIN_PERCENT
+    int "Gain calibration minimum gain (percent)"
+    depends on FEATURE_AUDIO_INPUT
+    range 10 100
+    default 25
+
+config AUDIO_INPUT_AGC_MAX_GAIN_PERCENT
+    int "Gain calibration maximum gain (percent)"
+    depends on FEATURE_AUDIO_INPUT
+    range 100 1600
+    default 600
+
+config AUDIO_INPUT_AGC_ATTACK_PERMILLE
+    int "Gain calibration attack (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 50 999
+    default 700
+
+config AUDIO_INPUT_AGC_RELEASE_PERMILLE
+    int "Gain calibration release (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 500
+    default 50
+
+config AUDIO_INPUT_VAD_SNR_THRESHOLD_MILLI
+    int "Voice activity SNR threshold (milli)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1000 20000
+    default 3500
+
+config AUDIO_INPUT_VAD_MIN_SPEECH_FRAMES
+    int "Minimum consecutive speech frames"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 20
+    default 2
+
+config AUDIO_INPUT_VAD_HANGOVER_FRAMES
+    int "Speech hangover frames"
+    depends on FEATURE_AUDIO_INPUT
+    range 0 50
+    default 12
+
+config AUDIO_INPUT_VAD_NOISE_DOWNWARD_PERMILLE
+    int "Voice activity noise floor downward tracking (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 1 500
+    default 150
+
+config AUDIO_INPUT_VAD_NOISE_UPWARD_PERMILLE
+    int "Voice activity noise floor upward tracking (permille)"
+    depends on FEATURE_AUDIO_INPUT
+    range 500 999
+    default 980
+
+endmenu

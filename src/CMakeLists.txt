@@ -22,6 +22,10 @@ if(CONFIG_FEATURE_AUDIO_PIPELINE)
     list(APPEND app_requires "audio_pipeline")
 endif()
 
+if(CONFIG_FEATURE_AUDIO_INPUT)
+    list(APPEND app_requires "audio_input")
+endif()
+
 if(CONFIG_FEATURE_VOLUME_CONTROL)
     list(APPEND app_requires "volume_control")
 endif()
