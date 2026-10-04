@@ -14,6 +14,9 @@ All transport is HTTPS with the ESP certificate bundle; there is no insecure
 fallback. The platform base URL is read from `config_store` under
 `platform_url` and must start with `https://`. Its build-time default is
 `https://api.clarkhub.cn`, defined once in this component's `Kconfig`.
+The registration, registration-grant, and platform-URL values use NVS-safe
+short keys. The old over-length registration key could never be written by
+ESP-IDF, so no migration is required.
 
 `CONFIG_FEATURE_DEVICE_BINDING_CLIENT` controls source inclusion. Delete the
 component, its Kconfig entry, and the `main.c` registration to remove it.

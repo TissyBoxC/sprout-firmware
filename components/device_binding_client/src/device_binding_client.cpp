@@ -21,7 +21,7 @@ extern "C" {
 
 #define DEVICE_BINDING_KEY_BOUND "device_bound"
 #define DEVICE_BINDING_KEY_SESSION_TOKEN "device_session"
-#define DEVICE_BINDING_KEY_REGISTERED "device_registered"
+#define DEVICE_BINDING_KEY_REGISTERED "dev_registered"
 #define DEVICE_BINDING_KEY_REGISTRATION_TOKEN "dev_reg_token"
 #define DEVICE_BINDING_PLATFORM_KEY "platform_url"
 #define DEVICE_BINDING_HTTP_TIMEOUT_MS 15000
