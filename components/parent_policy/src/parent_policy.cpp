@@ -616,7 +616,7 @@ static esp_err_t parent_policy_parse_disabled_periods_text(
 }
 
 static esp_err_t parent_policy_load_cached(void) {
-    char version_text[16] = {0};
+    char version_text[24] = {0};
     char daily_limit_text[16] = {0};
     char categories_text[CONFIG_STORE_VALUE_SIZE] = {0};
     char disabled_period_count_text[8] = {0};
@@ -818,15 +818,25 @@ static esp_err_t parent_policy_clear_locked(
     parent_policy_refresh_reason_t reason
 ) {
     const esp_err_t clear_result = parent_policy_clear_cached_values();
+    if (clear_result != ESP_OK) {
+        // A partial erase must not weaken the live ceiling while a usable
+        // policy may still exist in NVS. Keep both the policy and current
+        // volume limit, and report the storage failure to the caller.
+        parent_policy_set_status(
+            parent_policy_has_cached_policy,
+            false,
+            reason,
+            clear_result
+        );
+        return clear_result;
+    }
     parent_policy_has_cached_policy = false;
     memset(&parent_policy_snapshot, 0, sizeof(parent_policy_snapshot));
     const volume_control_error_t volume_result =
         volume_control_set_max_percent(CONFIG_VOLUME_CONTROL_MAX_PERCENT);
-    const esp_err_t result =
-        clear_result != ESP_OK ? clear_result
-                              : (volume_result == VOLUME_CONTROL_OK
-                                     ? ESP_OK
-                                     : ESP_ERR_INVALID_STATE);
+    const esp_err_t result = volume_result == VOLUME_CONTROL_OK
+                                 ? ESP_OK
+                                 : ESP_ERR_INVALID_STATE;
     parent_policy_set_status(
         false,
         result == ESP_OK,
