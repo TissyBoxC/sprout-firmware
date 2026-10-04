@@ -1,0 +1,93 @@
+menu "Sprout feature modules"
+
+config FEATURE_BUTTON_INPUT
+    bool "Enable physical key input"
+    default y
+    help
+        Own the debounced physical key input path. GPIO interrupts only wake
+        a task that then runs the debounce and gesture state machine. The
+        component exposes short, long, very-long, and double press gestures.
+
+config BUTTON_INPUT_PRIMARY_GPIO
+    int "Primary function button GPIO"
+    depends on FEATURE_BUTTON_INPUT
+    range 0 48
+    default 0
+    help
+        Boot button on the current ESP32-S3 N16R8 profile. The pin is sampled
+        active-low by default, and a product profile may override it when the
+        enclosure uses a different function key.
+
+config BUTTON_INPUT_PRIMARY_ACTIVE_LOW
+    bool "Primary function button is active-low"
+    depends on FEATURE_BUTTON_INPUT
+    default y
+
+config BUTTON_INPUT_SECONDARY_ENABLED
+    bool "Enable the secondary button"
+    depends on FEATURE_BUTTON_INPUT
+    default y
+
+config BUTTON_INPUT_SECONDARY_GPIO
+    int "Secondary button GPIO"
+    depends on FEATURE_BUTTON_INPUT && BUTTON_INPUT_SECONDARY_ENABLED
+    range 0 48
+    default 1
+    help
+        Avoid I2S GPIO 4-7 and the N16R8 flash/PSRAM pins. Change this value
+        in the product profile when the board routes a different key.
+
+config BUTTON_INPUT_SECONDARY_ACTIVE_LOW
+    bool "Secondary button is active-low"
+    depends on FEATURE_BUTTON_INPUT && BUTTON_INPUT_SECONDARY_ENABLED
+    default y
+
+config BUTTON_INPUT_SHORT_PRESS_MS
+    int "Short press threshold in milliseconds"
+    depends on FEATURE_BUTTON_INPUT
+    range 20 500
+    default 50
+
+config BUTTON_INPUT_DEBOUNCE_MS
+    int "Debounce time in milliseconds"
+    depends on FEATURE_BUTTON_INPUT
+    range 5 100
+    default 25
+
+config BUTTON_INPUT_LONG_PRESS_MS
+    int "Long press threshold in milliseconds"
+    depends on FEATURE_BUTTON_INPUT
+    range 200 10000
+    default 1200
+
+config BUTTON_INPUT_VERY_LONG_PRESS_MS
+    int "Very-long press threshold in milliseconds"
+    depends on FEATURE_BUTTON_INPUT
+    range 1000 30000
+    default 5000
+    help
+        Factory reset gesture threshold. The application owns the reset
+        action and must still require an explicit user-visible confirmation.
+
+config BUTTON_INPUT_DOUBLE_PRESS_MS
+    int "Double press window in milliseconds"
+    depends on FEATURE_BUTTON_INPUT
+    range 100 1500
+    default 350
+
+config BUTTON_INPUT_TASK_STACK_SIZE
+    int "Button task stack size in bytes"
+    depends on FEATURE_BUTTON_INPUT
+    range 2048 8192
+    default 3072
+
+config BUTTON_INPUT_TASK_PRIORITY
+    int "Button task priority"
+    depends on FEATURE_BUTTON_INPUT
+    range 1 20
+    default 4
+    help
+        The task only runs after a GPIO wake-up or a bounded gesture timeout,
+        so it stays below the audio and network workers.
+
+endmenu

@@ -1,0 +1,32 @@
+menu "Sprout feature modules"
+
+config FEATURE_FACTORY_RESET
+    bool "Enable guarded local factory reset"
+    default y
+    depends on FEATURE_MODULE_REGISTRY
+    help
+        Require an explicit second confirmation before erasing the device's own
+        configuration and credentials. A pending request expires after a
+        bounded timeout. The reset never erases application or data partitions
+        other than the configured NVS partition.
+
+config FACTORY_RESET_PENDING_TIMEOUT_SECONDS
+    int "Pending request timeout in seconds"
+    depends on FEATURE_FACTORY_RESET
+    range 1 300
+    default 10
+    help
+        A bare request is rejected once this many seconds pass without an
+        explicit confirmation, so an accidental gesture cannot leave the
+        device armed indefinitely.
+
+config FACTORY_RESET_NVS_PARTITION
+    string "NVS partition erased by factory reset"
+    depends on FEATURE_FACTORY_RESET
+    default "nvs"
+    help
+        Label of the device-owned NVS partition. Only this partition is
+        erased. Keep it identical to the partition used by config_store and
+        device identity so credentials do not remain on the device.
+
+endmenu

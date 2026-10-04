@@ -1,0 +1,71 @@
+menu "Sprout feature modules"
+
+config FEATURE_LED_INDICATOR
+    bool "Enable status LED indicator"
+    default y
+    help
+        Drive one status LED from LEDC PWM and map device states to bounded
+        blink, solid, and breathing patterns. The module keeps the output off
+        when the GPIO or LEDC peripheral is unavailable.
+
+config LED_INDICATOR_GPIO
+    int "Status LED GPIO number"
+    depends on FEATURE_LED_INDICATOR
+    range 0 48
+    default 38
+    help
+        Board-profile default is GPIO 38. Change it to the output pin used by
+        the product carrier board; the module reports a failure instead of
+        driving an invalid pin.
+
+config LED_INDICATOR_ACTIVE_LOW
+    bool "Status LED is active low"
+    depends on FEATURE_LED_INDICATOR
+    default n
+    help
+        Disabled by default because the current repository has no board
+        definition proving an active-low LED. Enable it when the board grounds
+        the LED cathode through the GPIO.
+
+config LED_INDICATOR_PWM_FREQUENCY_HZ
+    int "LED PWM frequency in Hz"
+    depends on FEATURE_LED_INDICATOR
+    range 100 5000
+    default 1000
+    help
+        PWM frequencies above the visible flicker range keep brightness
+        changes visually smooth.
+
+config LED_INDICATOR_BRIGHTNESS_PERCENT
+    int "LED brightness percent"
+    depends on FEATURE_LED_INDICATOR
+    range 1 100
+    default 50
+    help
+        Relative duty applied to solid, blink, and breathing patterns.
+
+config LED_INDICATOR_TASK_STACK_SIZE
+    int "Indicator task stack size in bytes"
+    depends on FEATURE_LED_INDICATOR
+    range 2048 8192
+    default 3072
+
+config LED_INDICATOR_TASK_PRIORITY
+    int "Indicator task priority"
+    depends on FEATURE_LED_INDICATOR
+    range 1 12
+    default 2
+    help
+        The indicator only updates PWM and must remain below audio, network,
+        and watchdog work.
+
+config LED_INDICATOR_POLL_INTERVAL_MS
+    int "Pattern transition poll interval in milliseconds"
+    depends on FEATURE_LED_INDICATOR
+    range 5 1000
+    default 20
+    help
+        Bounds how long the task waits before applying a new state. The task
+        blocks on a semaphore or this timeout and never busy-spins.
+
+endmenu
