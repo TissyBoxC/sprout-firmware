@@ -24,11 +24,11 @@ function Invoke-HostTest {
         [Parameter(Mandatory = $true)]
         [string[]]$Sources,
 
-        [Parameter(Mandatory = $true)]
-        [string[]]$IncludeDirectories,
+        [string[]]$IncludeDirectories = @(),
 
-        [Parameter(Mandatory = $true)]
-        [string[]]$AdditionalArguments,
+        # Optional arguments and an empty include list are legitimate here;
+        # binding an empty array to a mandatory parameter fails under pwsh 7.
+        [string[]]$AdditionalArguments = @(),
 
         [Parameter(Mandatory = $true)]
         [string]$Compiler
