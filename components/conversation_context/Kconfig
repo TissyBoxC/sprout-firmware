@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONVERSATION_CONTEXT
+    bool "Enable bounded on-device conversation context"
+    default n
+    help
+        Retain the last few turn summaries for the active conversation so the
+        device can label a session and build a bounded offline fallback prompt.
+        The gateway remains the owner of the authoritative multi-turn history.
+
+endmenu

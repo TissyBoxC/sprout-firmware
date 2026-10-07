@@ -1,0 +1,29 @@
+menu "Sprout feature modules"
+
+config FEATURE_VOICE_SESSION
+    bool "Enable realtime voice session over WSS"
+    default n
+    depends on FEATURE_AUDIO_CODEC && FEATURE_AUDIO_PIPELINE && FEATURE_AUDIO_INPUT && FEATURE_PLAYBACK_QUEUE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_DEVICE_IDENTITY && FEATURE_NETWORK_MANAGER
+    help
+        Connect to the voice gateway over WSS, stream microphone audio, play
+        replies, and drive wake-triggered, barge-in, and continuous multi-turn
+        conversation. Certificate validation is always enabled and cleartext
+        WebSocket is rejected unless the debug-only insecure flag is set.
+
+config VOICE_SESSION_ENDPOINT
+    string "Voice gateway WebSocket URL"
+    depends on FEATURE_VOICE_SESSION
+    default "wss://voice.clarkhub.cn/v1/voice"
+    help
+        Must use wss:// so TLS certificate validation stays enabled. The device
+        token is sent in the Authorization header and never in the query string.
+
+config VOICE_SESSION_ALLOW_INSECURE_WS
+    bool "Allow cleartext ws:// for local debugging"
+    depends on FEATURE_VOICE_SESSION
+    default n
+    help
+        Development only. Even when set, a release image refuses ws:// because
+        the check is compiled out under the release optimization level.
+
+endmenu

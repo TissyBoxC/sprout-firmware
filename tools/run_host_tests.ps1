@@ -99,4 +99,32 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$voiceSessionRoot = Join-Path $firmwareRoot 'components/voice_session'
+Invoke-HostTest `
+    -Name 'voice_session_protocol' `
+    -Sources @(
+        (Join-Path $voiceSessionRoot 'src/voice_session_protocol.c')
+        (Join-Path $voiceSessionRoot 'test/test_voice_session_protocol.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceSessionRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$conversationContextRoot = Join-Path $firmwareRoot 'components/conversation_context'
+Invoke-HostTest `
+    -Name 'conversation_context_ring' `
+    -Sources @(
+        (Join-Path $conversationContextRoot 'src/conversation_context_ring.c')
+        (Join-Path $conversationContextRoot 'test/test_conversation_context_ring.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $conversationContextRoot 'include')
+        (Join-Path $conversationContextRoot 'src')
+        (Join-Path $conversationContextRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Write-Host 'Host verification passed.'

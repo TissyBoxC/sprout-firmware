@@ -114,6 +114,18 @@ if(CONFIG_FEATURE_VERSION_INFO)
     list(APPEND app_requires "version_info")
 endif()
 
+if(CONFIG_FEATURE_CONVERSATION_CONTEXT)
+    list(APPEND app_requires "conversation_context")
+endif()
+
+if(CONFIG_FEATURE_CHILD_PROMPT_PROFILE)
+    list(APPEND app_requires "child_prompt_profile")
+endif()
+
+if(CONFIG_FEATURE_VOICE_SESSION)
+    list(APPEND app_requires "voice_session")
+endif()
+
 idf_component_register(
     SRCS "main.c"
     REQUIRES ${app_requires}

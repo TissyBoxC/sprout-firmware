@@ -24,6 +24,15 @@
 #if CONFIG_FEATURE_VOICE_WAKE
 #include "voice_wake.h"
 #endif
+#if CONFIG_FEATURE_VOICE_SESSION
+#include "voice_session.h"
+#endif
+#if CONFIG_FEATURE_CONVERSATION_CONTEXT
+#include "conversation_context.h"
+#endif
+#if CONFIG_FEATURE_CHILD_PROMPT_PROFILE
+#include "child_prompt_profile.h"
+#endif
 #if CONFIG_FEATURE_WAKE_FEEDBACK
 #include "wake_feedback.h"
 #endif
@@ -344,6 +353,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_UI_TEXT
     ESP_ERROR_CHECK(module_registry_add(ui_text_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONVERSATION_CONTEXT
+    ESP_ERROR_CHECK(module_registry_add(conversation_context_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CHILD_PROMPT_PROFILE
+    ESP_ERROR_CHECK(module_registry_add(child_prompt_profile_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_VOICE_SESSION
+    ESP_ERROR_CHECK(module_registry_add(voice_session_module_descriptor()));
 #endif
 }
 #endif

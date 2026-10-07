@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_CHILD_PROMPT_PROFILE
+    bool "Enable local child prompt profile"
+    default n
+    depends on FEATURE_CONFIG_STORE
+    help
+        Persist the child's age tier and mirror the guardian content allowlist
+        so the device can gate local prompts and label a voice session with the
+        active content level. The platform child profile remains authoritative.
+
+endmenu

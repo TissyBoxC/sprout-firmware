@@ -1,0 +1,9 @@
+version: "1.0.0"
+description: Realtime WSS voice session transport and orchestration for 如此萌屋 初芽.
+dependencies:
+  idf:
+    version: ">=6.0"
+  espressif/esp_websocket_client:
+    version: "1.6.1"
+  espressif/cjson:
+    version: "1.7.19~2"

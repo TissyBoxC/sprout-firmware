@@ -3,5 +3,9 @@ description: Local always-on wake detection for 如此萌屋 初芽.
 dependencies:
   idf:
     version: ">=6.1"
+  # esp-sr 2.5.4 and 2.5.5 are listed by the component index but their
+  # artifacts return 403 from the download origin, so the registry solver
+  # cannot fetch them. Pin the newest version that is actually downloadable;
+  # bump this only after the artifact URL is verified over HTTPS.
   espressif/esp-sr:
-    version: "2.5.5"
+    version: "2.5.3"
