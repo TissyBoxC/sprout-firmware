@@ -137,6 +137,7 @@ Invoke-HostTest `
     -IncludeDirectories @(
         (Join-Path $contentLibraryRoot 'include')
         (Join-Path $contentLibraryRoot 'src')
+        (Join-Path $contentLibraryRoot 'test/stubs')
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
@@ -151,6 +152,10 @@ Invoke-HostTest `
     -IncludeDirectories @(
         (Join-Path $contentDownloaderRoot 'include')
         (Join-Path $contentDownloaderRoot 'src')
+        (Join-Path $contentDownloaderRoot 'test/stubs')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $firmwareRoot 'components/audio_codec/include')
+        (Join-Path $firmwareRoot 'components/playback_queue/include')
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
@@ -165,6 +170,8 @@ Invoke-HostTest `
     -IncludeDirectories @(
         (Join-Path $contentPackageRoot 'include')
         (Join-Path $contentPackageRoot 'src')
+        (Join-Path $contentPackageRoot 'test/stubs')
+        (Join-Path $contentLibraryRoot 'include')
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
@@ -178,6 +185,10 @@ Invoke-HostTest `
     -IncludeDirectories @(
         (Join-Path $contentDownloaderRoot 'include')
         (Join-Path $contentDownloaderRoot 'src')
+        (Join-Path $contentDownloaderRoot 'test/stubs')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $firmwareRoot 'components/audio_codec/include')
+        (Join-Path $firmwareRoot 'components/playback_queue/include')
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
