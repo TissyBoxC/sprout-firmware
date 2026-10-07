@@ -125,6 +125,9 @@ function Test-OptionalModuleRemoval {
         # CMake graph never references a component that is already gone.
         foreach ($moduleName in @(
             'ui_text'
+            'content_package_manager'
+            'content_downloader'
+            'content_library'
             'voice_session'
             'conversation_context'
             'child_prompt_profile'

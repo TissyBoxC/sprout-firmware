@@ -1,0 +1,18 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONTENT_PACKAGE_MANAGER
+    bool "Enable content package synchronisation"
+    default n
+    depends on FEATURE_CONTENT_LIBRARY && FEATURE_CONTENT_DOWNLOADER && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the authenticated device content manifest, merges changes into
+        the local index, queues missing packages, deletes withdrawn packages,
+        and exposes pause, resume, and progress for the device UI.
+
+config CONTENT_PACKAGE_SYNC_INTERVAL_SECONDS
+    int "Manifest sync interval in seconds"
+    depends on FEATURE_CONTENT_PACKAGE_MANAGER
+    range 60 86400
+    default 900
+
+endmenu

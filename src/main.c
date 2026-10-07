@@ -33,6 +33,15 @@
 #if CONFIG_FEATURE_CHILD_PROMPT_PROFILE
 #include "child_prompt_profile.h"
 #endif
+#if CONFIG_FEATURE_CONTENT_LIBRARY
+#include "content_library.h"
+#endif
+#if CONFIG_FEATURE_CONTENT_DOWNLOADER
+#include "content_downloader.h"
+#endif
+#if CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER
+#include "content_package_manager.h"
+#endif
 #if CONFIG_FEATURE_WAKE_FEEDBACK
 #include "wake_feedback.h"
 #endif
@@ -362,6 +371,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_VOICE_SESSION
     ESP_ERROR_CHECK(module_registry_add(voice_session_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONTENT_LIBRARY
+    ESP_ERROR_CHECK(module_registry_add(content_library_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONTENT_DOWNLOADER
+    ESP_ERROR_CHECK(module_registry_add(content_downloader_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER
+    ESP_ERROR_CHECK(module_registry_add(content_package_manager_module_descriptor()));
 #endif
 }
 #endif

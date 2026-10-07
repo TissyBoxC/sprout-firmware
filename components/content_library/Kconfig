@@ -1,0 +1,26 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONTENT_LIBRARY
+    bool "Enable offline content library"
+    default n
+    depends on FEATURE_CONFIG_STORE
+    help
+        Stores a bounded content index in NVS and exposes category and age-tier
+        lookup for downloaded stories and learning assets. Package files live in
+        the content partition; NVS only holds small metadata records.
+
+config CONTENT_LIBRARY_INDEX_CAPACITY
+    int "Maximum content packages kept in the local index"
+    depends on FEATURE_CONTENT_LIBRARY
+    range 8 128
+    default 48
+    help
+        When the index is full, the oldest unpublished package is evicted.
+        Withdrawn packages are always removed.
+
+config CONTENT_LIBRARY_METADATA_KEY
+    string "Configuration store key for the content index"
+    depends on FEATURE_CONTENT_LIBRARY
+    default "content_index"
+
+endmenu

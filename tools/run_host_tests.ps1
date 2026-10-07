@@ -127,4 +127,59 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$contentLibraryRoot = Join-Path $firmwareRoot 'components/content_library'
+Invoke-HostTest `
+    -Name 'content_library_index' `
+    -Sources @(
+        (Join-Path $contentLibraryRoot 'src/content_library_index.c')
+        (Join-Path $contentLibraryRoot 'test/test_content_library_index.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $contentLibraryRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$contentDownloaderRoot = Join-Path $firmwareRoot 'components/content_downloader'
+Invoke-HostTest `
+    -Name 'content_download_state' `
+    -Sources @(
+        (Join-Path $contentDownloaderRoot 'src/content_download_state.c')
+        (Join-Path $contentDownloaderRoot 'test/test_content_download_state.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $contentDownloaderRoot 'include')
+        (Join-Path $contentDownloaderRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$contentPackageRoot = Join-Path $firmwareRoot 'components/content_package_manager'
+Invoke-HostTest `
+    -Name 'content_package_state' `
+    -Sources @(
+        (Join-Path $contentPackageRoot 'src/content_package_state.c')
+        (Join-Path $contentPackageRoot 'test/test_content_package_state.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $contentPackageRoot 'include')
+        (Join-Path $contentPackageRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'content_playback_chunker' `
+    -Sources @(
+        (Join-Path $contentDownloaderRoot 'src/content_playback_chunker.c')
+        (Join-Path $contentDownloaderRoot 'test/test_content_playback_chunker.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $contentDownloaderRoot 'include')
+        (Join-Path $contentDownloaderRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Write-Host 'Host verification passed.'

@@ -1,0 +1,37 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONTENT_DOWNLOADER
+    bool "Enable HTTPS content downloader"
+    default n
+    depends on FEATURE_CONTENT_LIBRARY && FEATURE_NETWORK_MANAGER
+    help
+        Streams content packages over HTTPS into the content partition, verifies
+        SHA-256 against the library manifest, resumes interrupted transfers with
+        Range requests when the server supports them, and publishes files
+        atomically.
+
+config CONTENT_DOWNLOADER_TIMEOUT_SECONDS
+    int "Content transfer idle timeout in seconds"
+    depends on FEATURE_CONTENT_DOWNLOADER
+    range 10 600
+    default 60
+
+config CONTENT_DOWNLOADER_MAX_RETRIES
+    int "Maximum retries for one failed content transfer"
+    depends on FEATURE_CONTENT_DOWNLOADER
+    range 0 8
+    default 3
+
+config CONTENT_DOWNLOADER_CHUNK_BYTES
+    int "Streaming buffer size in bytes"
+    depends on FEATURE_CONTENT_DOWNLOADER
+    range 1024 32768
+    default 8192
+
+config CONTENT_PLAYBACK_CHUNK_FRAMES
+    int "Frames queued per ambient content chunk"
+    depends on FEATURE_CONTENT_DOWNLOADER && FEATURE_PLAYBACK_QUEUE
+    range 1 32
+    default 32
+
+endmenu

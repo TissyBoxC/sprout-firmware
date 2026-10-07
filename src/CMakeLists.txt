@@ -126,6 +126,18 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     list(APPEND app_requires "voice_session")
 endif()
 
+if(CONFIG_FEATURE_CONTENT_LIBRARY)
+    list(APPEND app_requires "content_library")
+endif()
+
+if(CONFIG_FEATURE_CONTENT_DOWNLOADER)
+    list(APPEND app_requires "content_downloader")
+endif()
+
+if(CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER)
+    list(APPEND app_requires "content_package_manager")
+endif()
+
 idf_component_register(
     SRCS "main.c"
     REQUIRES ${app_requires}

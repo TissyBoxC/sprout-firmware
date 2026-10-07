@@ -31,25 +31,28 @@ idf_component_register(
         espressif__cjson
 )
 
-# Optional local dependencies follow the wake_feedback pattern: attach them
-# after register() and guard each with its own feature so a profile that
-# removes the module does not reference it at all.
-if(CONFIG_FEATURE_VOICE_WAKE)
-    idf_component_optional_requires(PRIVATE voice_wake)
-endif()
+# A minimal profile compiles every source out, which makes COMPONENT_LIB an
+# INTERFACE target. idf_component_optional_requires() only supports targets
+# with a link step, so guard the whole optional block on the component having
+# sources and attach each dependency behind its own feature flag.
+if(CONFIG_FEATURE_VOICE_SESSION)
+    if(CONFIG_FEATURE_VOICE_WAKE)
+        idf_component_optional_requires(PRIVATE voice_wake)
+    endif()
 
-if(CONFIG_FEATURE_VERSION_INFO)
-    idf_component_optional_requires(PRIVATE version_info)
-endif()
+    if(CONFIG_FEATURE_VERSION_INFO)
+        idf_component_optional_requires(PRIVATE version_info)
+    endif()
 
-if(CONFIG_FEATURE_DEVICE_CAPABILITIES)
-    idf_component_optional_requires(PRIVATE device_capabilities)
-endif()
+    if(CONFIG_FEATURE_DEVICE_CAPABILITIES)
+        idf_component_optional_requires(PRIVATE device_capabilities)
+    endif()
 
-if(CONFIG_FEATURE_CONVERSATION_CONTEXT)
-    idf_component_optional_requires(PRIVATE conversation_context)
-endif()
+    if(CONFIG_FEATURE_CONVERSATION_CONTEXT)
+        idf_component_optional_requires(PRIVATE conversation_context)
+    endif()
 
-if(CONFIG_FEATURE_CHILD_PROMPT_PROFILE)
-    idf_component_optional_requires(PRIVATE child_prompt_profile)
+    if(CONFIG_FEATURE_CHILD_PROMPT_PROFILE)
+        idf_component_optional_requires(PRIVATE child_prompt_profile)
+    endif()
 endif()
