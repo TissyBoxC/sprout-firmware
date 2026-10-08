@@ -14,6 +14,9 @@ extern "C" {
 /** Maximum number of pending provisioning events retained across reboots. */
 #define PROVISIONING_REPORTER_EVENT_CAPACITY 16
 
+/** Saturation limit shared with the platform runtime contract. */
+#define PROVISIONING_REPORTER_DROPPED_LIMIT 1000000u
+
 /** Bounded text sizes used by the provisioning heartbeat extension. */
 #define PROVISIONING_REPORTER_EVENT_ID_SIZE 40
 #define PROVISIONING_REPORTER_EVENT_TYPE_SIZE 32

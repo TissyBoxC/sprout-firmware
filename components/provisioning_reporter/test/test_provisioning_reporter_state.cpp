@@ -181,6 +181,29 @@ void test_event_id_contract() {
     );
 }
 
+void test_dropped_count_saturates() {
+    check(
+        provisioning_reporter_next_dropped_count(0) == 1,
+        "dropped count increments below the limit"
+    );
+    check(
+        provisioning_reporter_next_dropped_count(
+            PROVISIONING_REPORTER_DROPPED_LIMIT
+        ) == PROVISIONING_REPORTER_DROPPED_LIMIT,
+        "dropped count does not exceed the contract limit"
+    );
+    check(
+        provisioning_reporter_next_dropped_count(UINT32_MAX) ==
+            PROVISIONING_REPORTER_DROPPED_LIMIT,
+        "legacy oversized counters are clamped"
+    );
+    check(
+        provisioning_reporter_clamp_dropped_count(UINT32_MAX) ==
+            PROVISIONING_REPORTER_DROPPED_LIMIT,
+        "snapshot values are clamped before publication"
+    );
+}
+
 }  // namespace
 
 int main() {
@@ -188,6 +211,7 @@ int main() {
     test_state_validation_and_ack();
     test_invalid_state_is_rejected();
     test_event_id_contract();
+    test_dropped_count_saturates();
 
     if (failures != 0) {
         fprintf(stderr, "%d test(s) failed\n", failures);

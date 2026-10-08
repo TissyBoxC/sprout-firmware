@@ -40,3 +40,9 @@ bool provisioning_reporter_acknowledge_state(
     provisioning_reporter_state_t *state,
     uint32_t through_sequence
 );
+
+/** Increment the bounded drop counter without wrapping past the contract. */
+uint32_t provisioning_reporter_next_dropped_count(uint32_t dropped);
+
+/** Clamp a persisted drop counter before publishing it to the platform. */
+uint32_t provisioning_reporter_clamp_dropped_count(uint32_t dropped);

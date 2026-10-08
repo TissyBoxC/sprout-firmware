@@ -190,3 +190,18 @@ bool provisioning_reporter_acknowledge_state(
     state->event_count = static_cast<uint16_t>(retained_count);
     return true;
 }
+
+uint32_t provisioning_reporter_next_dropped_count(uint32_t dropped) {
+    const uint32_t clamped = provisioning_reporter_clamp_dropped_count(dropped);
+    if (clamped >= PROVISIONING_REPORTER_DROPPED_LIMIT) {
+        return PROVISIONING_REPORTER_DROPPED_LIMIT;
+    }
+    return clamped + 1;
+}
+
+uint32_t provisioning_reporter_clamp_dropped_count(uint32_t dropped) {
+    if (dropped >= PROVISIONING_REPORTER_DROPPED_LIMIT) {
+        return PROVISIONING_REPORTER_DROPPED_LIMIT;
+    }
+    return dropped;
+}

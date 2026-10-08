@@ -135,7 +135,10 @@ static void provisioning_reporter_append_event_locked(
                 (PROVISIONING_REPORTER_EVENT_CAPACITY - 1)
         );
         --provisioning_reporter_state.event_count;
-        ++provisioning_reporter_state.dropped;
+        provisioning_reporter_state.dropped =
+            provisioning_reporter_next_dropped_count(
+                provisioning_reporter_state.dropped
+            );
     }
     provisioning_reporter_state.events
         [provisioning_reporter_state.event_count++] = *event;
@@ -275,7 +278,9 @@ esp_err_t provisioning_reporter_get_snapshot(
 
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->event_count = provisioning_reporter_state.event_count;
-    snapshot->dropped = provisioning_reporter_state.dropped;
+    snapshot->dropped = provisioning_reporter_clamp_dropped_count(
+        provisioning_reporter_state.dropped
+    );
     for (size_t index = 0;
          index < provisioning_reporter_state.event_count;
          ++index) {
