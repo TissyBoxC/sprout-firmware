@@ -91,7 +91,9 @@ int main() {
         CONTENT_DOWNLOADER_ERR_TRANSPORT
     );
     assert(transition.status == CONTENT_DOWNLOAD_STATUS_WAITING);
-    assert(content_download_state_start(&state).attempt == 2);
+    assert(content_download_state_start(&state).status ==
+           CONTENT_DOWNLOAD_STATUS_DOWNLOADING);
+    assert(state.attempt == 2);
 
     transition = content_download_state_cancel(&state);
     assert(transition.status == CONTENT_DOWNLOAD_STATUS_CANCELED);
