@@ -1,5 +1,6 @@
 #include "content_playback_chunker.h"
 
+#include <stdio.h>
 #include <string.h>
 
 void content_playback_chunker_init(
