@@ -3,6 +3,8 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 
+#include <stdio.h>
+
 #if CONFIG_FEATURE_ERROR_CODE
 #include "error_code.h"
 #endif
@@ -81,6 +83,9 @@
 #if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
 #include "diagnostic_reporter.h"
 #endif
+#if CONFIG_FEATURE_PROVISIONING_REPORTER
+#include "provisioning_reporter.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
 #include "device_capabilities.h"
 #endif
@@ -119,6 +124,223 @@
 #endif
 
 static const char *const TAG = "sprout_main";
+
+#if CONFIG_FEATURE_PROVISIONING_REPORTER
+
+static bool provisioning_reporter_network_connected;
+static bool provisioning_reporter_time_synchronized;
+static bool provisioning_reporter_auth_ready;
+static bool provisioning_reporter_provisioning_started;
+
+static void provisioning_reporter_record_reconnected_if_pending(void) {
+#if CONFIG_FEATURE_OFFLINE_FALLBACK
+    if (!offline_fallback_consume_network_reconnected()) {
+        return;
+    }
+    const offline_fallback_snapshot_t offline =
+        offline_fallback_get_snapshot();
+    char detail_code[PROVISIONING_REPORTER_DETAIL_CODE_SIZE] = {0};
+    snprintf(
+        detail_code,
+        sizeof(detail_code),
+        "pending_%u",
+        (unsigned)offline.pending_telemetry
+    );
+    provisioning_reporter_record(
+        PROVISIONING_EVENT_NETWORK_RECONNECTED,
+        detail_code,
+        0
+    );
+#endif
+}
+
+static void provisioning_reporter_network_state_changed(
+    network_manager_state_t state,
+    void *context
+) {
+    (void)context;
+    if (state == NETWORK_MANAGER_STATE_CONNECTED) {
+        provisioning_reporter_network_connected = true;
+        provisioning_reporter_record_reconnected_if_pending();
+        return;
+    }
+    if (provisioning_reporter_network_connected) {
+        provisioning_reporter_network_connected = false;
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_NETWORK_LOST,
+            "network_unavailable",
+            0
+        );
+    }
+}
+
+static void provisioning_reporter_time_state_changed(
+    time_sync_state_t state,
+    time_sync_source_t source,
+    void *context
+) {
+    (void)source;
+    (void)context;
+    if (state != TIME_SYNC_STATE_SYNCHRONIZED ||
+        provisioning_reporter_time_synchronized) {
+        return;
+    }
+    provisioning_reporter_time_synchronized = true;
+    provisioning_reporter_record(
+        PROVISIONING_EVENT_TIME_SYNCED,
+        "clock_trusted",
+        0
+    );
+}
+
+static void provisioning_reporter_auth_state_changed(
+    cloud_auth_state_t state,
+    void *context
+) {
+    (void)context;
+    if (state == CLOUD_AUTH_STATE_READY) {
+        if (!provisioning_reporter_auth_ready) {
+            provisioning_reporter_auth_ready = true;
+            provisioning_reporter_record(
+                PROVISIONING_EVENT_AUTH_RESTORED,
+                "session_ready",
+                0
+            );
+        }
+        return;
+    }
+    if (state == CLOUD_AUTH_STATE_REAUTH_REQUIRED ||
+        state == CLOUD_AUTH_STATE_REVOKED) {
+        if (provisioning_reporter_auth_ready ||
+            state == CLOUD_AUTH_STATE_REVOKED) {
+            provisioning_reporter_auth_ready = false;
+            provisioning_reporter_record(
+                PROVISIONING_EVENT_AUTH_REVOKED,
+                state == CLOUD_AUTH_STATE_REVOKED
+                    ? "platform_revoked"
+                    : "session_rejected",
+                0
+            );
+        }
+    }
+}
+
+static void provisioning_reporter_provisioning_event(
+    device_provisioning_event_t event,
+    const char *detail_code,
+    void *context
+) {
+    (void)context;
+    if (event == DEVICE_PROVISIONING_EVENT_STARTED) {
+        if (provisioning_reporter_provisioning_started) {
+            return;
+        }
+        provisioning_reporter_provisioning_started = true;
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_PROVISIONING_STARTED,
+            detail_code,
+            0
+        );
+        return;
+    }
+    if (event == DEVICE_PROVISIONING_EVENT_WIFI_CONFIGURED) {
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_WIFI_CONFIGURED,
+            detail_code,
+            0
+        );
+        if (!device_binding_client_is_bound()) {
+            provisioning_reporter_record(
+                PROVISIONING_EVENT_BINDING_PENDING,
+                "awaiting_guardian",
+                0
+            );
+        }
+        return;
+    }
+    provisioning_reporter_record(
+        PROVISIONING_EVENT_WIFI_FAILED,
+        detail_code,
+        0
+    );
+}
+
+static void provisioning_reporter_binding_state_changed(
+    bool is_bound,
+    void *context
+) {
+    (void)context;
+    provisioning_reporter_record(
+        is_bound ? PROVISIONING_EVENT_BINDING_COMPLETED
+                 : PROVISIONING_EVENT_BINDING_REMOVED,
+        is_bound ? "guardian_bound" : "guardian_removed",
+        0
+    );
+    if (is_bound) {
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_BINDING_CONFIRMED,
+            "platform_confirmed",
+            0
+        );
+    }
+}
+
+static void provisioning_reporter_register_observers(void) {
+    if (network_manager_get_state() == NETWORK_MANAGER_STATE_CONNECTED) {
+        // The bootstrap connection can complete before the observers attach;
+        // seed the tracked state and drain any reconnect that already fired.
+        provisioning_reporter_network_connected = true;
+        provisioning_reporter_record_reconnected_if_pending();
+    }
+    if (cloud_auth_get_state() == CLOUD_AUTH_STATE_READY) {
+        // A session created during module initialization is already live; do
+        // not replay it as a recovery transition.
+        provisioning_reporter_auth_ready = true;
+    }
+    if (device_provisioning_is_active()) {
+        provisioning_reporter_provisioning_started = true;
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_PROVISIONING_STARTED,
+            "ble_service_started",
+            0
+        );
+    }
+    if (time_sync_is_synchronized()) {
+        provisioning_reporter_time_synchronized = true;
+        provisioning_reporter_record(
+            PROVISIONING_EVENT_TIME_SYNCED,
+            "clock_trusted",
+            0
+        );
+    }
+    if (network_manager_add_state_callback(
+            provisioning_reporter_network_state_changed,
+            NULL) != ESP_OK) {
+        ESP_LOGW(TAG, "network event observer registration failed");
+    }
+    if (time_sync_set_state_callback(
+            provisioning_reporter_time_state_changed,
+            NULL) != ESP_OK) {
+        ESP_LOGW(TAG, "time event observer registration failed");
+    }
+    if (cloud_auth_set_state_callback(
+            provisioning_reporter_auth_state_changed,
+            NULL) != ESP_OK) {
+        ESP_LOGW(TAG, "authentication event observer registration failed");
+    }
+    if (device_provisioning_set_event_callback(
+            provisioning_reporter_provisioning_event,
+            NULL) != ESP_OK) {
+        ESP_LOGW(TAG, "provisioning event observer registration failed");
+    }
+    if (device_binding_client_set_state_callback(
+            provisioning_reporter_binding_state_changed,
+            NULL) != ESP_OK) {
+        ESP_LOGW(TAG, "binding event observer registration failed");
+    }
+}
+
+#endif
 
 #if CONFIG_FEATURE_FACTORY_RESET
 // A cached sdkconfig from an older firmware revision may predate this Kconfig
@@ -309,6 +531,9 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
     ESP_ERROR_CHECK(module_registry_add(diagnostic_reporter_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_PROVISIONING_REPORTER
+    ESP_ERROR_CHECK(module_registry_add(provisioning_reporter_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
     ESP_ERROR_CHECK(module_registry_add(device_runtime_reporter_module_descriptor()));
 #endif
@@ -411,6 +636,9 @@ void app_main(void) {
         ESP_LOGE(TAG, "one or more modules failed to initialize: %s",
                  esp_err_to_name(result));
     } else {
+#if CONFIG_FEATURE_PROVISIONING_REPORTER
+        provisioning_reporter_register_observers();
+#endif
         start_voice_interaction();
     }
 #elif CONFIG_FEATURE_SYSTEM_CORE

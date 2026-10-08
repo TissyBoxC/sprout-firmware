@@ -7,6 +7,6 @@ endif()
 idf_component_register(
     SRCS ${offline_fallback_sources}
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES esp_timer
-    REQUIRES module_registry network_manager time_sync
+    PRIV_REQUIRES esp_timer freertos
+    REQUIRES config_store module_registry network_manager time_sync
 )

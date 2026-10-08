@@ -61,6 +61,8 @@ static char device_provisioning_proof_of_possession[
     DEVICE_PROVISIONING_POP_TEXT_SIZE];
 static network_prov_security2_params_t device_provisioning_security_parameters;
 static SemaphoreHandle_t device_provisioning_state_mutex;
+static device_provisioning_event_callback_t device_provisioning_event_callback;
+static void *device_provisioning_event_context;
 
 static void device_provisioning_rotate_security_credentials(void);
 
@@ -279,6 +281,13 @@ static void device_provisioning_event_handler(
     (void)event_data;
     if (event == NETWORK_PROV_START) {
         device_provisioning_is_service_active = true;
+        if (device_provisioning_event_callback != nullptr) {
+            device_provisioning_event_callback(
+                DEVICE_PROVISIONING_EVENT_STARTED,
+                "ble_service_started",
+                device_provisioning_event_context
+            );
+        }
         return;
     }
     if (event == NETWORK_PROV_END) {
@@ -328,6 +337,31 @@ static void device_provisioning_event_handler(
             portMAX_DELAY) == pdTRUE) {
         device_provisioning_should_prepare_binding = true;
         xSemaphoreGive(device_provisioning_state_mutex);
+        if (device_provisioning_event_callback != nullptr) {
+            device_provisioning_event_callback(
+                DEVICE_PROVISIONING_EVENT_WIFI_CONFIGURED,
+                "credentials_accepted",
+                device_provisioning_event_context
+            );
+        }
+        return;
+    }
+    if (event == NETWORK_PROV_WIFI_CRED_FAIL && event_data != nullptr) {
+        const network_prov_wifi_sta_fail_reason_t reason =
+            *static_cast<const network_prov_wifi_sta_fail_reason_t *>(
+                event_data
+            );
+        const char *detail_code =
+            reason == NETWORK_PROV_WIFI_STA_AUTH_ERROR
+                ? "authentication_error"
+                : "access_point_not_found";
+        if (device_provisioning_event_callback != nullptr) {
+            device_provisioning_event_callback(
+                DEVICE_PROVISIONING_EVENT_WIFI_FAILED,
+                detail_code,
+                device_provisioning_event_context
+            );
+        }
     }
 }
 
@@ -750,6 +784,15 @@ esp_err_t device_provisioning_copy_setup_payload(
         return ESP_ERR_INVALID_SIZE;
     }
     memcpy(output, device_provisioning_setup_uri, length + 1);
+    return ESP_OK;
+}
+
+esp_err_t device_provisioning_set_event_callback(
+    device_provisioning_event_callback_t callback,
+    void *context
+) {
+    device_provisioning_event_callback = callback;
+    device_provisioning_event_context = context;
     return ESP_OK;
 }
 

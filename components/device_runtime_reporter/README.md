@@ -16,6 +16,15 @@ elapsed; a policy refresh failure is recorded by `parent_policy` and does not
 change the heartbeat result. No token, SSID, password, audio, image, or child
 data is logged.
 
+The heartbeat includes an optional `provisioning` object with the contract
+state, Wi-Fi configuration flag, session state, last provisioning time, and a
+bounded array of provisioning events. Events are acknowledged only after the
+platform accepts the heartbeat, so a lost response retries the same event
+identity. A 401 clears the local session and requires re-authentication; a 403
+marks the session revoked and stops the worker from polling with the old
+token. Pending telemetry is cleared only after a successful authenticated
+heartbeat.
+
 For `factory_reset`, the reporter first calls `factory_reset_request` with the
 guardian reason and only then calls `factory_reset_confirm`. A failed request
 or confirmation does not restart the device. The command ACK is sent before

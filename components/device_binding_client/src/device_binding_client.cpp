@@ -44,6 +44,8 @@ static bool device_binding_is_bound;
 static char device_binding_session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE];
 static device_binding_completed_callback_t device_binding_completed_callback;
 static void *device_binding_completed_context;
+static device_binding_state_callback_t device_binding_state_callback;
+static void *device_binding_state_context;
 
 static esp_err_t device_binding_client_mark_bound(void);
 
@@ -661,6 +663,11 @@ esp_err_t device_binding_client_check_binding(bool *is_bound_out) {
         // Persist before notifying so a reboot keeps the completed state.
         return device_binding_client_mark_bound();
     }
+    if (!is_bound && device_binding_is_bound) {
+        // The platform is authoritative: a guardian may have removed the
+        // binding while this device was offline or powered down.
+        return device_binding_client_clear_binding();
+    }
     return ESP_OK;
 }
 
@@ -670,6 +677,32 @@ esp_err_t device_binding_client_set_completion_callback(
 ) {
     device_binding_completed_callback = callback;
     device_binding_completed_context = context;
+    return ESP_OK;
+}
+
+esp_err_t device_binding_client_set_state_callback(
+    device_binding_state_callback_t callback,
+    void *context
+) {
+    device_binding_state_callback = callback;
+    device_binding_state_context = context;
+    return ESP_OK;
+}
+
+esp_err_t device_binding_client_clear_binding(void) {
+    if (!device_binding_is_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t erase_result = config_store_erase_key(
+        DEVICE_BINDING_KEY_BOUND
+    );
+    if (erase_result != ESP_OK) {
+        return erase_result;
+    }
+    device_binding_is_bound = false;
+    if (device_binding_state_callback != NULL) {
+        device_binding_state_callback(false, device_binding_state_context);
+    }
     return ESP_OK;
 }
 
@@ -741,6 +774,9 @@ static esp_err_t device_binding_client_mark_bound(void) {
         return result;
     }
     device_binding_is_bound = true;
+    if (device_binding_state_callback != NULL) {
+        device_binding_state_callback(true, device_binding_state_context);
+    }
     if (device_binding_completed_callback != NULL) {
         device_binding_completed_callback(true, device_binding_completed_context);
     }

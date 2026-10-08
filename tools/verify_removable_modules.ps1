@@ -138,6 +138,7 @@ function Test-OptionalModuleRemoval {
             'voice_wake'
             'diagnostic_reporter'
             'device_runtime_reporter'
+            'provisioning_reporter'
             'parent_policy'
             'device_provisioning'
             'offline_fallback'

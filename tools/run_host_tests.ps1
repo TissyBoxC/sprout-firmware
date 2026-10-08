@@ -99,6 +99,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$provisioningRoot = Join-Path $firmwareRoot 'components/provisioning_reporter'
+Invoke-HostTest `
+    -Name 'provisioning_reporter_state' `
+    -Sources @(
+        (Join-Path $provisioningRoot 'src/provisioning_reporter_state.cpp')
+        (Join-Path $provisioningRoot 'test/test_provisioning_reporter_state.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $provisioningRoot 'include')
+        (Join-Path $provisioningRoot 'src')
+        (Join-Path $provisioningRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $voiceSessionRoot = Join-Path $firmwareRoot 'components/voice_session'
 Invoke-HostTest `
     -Name 'voice_session_protocol' `

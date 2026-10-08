@@ -22,11 +22,25 @@ if(CONFIG_FEATURE_PARENT_POLICY AND EXISTS
     list(APPEND device_runtime_reporter_requires "parent_policy")
 endif()
 
+# Provisioning state is optional in minimal images; the heartbeat falls back
+# to the persisted binding state when the component is absent.
+if(CONFIG_FEATURE_DEVICE_PROVISIONING AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../device_provisioning/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "device_provisioning")
+endif()
+
 # Diagnostics are optional and remain compatible with the original heartbeat
 # contract when this component is removed.
 if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER AND EXISTS
         "${CMAKE_CURRENT_LIST_DIR}/../diagnostic_reporter/CMakeLists.txt")
     list(APPEND device_runtime_reporter_requires "diagnostic_reporter")
+endif()
+
+# Provisioning audit events are optional and remain compatible with an image
+# that does not contain the provisioning reporter.
+if(CONFIG_FEATURE_PROVISIONING_REPORTER AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../provisioning_reporter/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "provisioning_reporter")
 endif()
 
 if(CONFIG_FEATURE_FACTORY_RESET AND EXISTS

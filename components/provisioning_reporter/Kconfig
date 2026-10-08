@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_PROVISIONING_REPORTER
+    bool "Enable provisioning and connectivity event reporting"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_VERSION_INFO
+    help
+        Records bounded provisioning, binding, network, time, and
+        authentication transitions in NVS. The runtime reporter includes
+        pending events in its authenticated heartbeat and acknowledges them
+        only after the platform accepts the report.
+
+endmenu

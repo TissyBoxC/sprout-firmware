@@ -10,6 +10,20 @@
 extern "C" {
 #endif
 
+/** @brief Provisioning events observed by the composition root. */
+typedef enum {
+    DEVICE_PROVISIONING_EVENT_STARTED = 0,
+    DEVICE_PROVISIONING_EVENT_WIFI_CONFIGURED,
+    DEVICE_PROVISIONING_EVENT_WIFI_FAILED,
+} device_provisioning_event_t;
+
+/** @brief Callback invoked after a provisioning lifecycle transition. */
+typedef void (*device_provisioning_event_callback_t)(
+    device_provisioning_event_t event,
+    const char *detail_code,
+    void *context
+);
+
 /**
  * @brief Start BLE provisioning when the device is not yet bound.
  *
@@ -32,6 +46,17 @@ bool device_provisioning_is_active(void);
 esp_err_t device_provisioning_copy_setup_payload(
     char *output,
     size_t output_size
+);
+
+/**
+ * @brief Register the provisioning lifecycle observer.
+ *
+ * Passing NULL clears the observer. The callback runs on the provisioning
+ * manager's event task and must not block.
+ */
+esp_err_t device_provisioning_set_event_callback(
+    device_provisioning_event_callback_t callback,
+    void *context
 );
 
 /** @brief Return the removable-module descriptor for device_provisioning. */

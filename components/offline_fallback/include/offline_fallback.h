@@ -48,8 +48,24 @@ offline_fallback_snapshot_t offline_fallback_get_snapshot(void);
 /** @brief Mark one telemetry item as pending while offline. */
 esp_err_t offline_fallback_record_pending_telemetry(void);
 
-/** @brief Clear pending telemetry after a successful recovery. */
+/**
+ * @brief Clear pending telemetry after authentication and a sent heartbeat.
+ *
+ * This must only be called by the runtime reporter after the platform
+ * accepted the heartbeat. Network reconnection alone must never clear the
+ * persisted backlog.
+ */
 esp_err_t offline_fallback_clear_pending_telemetry(void);
+
+/**
+ * @brief Observe network recovery and return the pending backlog once.
+ *
+ * The caller records the provisioning `network_reconnected` event when the
+ * return value is true. The result is false until a transition follows a
+ * real loss, so a boot callback does not create a duplicate event on every
+ * reconnect attempt.
+ */
+bool offline_fallback_consume_network_reconnected(void);
 
 /** @brief Enter fallback because an authenticated platform call failed. */
 esp_err_t offline_fallback_mark_service_unavailable(void);

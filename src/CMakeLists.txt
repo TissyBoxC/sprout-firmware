@@ -82,6 +82,10 @@ if(CONFIG_FEATURE_DIAGNOSTIC_REPORTER)
     list(APPEND app_requires "diagnostic_reporter")
 endif()
 
+if(CONFIG_FEATURE_PROVISIONING_REPORTER)
+    list(APPEND app_requires "provisioning_reporter")
+endif()
+
 if(CONFIG_FEATURE_ERROR_RECOVERY)
     list(APPEND app_requires "error_recovery")
 endif()

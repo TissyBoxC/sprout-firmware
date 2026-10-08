@@ -3,7 +3,7 @@ menu "Sprout feature modules"
 config FEATURE_OFFLINE_FALLBACK
     bool "Enable offline fallback state"
     default y
-    depends on FEATURE_NETWORK_MANAGER
+    depends on FEATURE_CONFIG_STORE && FEATURE_NETWORK_MANAGER
     help
         Tracks network loss, enters a bounded safe mode, queues telemetry
         markers, and exposes a recovery state to the runtime reporter.

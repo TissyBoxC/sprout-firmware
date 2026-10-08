@@ -23,6 +23,12 @@ typedef void (*device_binding_completed_callback_t)(
     void *context
 );
 
+/** @brief Callback delivered after the persisted binding state changes. */
+typedef void (*device_binding_state_callback_t)(
+    bool is_bound,
+    void *context
+);
+
 /**
  * @brief Initialize the binding client state.
  *
@@ -115,6 +121,25 @@ esp_err_t device_binding_client_set_completion_callback(
     device_binding_completed_callback_t callback,
     void *context
 );
+
+/**
+ * @brief Register the binding state observer.
+ *
+ * Passing NULL clears the observer. The callback runs after a local state
+ * transition and must not block.
+ */
+esp_err_t device_binding_client_set_state_callback(
+    device_binding_state_callback_t callback,
+    void *context
+);
+
+/**
+ * @brief Remove the persisted guardian binding from this device.
+ *
+ * Clears only the local binding marker and session token. Registration stays
+ * intact so a guardian can bind the device again without re-registration.
+ */
+esp_err_t device_binding_client_clear_binding(void);
 
 /**
  * @brief Reload the persisted bound flag.

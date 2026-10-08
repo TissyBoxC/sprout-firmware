@@ -949,7 +949,7 @@ static esp_err_t parent_policy_request(
             );
         }
         free(response);
-        if (status_code == 401) {
+        if (status_code == 401 || status_code == 403) {
             return ESP_ERR_INVALID_STATE;
         }
         if (status_code == 404) {
@@ -1124,6 +1124,8 @@ esp_err_t parent_policy_refresh(void) {
     memset(session_token, 0, sizeof(session_token));
     if (status_code == 401) {
         cloud_auth_mark_unauthorized();
+    } else if (status_code == 403) {
+        cloud_auth_mark_revoked();
     }
 
     if (xSemaphoreTake(parent_policy_mutex, portMAX_DELAY) != pdTRUE) {

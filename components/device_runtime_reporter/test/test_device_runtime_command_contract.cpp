@@ -186,6 +186,35 @@ void test_interaction_event_types_contract() {
     }
 }
 
+void test_provisioning_heartbeat_contract() {
+    const char *const states[] = {
+        "unprovisioned",
+        "provisioning",
+        "provisioned",
+    };
+    const char *const session_states[] = {
+        "ready",
+        "reauth_required",
+        "revoked",
+    };
+    check(
+        sizeof(states) / sizeof(states[0]) == 3,
+        "provisioning state count"
+    );
+    check(
+        sizeof(session_states) / sizeof(session_states[0]) == 3,
+        "session state count"
+    );
+    check(
+        strcmp(states[2], "provisioned") == 0,
+        "bound devices must report provisioned"
+    );
+    check(
+        strcmp(session_states[2], "revoked") == 0,
+        "revoked sessions must not be reported as ready"
+    );
+}
+
 }  // namespace
 
 int main() {
@@ -194,6 +223,7 @@ int main() {
     test_delivered_commands_remain_executable();
     test_wake_event_duration_contract();
     test_interaction_event_types_contract();
+    test_provisioning_heartbeat_contract();
 
     if (failures != 0) {
         fprintf(stderr, "%d test(s) failed\n", failures);

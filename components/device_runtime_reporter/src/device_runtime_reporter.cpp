@@ -32,9 +32,17 @@ extern "C" {
 #else
 #define DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER 0
 #endif
+#if CONFIG_FEATURE_PROVISIONING_REPORTER && __has_include("provisioning_reporter.h")
+#define DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER 1
+#else
+#define DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER 0
+#endif
 
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
 #include "diagnostic_reporter.h"
+#endif
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+#include "provisioning_reporter.h"
 #endif
 #if CONFIG_FEATURE_PARENT_POLICY && __has_include("parent_policy.h")
 #define DEVICE_RUNTIME_HAS_PARENT_POLICY 1
@@ -51,12 +59,19 @@ extern "C" {
 #if DEVICE_RUNTIME_HAS_PARENT_POLICY
 #include "parent_policy.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_PROVISIONING && __has_include("device_provisioning.h")
+#define DEVICE_RUNTIME_HAS_DEVICE_PROVISIONING 1
+#include "device_provisioning.h"
+#else
+#define DEVICE_RUNTIME_HAS_DEVICE_PROVISIONING 0
+#endif
 #if DEVICE_RUNTIME_HAS_FACTORY_RESET
 #include "factory_reset.h"
 #endif
 #include "time_sync.h"
 
 #define DEVICE_RUNTIME_RESPONSE_SIZE 8192
+#define DEVICE_RUNTIME_REQUEST_SIZE 16384
 #define DEVICE_RUNTIME_URL_SIZE 320
 #define DEVICE_RUNTIME_SESSION_TOKEN_SIZE DEVICE_BINDING_SESSION_TOKEN_SIZE
 #define DEVICE_RUNTIME_HEARTBEAT_ID_SIZE 64
@@ -116,6 +131,51 @@ static void *device_runtime_allocate_buffer(size_t size) {
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
         MALLOC_CAP_8BIT
     );
+}
+
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+static const char *device_runtime_session_state(void) {
+    switch (cloud_auth_get_state()) {
+        case CLOUD_AUTH_STATE_READY:
+            return "ready";
+        case CLOUD_AUTH_STATE_REVOKED:
+            return "revoked";
+        case CLOUD_AUTH_STATE_REAUTH_REQUIRED:
+        case CLOUD_AUTH_STATE_AUTHENTICATING:
+        case CLOUD_AUTH_STATE_WAITING_FOR_TIME:
+        case CLOUD_AUTH_STATE_WAITING_FOR_NETWORK:
+        case CLOUD_AUTH_STATE_IDLE:
+        default:
+            return "reauth_required";
+    }
+}
+
+static const char *device_runtime_provisioning_state(bool wifi_configured) {
+    if (device_binding_client_is_bound()) {
+        return "provisioned";
+    }
+    // Wi-Fi credentials alone do not finish provisioning; the guardian still
+    // has to bind the device, so the device stays in the provisioning state.
+    if (wifi_configured) {
+        return "provisioning";
+    }
+#if DEVICE_RUNTIME_HAS_DEVICE_PROVISIONING
+    if (device_provisioning_is_active()) {
+        return "provisioning";
+    }
+#endif
+    return "unprovisioned";
+}
+#endif
+
+static void device_runtime_mark_platform_rejection(int status_code) {
+    if (status_code == 403) {
+        cloud_auth_mark_revoked();
+        return;
+    }
+    if (status_code == 401) {
+        cloud_auth_mark_unauthorized();
+    }
 }
 
 static void device_runtime_clear_and_free(
@@ -361,7 +421,7 @@ static esp_err_t device_runtime_platform_request(
     if (status_code < 200 || status_code >= 300) {
         device_runtime_response_buffer_destroy(&response);
         ESP_LOGW(TAG, "runtime request returned status %d", status_code);
-        return status_code == 401 ? ESP_ERR_INVALID_STATE
+        return status_code == 401 || status_code == 403 ? ESP_ERR_INVALID_STATE
                                   : ESP_ERR_INVALID_RESPONSE;
     }
     if (response_document == NULL) {
@@ -551,6 +611,67 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     payload["offline"]["fallback_active"] = offline.fallback_active;
     payload["offline"]["pending_telemetry"] = offline.pending_telemetry;
 
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+    provisioning_reporter_snapshot_t *provisioning_events =
+        (provisioning_reporter_snapshot_t *)device_runtime_allocate_buffer(
+            sizeof(provisioning_reporter_snapshot_t)
+        );
+    if (provisioning_events == NULL) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_NO_MEM;
+    }
+    memset(provisioning_events, 0, sizeof(*provisioning_events));
+    const esp_err_t provisioning_result =
+        provisioning_reporter_get_snapshot(provisioning_events);
+    if (provisioning_result == ESP_OK) {
+        provisioning_reporter_status_t provisioning_status = {};
+        (void)provisioning_reporter_get_status(&provisioning_status);
+        JsonObject provisioning_object =
+            payload["provisioning"].to<JsonObject>();
+        const bool wifi_configured =
+            provisioning_status.wifi_configured ||
+            network_manager_get_state() == NETWORK_MANAGER_STATE_CONNECTED;
+        provisioning_object["state"] =
+            device_runtime_provisioning_state(wifi_configured);
+        provisioning_object["wifi_configured"] = wifi_configured;
+        provisioning_object["session_state"] =
+            device_runtime_session_state();
+        if (provisioning_status.last_provisioned_epoch > 0) {
+            char provisioned_at[32] = {0};
+            device_runtime_format_time(
+                (time_t)provisioning_status.last_provisioned_epoch,
+                provisioned_at,
+                sizeof(provisioned_at)
+            );
+            provisioning_object["last_provisioned_at"] = provisioned_at;
+        } else {
+            provisioning_object["last_provisioned_at"] = nullptr;
+        }
+
+        JsonArray event_array =
+            provisioning_object["events"].to<JsonArray>();
+        for (size_t index = 0;
+             index < provisioning_events->event_count;
+             ++index) {
+            const provisioning_reporter_event_t *event =
+                &provisioning_events->events[index];
+            JsonObject item = event_array.add<JsonObject>();
+            item["event_id"] = event->event_id;
+            item["event_type"] = event->event_type;
+            item["sequence"] = event->sequence;
+            item["detail_code"] = event->detail_code;
+            item["duration_ms"] = event->duration_ms;
+            item["firmware_version"] = event->firmware_version;
+        }
+    } else if (provisioning_result != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(
+            TAG,
+            "provisioning snapshot unavailable: %s",
+            esp_err_to_name(provisioning_result)
+        );
+    }
+#endif
+
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
     diagnostic_reporter_snapshot_t *diagnostics =
         (diagnostic_reporter_snapshot_t *)device_runtime_allocate_buffer(
@@ -649,9 +770,15 @@ static esp_err_t device_runtime_send_heartbeat(void) {
 #endif
 
     char *request_body = (char *)device_runtime_allocate_buffer(
-        DEVICE_RUNTIME_RESPONSE_SIZE
+        DEVICE_RUNTIME_REQUEST_SIZE
     );
     if (request_body == NULL) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
         device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
 #endif
@@ -661,16 +788,22 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     const size_t request_length = serializeJson(
         payload,
         request_body,
-        DEVICE_RUNTIME_RESPONSE_SIZE
+        DEVICE_RUNTIME_REQUEST_SIZE
     );
     if (request_length == 0 ||
-        request_length >= DEVICE_RUNTIME_RESPONSE_SIZE) {
+        request_length >= DEVICE_RUNTIME_REQUEST_SIZE) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
         device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
 #endif
         device_runtime_clear_and_free(
             request_body,
-            DEVICE_RUNTIME_RESPONSE_SIZE
+            DEVICE_RUNTIME_REQUEST_SIZE
         );
         memset(session_token, 0, sizeof(session_token));
         return ESP_ERR_INVALID_SIZE;
@@ -683,12 +816,18 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         device_id
     );
     if (path_written <= 0 || (size_t)path_written >= sizeof(path)) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
         device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
 #endif
         device_runtime_clear_and_free(
             request_body,
-            DEVICE_RUNTIME_RESPONSE_SIZE
+            DEVICE_RUNTIME_REQUEST_SIZE
         );
         memset(session_token, 0, sizeof(session_token));
         return ESP_ERR_INVALID_SIZE;
@@ -705,17 +844,54 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     );
     device_runtime_clear_and_free(
         request_body,
-        DEVICE_RUNTIME_RESPONSE_SIZE
+        DEVICE_RUNTIME_REQUEST_SIZE
     );
     memset(session_token, 0, sizeof(session_token));
     if (status_code == 401) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
         device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
 #endif
-        cloud_auth_mark_unauthorized();
+        device_runtime_mark_platform_rejection(status_code);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 403) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+#endif
+#if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
+        device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
+#endif
+        device_runtime_mark_platform_rejection(status_code);
         return ESP_ERR_INVALID_STATE;
     }
     if (result == ESP_OK) {
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+        const esp_err_t provisioning_acknowledge_result =
+            provisioning_reporter_acknowledge(
+                provisioning_events->newest_sequence
+            );
+        if (provisioning_acknowledge_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "provisioning acknowledgement failed: %s",
+                esp_err_to_name(provisioning_acknowledge_result)
+            );
+        }
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+        provisioning_events = nullptr;
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
         // Acknowledge only after the platform accepted the complete
         // heartbeat. A lost response leaves the same diagnostic records
@@ -735,7 +911,26 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         diagnostics = nullptr;
 #endif
         result = device_runtime_apply_platform_time(&response);
+        if (result == ESP_OK) {
+            const esp_err_t clear_result =
+                offline_fallback_clear_pending_telemetry();
+            if (clear_result != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "pending telemetry clear failed: %s",
+                    esp_err_to_name(clear_result)
+                );
+            }
+        }
     }
+#if DEVICE_RUNTIME_HAS_PROVISIONING_REPORTER
+    if (result != ESP_OK) {
+        device_runtime_clear_and_free(
+            provisioning_events,
+            sizeof(*provisioning_events)
+        );
+    }
+#endif
 #if DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER
     if (result != ESP_OK) {
         device_runtime_clear_and_free(diagnostics, sizeof(*diagnostics));
@@ -785,7 +980,11 @@ device_runtime_acknowledge_command(
     );
     memset(request_body, 0, sizeof(request_body));
     if (status_code == 401) {
-        cloud_auth_mark_unauthorized();
+        device_runtime_mark_platform_rejection(status_code);
+        return DEVICE_RUNTIME_COMMAND_ACK_UNAUTHORIZED;
+    }
+    if (status_code == 403) {
+        device_runtime_mark_platform_rejection(status_code);
         return DEVICE_RUNTIME_COMMAND_ACK_UNAUTHORIZED;
     }
     if (status_code == 409) {
@@ -934,8 +1133,8 @@ static esp_err_t device_runtime_poll_commands(const char *session_token) {
         &status_code
     );
     if (result != ESP_OK) {
-        if (status_code == 401) {
-            cloud_auth_mark_unauthorized();
+        if (status_code == 401 || status_code == 403) {
+            device_runtime_mark_platform_rejection(status_code);
         }
         return result;
     }
@@ -976,6 +1175,13 @@ static void device_runtime_work_task(void *argument) {
         if (network_manager_get_state() == NETWORK_MANAGER_STATE_CONNECTED &&
             time_sync_is_synchronized() &&
             device_binding_client_is_bound()) {
+            if (cloud_auth_get_state() == CLOUD_AUTH_STATE_REVOKED) {
+                offline_fallback_mark_service_unavailable();
+                vTaskDelay(pdMS_TO_TICKS(
+                    CONFIG_DEVICE_RUNTIME_HEARTBEAT_INTERVAL_SECONDS * 1000
+                ));
+                continue;
+            }
             const esp_err_t heartbeat_result =
                 device_runtime_send_heartbeat();
             if (heartbeat_result == ESP_OK) {

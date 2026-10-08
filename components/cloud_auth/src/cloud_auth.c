@@ -9,9 +9,17 @@ static const char *const TAG = "cloud_auth";
 
 static bool cloud_auth_ready;
 static cloud_auth_state_t cloud_auth_state = CLOUD_AUTH_STATE_IDLE;
+static cloud_auth_state_callback_t cloud_auth_callback;
+static void *cloud_auth_callback_context;
 
 static void cloud_auth_set_state(cloud_auth_state_t state) {
+    if (cloud_auth_state == state) {
+        return;
+    }
     cloud_auth_state = state;
+    if (cloud_auth_callback != NULL) {
+        cloud_auth_callback(state, cloud_auth_callback_context);
+    }
 }
 
 static void cloud_auth_network_callback(
@@ -62,6 +70,11 @@ esp_err_t cloud_auth_ensure_authenticated(void) {
     if (!cloud_auth_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (cloud_auth_state == CLOUD_AUTH_STATE_REVOKED) {
+        // A platform 403 is not a transient missing token. Re-authenticating
+        // immediately would recreate the session the platform just revoked.
+        return ESP_ERR_INVALID_STATE;
+    }
     if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
         cloud_auth_set_state(CLOUD_AUTH_STATE_WAITING_FOR_NETWORK);
         return ESP_ERR_INVALID_STATE;
@@ -96,6 +109,21 @@ esp_err_t cloud_auth_mark_unauthorized(void) {
     const esp_err_t result = device_binding_client_clear_session_token();
     cloud_auth_set_state(CLOUD_AUTH_STATE_REAUTH_REQUIRED);
     return result;
+}
+
+esp_err_t cloud_auth_mark_revoked(void) {
+    const esp_err_t result = device_binding_client_clear_session_token();
+    cloud_auth_set_state(CLOUD_AUTH_STATE_REVOKED);
+    return result;
+}
+
+esp_err_t cloud_auth_set_state_callback(
+    cloud_auth_state_callback_t callback,
+    void *context
+) {
+    cloud_auth_callback = callback;
+    cloud_auth_callback_context = context;
+    return ESP_OK;
 }
 
 const module_descriptor_t *cloud_auth_module_descriptor(void) {

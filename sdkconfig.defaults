@@ -22,6 +22,7 @@ CONFIG_FEATURE_DEVICE_PROVISIONING=y
 CONFIG_FEATURE_PROVISIONING_PAYLOAD=y
 CONFIG_FEATURE_PARENT_POLICY=y
 CONFIG_FEATURE_DIAGNOSTIC_REPORTER=y
+CONFIG_FEATURE_PROVISIONING_REPORTER=y
 # Realtime voice conversation. voice_session owns the WSS transport and drives
 # the listening -> thinking -> speaking loop, conversation_context keeps a
 # bounded on-device turn window, and child_prompt_profile persists the age
