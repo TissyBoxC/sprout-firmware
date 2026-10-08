@@ -636,6 +636,8 @@ static esp_err_t device_runtime_send_heartbeat(void) {
         provisioning_object["wifi_configured"] = wifi_configured;
         provisioning_object["session_state"] =
             device_runtime_session_state();
+        provisioning_object["dropped_events"] =
+            provisioning_events->dropped;
         if (provisioning_status.last_provisioned_epoch > 0) {
             char provisioned_at[32] = {0};
             device_runtime_format_time(
