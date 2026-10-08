@@ -24,3 +24,7 @@ idf_component_register(
         network_manager
         playback_queue
 )
+
+if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
+    idf_component_optional_requires(PRIVATE parent_control_runtime)
+endif()

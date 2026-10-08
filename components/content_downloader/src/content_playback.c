@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "content_downloader.h"
 #include "esp_log.h"
@@ -11,6 +12,15 @@
 #include "playback_queue.h"
 
 #include "content_playback_chunker.h"
+
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
+#include "parent_control_runtime.h"
+#include "time_sync.h"
+#include "usage_ledger.h"
+#define CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME 1
+#else
+#define CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME 0
+#endif
 
 #ifndef CONFIG_CONTENT_PLAYBACK_CHUNK_FRAMES
 #define CONFIG_CONTENT_PLAYBACK_CHUNK_FRAMES 32
@@ -84,6 +94,23 @@ static void content_playback_worker(void *argument) {
             xSemaphoreGive(content_playback_lock);
             continue;
         }
+#if CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME
+        parent_control_decision_t decision = {};
+        const parent_control_request_t policy_request = {
+            .category = entry.category,
+            .safety_exempt = false,
+            .utc_epoch_seconds = (int64_t)time(NULL),
+            .timezone_offset_minutes =
+                time_sync_get_timezone_offset_minutes(),
+        };
+        if (parent_control_evaluate(&policy_request, &decision) != ESP_OK ||
+            parent_control_decision_is_denied(&decision)) {
+            xSemaphoreTake(content_playback_lock, portMAX_DELAY);
+            content_playback_progress.playing = false;
+            xSemaphoreGive(content_playback_lock);
+            continue;
+        }
+#endif
         char path[CONTENT_LIBRARY_PATH_SIZE] = {0};
         if (content_downloader_get_local_path(
                 package_id,
@@ -127,6 +154,22 @@ static void content_playback_worker(void *argument) {
                 canceled = true;
                 break;
             }
+#if CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME
+            // Re-check the policy while the file plays so a guardian refresh
+            // that starts a disabled period or reaches the daily limit stops
+            // the current title promptly instead of finishing it.
+            parent_control_decision_t mid_decision = {};
+            if (parent_control_evaluate_active(
+                    entry.category,
+                    (int64_t)time(NULL),
+                    time_sync_get_timezone_offset_minutes(),
+                    &mid_decision
+                ) == ESP_OK &&
+                parent_control_decision_is_denied(&mid_decision)) {
+                canceled = true;
+                break;
+            }
+#endif
             if (content_playback_chunker_add(&chunker, &frame, &chunk)) {
                 if (content_playback_submit_chunk(&chunk) != ESP_OK) {
                     break;
@@ -142,6 +185,22 @@ static void content_playback_worker(void *argument) {
             (void)content_playback_submit_chunk(&chunk);
         }
         fclose(file);
+#if CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME
+        if (!canceled) {
+            const uint32_t frame_bytes = sizeof(audio_codec_pcm_frame_t);
+            const uint32_t total_frames = frame_bytes == 0
+                ? 0
+                : (uint32_t)(entry.size_bytes / frame_bytes);
+            const uint32_t content_seconds =
+                (total_frames * AUDIO_CODEC_FRAME_DURATION_MS) / 1000u;
+            (void)usage_ledger_record_content_playback(
+                (int64_t)time(NULL),
+                time_sync_get_timezone_offset_minutes(),
+                entry.category,
+                content_seconds
+            );
+        }
+#endif
         xSemaphoreTake(content_playback_lock, portMAX_DELAY);
         content_playback_progress.playing = false;
         content_playback_progress.queued_frames = chunker.queued_frames;

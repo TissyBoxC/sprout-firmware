@@ -55,4 +55,8 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     if(CONFIG_FEATURE_CHILD_PROMPT_PROFILE)
         idf_component_optional_requires(PRIVATE child_prompt_profile)
     endif()
+
+    if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
+        idf_component_optional_requires(PRIVATE parent_control_runtime)
+    endif()
 endif()

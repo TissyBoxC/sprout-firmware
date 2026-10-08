@@ -25,6 +25,17 @@ typedef enum {
     TIME_SYNC_SOURCE_PLATFORM,
 } time_sync_source_t;
 
+/** @brief One civil calendar timestamp in the device's local timezone. */
+typedef struct {
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    int weekday;
+} time_sync_local_time_t;
+
 /** @brief State transition callback; never runs on an ISR. */
 typedef void (*time_sync_state_callback_t)(
     time_sync_state_t state,
@@ -38,6 +49,9 @@ typedef void (*time_sync_state_callback_t)(
  * The function is idempotent and does not block on DNS or network access.
  */
 esp_err_t time_sync_init(void);
+
+/** @brief Return true when the clock module has been initialized. */
+bool time_sync_is_ready(void);
 
 /** @brief Return the current clock trust state. */
 time_sync_state_t time_sync_get_state(void);
@@ -61,6 +75,51 @@ int time_sync_get_offset_ms(void);
 
 /** @brief Return true when the system clock is trusted for TLS and OTA. */
 bool time_sync_is_synchronized(void);
+
+/**
+ * @brief Return the configured device timezone offset in minutes.
+ *
+ * The value is applied as local_time = UTC + offset. Guangdong, the default
+ * deployment region, uses +480 so the value matches Asia/Shanghai and the
+ * disabled-period contract without requiring a full TZ database on device.
+ */
+int32_t time_sync_get_timezone_offset_minutes(void);
+
+/**
+ * @brief Convert a UTC epoch to the local civil time for one timezone offset.
+ *
+ * Pure function with no ESP-IDF dependency so host tests can cover disabled
+ * periods, cross-midnight rollover, and DST-style fixed offsets.
+ */
+esp_err_t time_sync_unix_to_local_civil(
+    int64_t utc_epoch_seconds,
+    int32_t timezone_offset_minutes,
+    time_sync_local_time_t *local_time_out
+);
+
+/**
+ * @brief Return the local civil date as days since 1970-01-01.
+ *
+ * This is the canonical day key used by the usage ledger. Two UTC instants
+ * that fall on the same local calendar day share the same key regardless of
+ * the device's wall-clock hour.
+ */
+esp_err_t time_sync_local_day_key(
+    int64_t utc_epoch_seconds,
+    int32_t timezone_offset_minutes,
+    int32_t *day_key_out
+);
+
+/**
+ * @brief Return the local minute within the day on a 0..1439 scale.
+ *
+ * Returns ESP_ERR_INVALID_ARG for an out-of-range offset or NULL output.
+ */
+esp_err_t time_sync_local_minute_of_day(
+    int64_t utc_epoch_seconds,
+    int32_t timezone_offset_minutes,
+    int32_t *minute_of_day_out
+);
 
 /**
  * @brief Restart SNTP synchronization immediately.

@@ -22,4 +22,13 @@ config TIME_SYNC_RETRY_INTERVAL_SECONDS
     range 10 3600
     default 60
 
+config TIME_SYNC_TIMEZONE_OFFSET_MINUTES
+    int "Device timezone offset in minutes from UTC"
+    depends on FEATURE_TIME_SYNC
+    range -840 840
+    default 480
+    help
+        Fixed offset applied to UTC for parent-control disabled periods and
+        usage day boundaries. The default +480 matches Asia/Shanghai.
+
 endmenu

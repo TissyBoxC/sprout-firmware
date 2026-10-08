@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_PARENT_CONTROL_RUNTIME
+    bool "Enable unified parent-control enforcement"
+    default y
+    depends on FEATURE_PARENT_POLICY && FEATURE_USAGE_LEDGER && FEATURE_TIME_SYNC
+    help
+        Evaluates guardian disabled periods, category allowlists, and daily
+        usage limits through one decision path used by wake detection, voice
+        sessions, content download, content playback, and the playback queue.
+
+endmenu

@@ -61,9 +61,44 @@ static bool parent_policy_has_cached_policy;
 static parent_policy_snapshot_t parent_policy_snapshot;
 static parent_policy_status_t parent_policy_status;
 
+typedef struct {
+    parent_policy_change_callback_t callback;
+    void *context;
+} parent_policy_observer_t;
+
+static parent_policy_observer_t
+    parent_policy_observers[PARENT_POLICY_MAX_OBSERVERS];
+static size_t parent_policy_observer_count;
+
 static esp_err_t parent_policy_store_snapshot(
     const parent_policy_snapshot_t *snapshot
 );
+
+/**
+ * @brief Dispatch the registered observer without holding the cache mutex.
+ *
+ * The callback is copied under the mutex, then invoked after it is released so
+ * an observer that reads the snapshot cannot deadlock against a refresh. A
+ * parent_policy dependency that mirrored the policy directly would create a
+ * CMake cycle, so notification stays one-directional through this hook.
+ */
+static void parent_policy_notify_changed(void) {
+    parent_policy_observer_t observers[PARENT_POLICY_MAX_OBSERVERS] = {};
+    size_t observer_count = 0;
+    if (parent_policy_mutex != NULL &&
+        xSemaphoreTake(parent_policy_mutex, portMAX_DELAY) == pdTRUE) {
+        observer_count = parent_policy_observer_count;
+        for (size_t index = 0; index < observer_count; ++index) {
+            observers[index] = parent_policy_observers[index];
+        }
+        xSemaphoreGive(parent_policy_mutex);
+    }
+    for (size_t index = 0; index < observer_count; ++index) {
+        if (observers[index].callback != NULL) {
+            observers[index].callback(observers[index].context);
+        }
+    }
+}
 
 static bool parent_policy_timestamp_is_valid(const char *value) {
     if (value == NULL) {
@@ -1131,6 +1166,7 @@ esp_err_t parent_policy_refresh(void) {
     if (xSemaphoreTake(parent_policy_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
     }
+    bool notify_dependents = false;
     if (result == ESP_OK) {
         parent_policy_snapshot_t parsed = {};
         const esp_err_t parse_result = parent_policy_parse_policy(
@@ -1187,6 +1223,7 @@ esp_err_t parent_policy_refresh(void) {
                     PARENT_POLICY_REFRESH_REASON_NONE,
                     ESP_OK
                 );
+                notify_dependents = true;
             }
         }
     } else if (result == ESP_ERR_NOT_FOUND &&
@@ -1194,6 +1231,9 @@ esp_err_t parent_policy_refresh(void) {
         result = parent_policy_clear_locked(
             PARENT_POLICY_REFRESH_REASON_NOT_FOUND
         );
+        if (result == ESP_OK) {
+            notify_dependents = true;
+        }
     } else if (result == ESP_ERR_INVALID_STATE) {
         parent_policy_set_status(
             parent_policy_has_cached_policy,
@@ -1230,6 +1270,11 @@ esp_err_t parent_policy_refresh(void) {
         );
     }
     xSemaphoreGive(parent_policy_mutex);
+    // Notify after the cache mutex is released so an observer that reads the
+    // new snapshot cannot deadlock against this refresh.
+    if (notify_dependents) {
+        parent_policy_notify_changed();
+    }
     return result;
 }
 
@@ -1285,6 +1330,75 @@ parent_policy_status_t parent_policy_get_status(void) {
     return status;
 }
 
+esp_err_t parent_policy_add_change_observer(
+    parent_policy_change_callback_t callback,
+    void *context
+) {
+    if (callback == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!parent_policy_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(parent_policy_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t result = ESP_OK;
+    for (size_t index = 0; index < parent_policy_observer_count; ++index) {
+        if (parent_policy_observers[index].callback == callback &&
+            parent_policy_observers[index].context == context) {
+            xSemaphoreGive(parent_policy_mutex);
+            return ESP_OK;
+        }
+    }
+    if (parent_policy_observer_count >= PARENT_POLICY_MAX_OBSERVERS) {
+        result = ESP_ERR_NO_MEM;
+    } else {
+        parent_policy_observers[parent_policy_observer_count].callback =
+            callback;
+        parent_policy_observers[parent_policy_observer_count].context =
+            context;
+        ++parent_policy_observer_count;
+    }
+    xSemaphoreGive(parent_policy_mutex);
+    return result;
+}
+
+esp_err_t parent_policy_remove_change_observer(
+    parent_policy_change_callback_t callback,
+    void *context
+) {
+    if (callback == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!parent_policy_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(parent_policy_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    for (size_t index = 0; index < parent_policy_observer_count; ++index) {
+        if (parent_policy_observers[index].callback == callback &&
+            parent_policy_observers[index].context == context) {
+            for (size_t shift = index + 1;
+                 shift < parent_policy_observer_count;
+                 ++shift) {
+                parent_policy_observers[shift - 1] =
+                    parent_policy_observers[shift];
+            }
+            --parent_policy_observer_count;
+            parent_policy_observers[parent_policy_observer_count].callback =
+                NULL;
+            parent_policy_observers[parent_policy_observer_count].context =
+                NULL;
+            xSemaphoreGive(parent_policy_mutex);
+            return ESP_OK;
+        }
+    }
+    xSemaphoreGive(parent_policy_mutex);
+    return ESP_OK;
+}
+
 esp_err_t parent_policy_clear(void) {
     if (!parent_policy_ready) {
         return ESP_ERR_INVALID_STATE;
@@ -1296,6 +1410,9 @@ esp_err_t parent_policy_clear(void) {
         PARENT_POLICY_REFRESH_REASON_NOT_FOUND
     );
     xSemaphoreGive(parent_policy_mutex);
+    if (result == ESP_OK) {
+        parent_policy_notify_changed();
+    }
     return result;
 }
 
@@ -1310,6 +1427,11 @@ void parent_policy_shutdown(void) {
     parent_policy_ready = false;
     parent_policy_has_cached_policy = false;
     parent_policy_snapshot = {};
+    for (size_t index = 0; index < parent_policy_observer_count; ++index) {
+        parent_policy_observers[index].callback = NULL;
+        parent_policy_observers[index].context = NULL;
+    }
+    parent_policy_observer_count = 0;
     parent_policy_reset_status();
 }
 

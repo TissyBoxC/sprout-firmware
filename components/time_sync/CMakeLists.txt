@@ -1,7 +1,10 @@
 set(time_sync_sources "")
 
 if(CONFIG_FEATURE_TIME_SYNC)
-    list(APPEND time_sync_sources "src/time_sync.c")
+    list(APPEND time_sync_sources
+        "src/time_sync.c"
+        "src/time_sync_pure.c"
+    )
 endif()
 
 idf_component_register(

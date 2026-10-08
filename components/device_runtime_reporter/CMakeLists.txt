@@ -22,6 +22,16 @@ if(CONFIG_FEATURE_PARENT_POLICY AND EXISTS
     list(APPEND device_runtime_reporter_requires "parent_policy")
 endif()
 
+if(CONFIG_FEATURE_USAGE_LEDGER AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../usage_ledger/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "usage_ledger")
+endif()
+
+if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../parent_control_runtime/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "parent_control_runtime")
+endif()
+
 # Provisioning state is optional in minimal images; the heartbeat falls back
 # to the persisted binding state when the component is absent.
 if(CONFIG_FEATURE_DEVICE_PROVISIONING AND EXISTS

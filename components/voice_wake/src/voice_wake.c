@@ -4,6 +4,7 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "audio_pipeline.h"
 #include "esp_log.h"
@@ -18,6 +19,14 @@
 #define VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER 1
 #else
 #define VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER 0
+#endif
+
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
+#include "parent_control_runtime.h"
+#include "time_sync.h"
+#define VOICE_WAKE_HAS_PARENT_CONTROL_RUNTIME 1
+#else
+#define VOICE_WAKE_HAS_PARENT_CONTROL_RUNTIME 0
 #endif
 
 #if CONFIG_VOICE_WAKE_BACKEND_ESP_SR
@@ -249,6 +258,24 @@ static void voice_wake_publish_detection(
         );
         return;
     }
+#if VOICE_WAKE_HAS_PARENT_CONTROL_RUNTIME
+    parent_control_decision_t decision = {};
+    const parent_control_request_t request = {
+        .category = NULL,
+        .safety_exempt = false,
+        .utc_epoch_seconds = (int64_t)time(NULL),
+        .timezone_offset_minutes = time_sync_get_timezone_offset_minutes(),
+    };
+    if (parent_control_evaluate(&request, &decision) != ESP_OK ||
+        parent_control_decision_is_denied(&decision)) {
+        voice_wake_report_rejection(
+            VOICE_WAKE_REJECTION_SUPPRESSED,
+            wake_word_id,
+            confidence_milli
+        );
+        return;
+    }
+#endif
 
     voice_wake_event_t event = {0};
     event.wake_word_id = wake_word_id;

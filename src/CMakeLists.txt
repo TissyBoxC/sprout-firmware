@@ -74,6 +74,14 @@ if(CONFIG_FEATURE_PARENT_POLICY)
     list(APPEND app_requires "parent_policy")
 endif()
 
+if(CONFIG_FEATURE_USAGE_LEDGER)
+    list(APPEND app_requires "usage_ledger")
+endif()
+
+if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
+    list(APPEND app_requires "parent_control_runtime")
+endif()
+
 if(CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER)
     list(APPEND app_requires "device_runtime_reporter")
 endif()

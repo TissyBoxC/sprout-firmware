@@ -39,6 +39,14 @@
 #if CONFIG_FEATURE_CHILD_PROMPT_PROFILE
 #include "child_prompt_profile.h"
 #endif
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
+#include "parent_control_runtime.h"
+#include "time_sync.h"
+#include "usage_ledger.h"
+#define VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME 1
+#else
+#define VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME 0
+#endif
 
 static const char *const TAG = "voice_session";
 
@@ -119,6 +127,13 @@ typedef struct {
 
     uint32_t next_audio_sequence;
     uint32_t last_wake_detection_count;
+
+#if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
+    // Monotonic start of the active conversation, used to derive billed
+    // conversation seconds without trusting wall-clock subtraction.
+    int64_t conversation_started_ms;
+    bool conversation_tracked;
+#endif
 
     esp_websocket_client_handle_t client;
     SemaphoreHandle_t lifecycle_mutex;
@@ -474,6 +489,34 @@ static void voice_session_sender_task(void *argument) {
 
     while (voice_session_state.sender_running) {
         voice_session_poll_wake();
+#if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
+        if (voice_session_state.has_active_session) {
+            parent_control_decision_t decision = {};
+            // Continuation check: the session already recorded its blocked
+            // attempt at start, so this tick must not re-count it.
+            if (parent_control_evaluate_active(
+                    NULL,
+                    (int64_t)time(NULL),
+                    time_sync_get_timezone_offset_minutes(),
+                    &decision
+                ) == ESP_OK &&
+                parent_control_decision_is_denied(&decision)) {
+                (void)voice_session_end_session(decision.reason_code);
+            } else {
+                (void)usage_ledger_set_active(
+                    true,
+                    (int64_t)time(NULL),
+                    time_sync_get_timezone_offset_minutes()
+                );
+            }
+        } else {
+            (void)usage_ledger_set_active(
+                false,
+                (int64_t)time(NULL),
+                time_sync_get_timezone_offset_minutes()
+            );
+        }
+#endif
         if (xQueueReceive(
                 voice_session_state.control_queue,
                 &control,
@@ -598,8 +641,45 @@ static void voice_session_set_state(voice_session_state_t state) {
     voice_session_publish_state(&voice_session_state);
 }
 
+#if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
+/**
+ * @brief Record the finished conversation against the local usage day.
+ *
+ * The elapsed seconds come from the monotonic timer captured at session start,
+ * so a wall-clock correction cannot create negative or inflated conversation
+ * totals. The pending flag is cleared so the terminal paths that race on a
+ * dropped socket cannot double count one conversation.
+ */
+static void voice_session_finalize_conversation(void) {
+    if (!voice_session_state.conversation_tracked) {
+        return;
+    }
+    voice_session_state.conversation_tracked = false;
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    uint32_t elapsed_seconds = 0;
+    if (now_ms > voice_session_state.conversation_started_ms) {
+        elapsed_seconds = (uint32_t)(
+            (now_ms - voice_session_state.conversation_started_ms) / 1000
+        );
+    }
+    voice_session_state.conversation_started_ms = 0;
+    (void)parent_control_note_conversation_finished(
+        (int64_t)time(NULL),
+        time_sync_get_timezone_offset_minutes(),
+        elapsed_seconds
+    );
+}
+#else
+static void voice_session_finalize_conversation(void) {
+}
+#endif
+
 static void voice_session_handle_session_started(void) {
     voice_session_state.has_active_session = true;
+#if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
+    voice_session_state.conversation_started_ms = esp_timer_get_time() / 1000;
+    voice_session_state.conversation_tracked = true;
+#endif
     voice_session_set_state(VOICE_SESSION_STATE_LISTENING);
 #if CONFIG_FEATURE_CONVERSATION_CONTEXT
     // Label the session with the local content level so the device can show
@@ -663,6 +743,7 @@ static void voice_session_handle_session_closed(const cJSON *root) {
             sizeof(voice_session_state.last_reason) - 1
         );
     }
+    voice_session_finalize_conversation();
     voice_session_state.has_active_session = false;
     voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
 }
@@ -802,6 +883,7 @@ static void voice_session_websocket_event(
         case WEBSOCKET_EVENT_CLOSED:
             voice_session_state.is_connected = false;
             if (voice_session_state.has_active_session) {
+                voice_session_finalize_conversation();
                 voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
                 voice_session_state.has_active_session = false;
                 voice_session_increment(
@@ -1008,6 +1090,19 @@ esp_err_t voice_session_start_session(
     const char *stream_id,
     const char *session_id
 ) {
+#if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
+    parent_control_decision_t decision = {};
+    const parent_control_request_t policy_request = {
+        .category = NULL,
+        .safety_exempt = false,
+        .utc_epoch_seconds = (int64_t)time(NULL),
+        .timezone_offset_minutes = time_sync_get_timezone_offset_minutes(),
+    };
+    if (parent_control_evaluate(&policy_request, &decision) != ESP_OK ||
+        parent_control_decision_is_denied(&decision)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
     if (!voice_session_state.is_initialized) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1173,6 +1268,7 @@ static esp_err_t voice_session_finish_session(
         (void)playback_queue_clear(clear_safety);
         voice_session_release_capture();
         voice_session_stop_transport_locked();
+        voice_session_finalize_conversation();
         voice_session_state.has_active_session = false;
         voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
         strncpy(
@@ -1339,6 +1435,7 @@ void voice_session_shutdown(void) {
             portMAX_DELAY
         ) == pdTRUE) {
         voice_session_stop_transport_locked();
+        voice_session_finalize_conversation();
         voice_session_state.has_active_session = false;
         xSemaphoreGive(voice_session_state.lifecycle_mutex);
     }

@@ -139,6 +139,8 @@ function Test-OptionalModuleRemoval {
             'diagnostic_reporter'
             'device_runtime_reporter'
             'provisioning_reporter'
+            'parent_control_runtime'
+            'usage_ledger'
             'parent_policy'
             'device_provisioning'
             'offline_fallback'

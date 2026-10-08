@@ -59,6 +59,14 @@ extern "C" {
 #if DEVICE_RUNTIME_HAS_PARENT_POLICY
 #include "parent_policy.h"
 #endif
+#if CONFIG_FEATURE_USAGE_LEDGER && __has_include("usage_ledger.h")
+#define DEVICE_RUNTIME_HAS_USAGE_LEDGER 1
+#else
+#define DEVICE_RUNTIME_HAS_USAGE_LEDGER 0
+#endif
+#if DEVICE_RUNTIME_HAS_USAGE_LEDGER
+#include "usage_ledger.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_PROVISIONING && __has_include("device_provisioning.h")
 #define DEVICE_RUNTIME_HAS_DEVICE_PROVISIONING 1
 #include "device_provisioning.h"
@@ -74,6 +82,9 @@ extern "C" {
 #define DEVICE_RUNTIME_REQUEST_SIZE 16384
 #define DEVICE_RUNTIME_URL_SIZE 320
 #define DEVICE_RUNTIME_SESSION_TOKEN_SIZE DEVICE_BINDING_SESSION_TOKEN_SIZE
+// Bounded backfill per heartbeat: enough to catch up a few offline days while
+// keeping each work cycle short.
+#define DEVICE_RUNTIME_USAGE_UPLOAD_BATCH 4
 #define DEVICE_RUNTIME_HEARTBEAT_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_LIMIT 4
@@ -941,6 +952,125 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     return result;
 }
 
+#if DEVICE_RUNTIME_HAS_USAGE_LEDGER
+static esp_err_t device_runtime_send_usage_report(void) {
+    usage_ledger_upload_payload_t payload = {};
+    const esp_err_t payload_result =
+        usage_ledger_get_pending_upload(&payload);
+    if (payload_result == ESP_ERR_NOT_FOUND) {
+        return ESP_OK;
+    }
+    if (payload_result != ESP_OK) {
+        return payload_result;
+    }
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
+        !time_sync_is_synchronized()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    esp_err_t result = device_identity_copy(device_id, sizeof(device_id));
+    if (result != ESP_OK) {
+        return result;
+    }
+    char session_token[DEVICE_RUNTIME_SESSION_TOKEN_SIZE] = {0};
+    result = device_binding_client_copy_session_token(
+        session_token,
+        sizeof(session_token)
+    );
+    if (result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return result;
+    }
+
+    JsonDocument document;
+    document["schema_version"] = payload.schema_version;
+    document["report_date"] = payload.report_date;
+    document["timezone_offset_minutes"] = payload.timezone_offset_minutes;
+    document["active_seconds"] = payload.active_seconds;
+    document["conversation_count"] = payload.conversation_count;
+    document["conversation_seconds"] = payload.conversation_seconds;
+    document["content_play_count"] = payload.content_play_count;
+    document["content_seconds"] = payload.content_seconds;
+    JsonArray categories = document["categories"].to<JsonArray>();
+    for (size_t index = 0; index < payload.category_count; ++index) {
+        const char *const category_name =
+            usage_ledger_category_name(payload.categories[index].category);
+        if (category_name == NULL) {
+            continue;
+        }
+        JsonObject category = categories.add<JsonObject>();
+        category["category"] = category_name;
+        category["play_count"] = payload.categories[index].play_count;
+        category["seconds"] = payload.categories[index].seconds;
+    }
+    JsonObject blocked = document["blocked"].to<JsonObject>();
+    blocked["disabled_period"] = payload.blocked.disabled_period;
+    blocked["daily_limit"] = payload.blocked.daily_limit;
+    blocked["category_denied"] = payload.blocked.category_denied;
+    blocked["time_untrusted"] = payload.blocked.time_untrusted;
+
+    char *const request_body = (char *)device_runtime_allocate_buffer(
+        DEVICE_RUNTIME_REQUEST_SIZE
+    );
+    if (request_body == nullptr) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_NO_MEM;
+    }
+    const size_t request_length = serializeJson(
+        document,
+        request_body,
+        DEVICE_RUNTIME_REQUEST_SIZE
+    );
+    if (request_length == 0 ||
+        request_length >= DEVICE_RUNTIME_REQUEST_SIZE) {
+        device_runtime_clear_and_free(
+            request_body,
+            DEVICE_RUNTIME_REQUEST_SIZE
+        );
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_SIZE;
+    }
+    char path[DEVICE_RUNTIME_URL_SIZE] = {0};
+    const int path_written = snprintf(
+        path,
+        sizeof(path),
+        "/api/v1/devices/%s/runtime/usage",
+        device_id
+    );
+    if (path_written <= 0 || (size_t)path_written >= sizeof(path)) {
+        device_runtime_clear_and_free(
+            request_body,
+            DEVICE_RUNTIME_REQUEST_SIZE
+        );
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_SIZE;
+    }
+    int status_code = 0;
+    JsonDocument response;
+    result = device_runtime_platform_request(
+        "POST",
+        path,
+        request_body,
+        session_token,
+        &response,
+        &status_code
+    );
+    device_runtime_clear_and_free(
+        request_body,
+        DEVICE_RUNTIME_REQUEST_SIZE
+    );
+    memset(session_token, 0, sizeof(session_token));
+    if (result == ESP_OK && status_code >= 200 && status_code < 300) {
+        // Confirm the exact day that was accepted. A retry of the same day is
+        // idempotent on the platform, so a stale confirmation cannot double
+        // count usage.
+        (void)usage_ledger_mark_upload_confirmed(payload.day_key);
+    }
+    return result;
+}
+#endif
+
 static device_runtime_command_ack_result_t
 device_runtime_acknowledge_command(
     const char *device_id,
@@ -1197,6 +1327,38 @@ static void device_runtime_work_task(void *argument) {
                     policy_result != ESP_ERR_INVALID_VERSION) {
                     offline_fallback_mark_service_unavailable();
                 }
+#if DEVICE_RUNTIME_HAS_USAGE_LEDGER
+                const parent_policy_status_t policy_status =
+                    parent_policy_get_status();
+                if (policy_status.has_policy) {
+                    // Stamp the day with the revision actually in force so a
+                    // guardian can correlate the usage report with a policy.
+                    (void)usage_ledger_set_applied_policy_version(
+                        policy_status.policy_version
+                    );
+                }
+#endif
+#endif
+#if DEVICE_RUNTIME_HAS_USAGE_LEDGER
+                // Drain a bounded number of completed days per cycle so a long
+                // outage backfills quickly without one heartbeat per day.
+                for (int attempt = 0;
+                     attempt < DEVICE_RUNTIME_USAGE_UPLOAD_BATCH;
+                     ++attempt) {
+                    const esp_err_t usage_result =
+                        device_runtime_send_usage_report();
+                    if (usage_result == ESP_OK) {
+                        continue;
+                    }
+                    if (usage_result != ESP_ERR_NOT_FOUND) {
+                        ESP_LOGW(
+                            TAG,
+                            "usage upload deferred: %s",
+                            esp_err_to_name(usage_result)
+                        );
+                    }
+                    break;
+                }
 #endif
                 char session_token[DEVICE_RUNTIME_SESSION_TOKEN_SIZE] = {0};
                 if (device_binding_client_copy_session_token(
@@ -1211,6 +1373,11 @@ static void device_runtime_work_task(void *argument) {
         } else {
             offline_fallback_record_pending_telemetry();
         }
+#if DEVICE_RUNTIME_HAS_USAGE_LEDGER
+        // Flush accumulated usage every cycle so a power loss loses at most one
+        // heartbeat interval and never a whole local day.
+        (void)usage_ledger_flush();
+#endif
         vTaskDelay(pdMS_TO_TICKS(
             CONFIG_DEVICE_RUNTIME_HEARTBEAT_INTERVAL_SECONDS * 1000
         ));

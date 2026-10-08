@@ -19,6 +19,13 @@
 #include "network_manager.h"
 #include "time_sync.h"
 
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
+#include "parent_control_runtime.h"
+#define CONTENT_PACKAGE_HAS_PARENT_CONTROL_RUNTIME 1
+#else
+#define CONTENT_PACKAGE_HAS_PARENT_CONTROL_RUNTIME 0
+#endif
+
 extern "C" {
 #include "content_package_state.h"
 }
@@ -307,6 +314,19 @@ static bool content_package_parse_item(
         local_path
     );
     entry.state = CONTENT_LIBRARY_STATE_MISSING;
+#if CONTENT_PACKAGE_HAS_PARENT_CONTROL_RUNTIME
+    const parent_control_request_t policy_request = {
+        .category = entry.category,
+        .safety_exempt = false,
+        .utc_epoch_seconds = (int64_t)time(NULL),
+        .timezone_offset_minutes = time_sync_get_timezone_offset_minutes(),
+    };
+    parent_control_decision_t policy_decision = {};
+    if (parent_control_evaluate(&policy_request, &policy_decision) != ESP_OK ||
+        parent_control_decision_is_denied(&policy_decision)) {
+        return false;
+    }
+#endif
     JsonArrayConst age_tiers =
         entry_value["age_tiers"].as<JsonArrayConst>();
     for (JsonVariantConst tier : age_tiers) {

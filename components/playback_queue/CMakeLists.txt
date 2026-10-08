@@ -21,3 +21,7 @@ endif()
 if(CONFIG_FEATURE_VOLUME_CONTROL)
     idf_component_optional_requires(PRIVATE volume_control)
 endif()
+
+if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
+    idf_component_optional_requires(PRIVATE parent_control_runtime)
+endif()

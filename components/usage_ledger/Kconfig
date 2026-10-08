@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_USAGE_LEDGER
+    bool "Enable local usage ledger"
+    default y
+    depends on FEATURE_CONFIG_STORE && FEATURE_TIME_SYNC
+    help
+        Persists local-day active seconds, conversation and content totals,
+        per-category usage, and blocked counters. Completed days remain
+        pending until the platform confirms the idempotent device+date upload.
+
+endmenu

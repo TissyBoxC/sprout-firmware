@@ -15,6 +15,11 @@
 #define TIME_SYNC_OFFSET_KEY "time_offset_ms"
 #define TIME_SYNC_TRUSTED_KEY "time_trusted"
 #define TIME_SYNC_MINIMUM_EPOCH 1704067200  /* 2024-01-01T00:00:00Z */
+#define TIME_SYNC_SECONDS_PER_DAY 86400
+
+#ifndef CONFIG_TIME_SYNC_TIMEZONE_OFFSET_MINUTES
+#define CONFIG_TIME_SYNC_TIMEZONE_OFFSET_MINUTES 480
+#endif
 
 static const char *const TAG = "time_sync";
 
@@ -179,6 +184,10 @@ time_sync_state_t time_sync_get_state(void) {
     return time_sync_state;
 }
 
+bool time_sync_is_ready(void) {
+    return time_sync_ready;
+}
+
 time_sync_source_t time_sync_get_source(void) {
     return time_sync_source;
 }
@@ -199,6 +208,10 @@ int time_sync_get_offset_ms(void) {
 
 bool time_sync_is_synchronized(void) {
     return time_sync_state == TIME_SYNC_STATE_SYNCHRONIZED;
+}
+
+int32_t time_sync_get_timezone_offset_minutes(void) {
+    return CONFIG_TIME_SYNC_TIMEZONE_OFFSET_MINUTES;
 }
 
 esp_err_t time_sync_resynchronize(void) {

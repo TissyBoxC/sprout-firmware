@@ -109,6 +109,20 @@ static void child_prompt_profile_clear_categories(void) {
     child_prompt_profile_state.categories.max_volume_percent = 100;
 }
 
+#if CONFIG_FEATURE_PARENT_POLICY
+/**
+ * @brief Mirror the refreshed guardian policy as soon as it changes.
+ *
+ * Registered as the parent_policy change observer so the category allowlist
+ * cannot stay stale between boot and the next profile read. The observer runs
+ * after parent_policy releases its mutex, so reading the snapshot is safe.
+ */
+static void child_prompt_profile_on_parent_policy_changed(void *context) {
+    (void)context;
+    (void)child_prompt_profile_sync_from_parent_policy();
+}
+#endif
+
 esp_err_t child_prompt_profile_init(void) {
     if (!config_store_is_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -124,6 +138,14 @@ esp_err_t child_prompt_profile_init(void) {
     }
 
     child_prompt_profile_state.is_initialized = true;
+#if CONFIG_FEATURE_PARENT_POLICY
+    // A failed registration is not fatal: the boot-time sync below still
+    // loads the current policy, and a later refresh re-registers on reboot.
+    (void)parent_policy_add_change_observer(
+        child_prompt_profile_on_parent_policy_changed,
+        NULL
+    );
+#endif
     (void)child_prompt_profile_sync_from_parent_policy();
     return ESP_OK;
 }

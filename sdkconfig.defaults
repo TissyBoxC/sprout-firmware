@@ -21,6 +21,11 @@ CONFIG_FEATURE_DEVICE_BINDING_CLIENT=y
 CONFIG_FEATURE_DEVICE_PROVISIONING=y
 CONFIG_FEATURE_PROVISIONING_PAYLOAD=y
 CONFIG_FEATURE_PARENT_POLICY=y
+# Parent control enforcement ships with its local usage ledger so every
+# consumption path (wake, voice, content, playback queue) shares one decision
+# layer and the platform receives the billable usage it produces.
+CONFIG_FEATURE_USAGE_LEDGER=y
+CONFIG_FEATURE_PARENT_CONTROL_RUNTIME=y
 CONFIG_FEATURE_DIAGNOSTIC_REPORTER=y
 CONFIG_FEATURE_PROVISIONING_REPORTER=y
 # Realtime voice conversation. voice_session owns the WSS transport and drives

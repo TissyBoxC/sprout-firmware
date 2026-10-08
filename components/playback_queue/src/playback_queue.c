@@ -1,6 +1,7 @@
 #include "playback_queue.h"
 
 #include <string.h>
+#include <time.h>
 
 #include "audio_pipeline.h"
 #include "esp_heap_caps.h"
@@ -21,10 +22,21 @@
 #else
 #define PLAYBACK_QUEUE_HAS_VOLUME_CONTROL 0
 #endif
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
+#include "parent_control_runtime.h"
+#include "time_sync.h"
+#define PLAYBACK_QUEUE_HAS_PARENT_CONTROL_RUNTIME 1
+#else
+#define PLAYBACK_QUEUE_HAS_PARENT_CONTROL_RUNTIME 0
+#endif
 
 static const char *const TAG = "playback_queue";
 
 #define PLAYBACK_QUEUE_CAPACITY CONFIG_PLAYBACK_QUEUE_CAPACITY
+
+// A frame is 20 ms. Re-evaluating the policy once per second keeps the audio
+// path responsive to a guardian change without a policy lookup per frame.
+#define PLAYBACK_QUEUE_POLICY_CHECK_FRAMES 50
 
 // Pending items are referenced by pointer, so the fixed array only stores a few
 // addresses and the 20 KB frame payload of each item lives in PSRAM. That keeps
@@ -217,6 +229,32 @@ static size_t playback_queue_play_active_item(void) {
         if (stop_reason != PLAYBACK_STOP_NONE) {
             break;
         }
+
+#if PLAYBACK_QUEUE_HAS_PARENT_CONTROL_RUNTIME
+        // Safety announcements keep playing; every other lane re-checks the
+        // guardian policy so a disabled period or daily limit that begins mid
+        // item silences the speaker instead of finishing the buffered audio.
+        if (playback_queue_active->priority != PLAYBACK_PRIORITY_SAFETY &&
+            (frames_played % PLAYBACK_QUEUE_POLICY_CHECK_FRAMES) == 0) {
+            parent_control_decision_t decision = {};
+            if (parent_control_evaluate_active(
+                    NULL,
+                    (int64_t)time(NULL),
+                    time_sync_get_timezone_offset_minutes(),
+                    &decision
+                ) == ESP_OK &&
+                parent_control_decision_is_denied(&decision)) {
+                if (xSemaphoreTake(
+                        playback_queue_mutex,
+                        portMAX_DELAY
+                    ) == pdTRUE) {
+                    playback_queue_stop_reason = PLAYBACK_STOP_DISCARD;
+                    xSemaphoreGive(playback_queue_mutex);
+                }
+                break;
+            }
+        }
+#endif
 
 #if !PLAYBACK_QUEUE_HAS_AUDIO_OUTPUT && PLAYBACK_QUEUE_HAS_VOLUME_CONTROL
         if (volume_control_is_muted() &&
@@ -457,6 +495,22 @@ playback_queue_error_t playback_queue_enqueue(
         item->frame_count > PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM) {
         return PLAYBACK_QUEUE_ERR_INVALID_ARGUMENT;
     }
+#if PLAYBACK_QUEUE_HAS_PARENT_CONTROL_RUNTIME
+    if (item->priority != PLAYBACK_PRIORITY_SAFETY) {
+        parent_control_decision_t decision = {};
+        const parent_control_request_t policy_request = {
+            .category = NULL,
+            .safety_exempt = false,
+            .utc_epoch_seconds = (int64_t)time(NULL),
+            .timezone_offset_minutes =
+                time_sync_get_timezone_offset_minutes(),
+        };
+        if (parent_control_evaluate(&policy_request, &decision) != ESP_OK ||
+            parent_control_decision_is_denied(&decision)) {
+            return PLAYBACK_QUEUE_ERR_INTERRUPT_DENIED;
+        }
+    }
+#endif
     for (size_t index = 0; index < item->frame_count; ++index) {
         if (item->frames[index].pcm_size !=
             AUDIO_CODEC_FRAME_PCM_BYTES) {

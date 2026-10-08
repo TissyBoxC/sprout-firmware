@@ -107,6 +107,12 @@
 #if CONFIG_FEATURE_PARENT_POLICY
 #include "parent_policy.h"
 #endif
+#if CONFIG_FEATURE_USAGE_LEDGER
+#include "usage_ledger.h"
+#endif
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME
+#include "parent_control_runtime.h"
+#endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
 #include "provisioning_payload.h"
 #endif
@@ -575,6 +581,12 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_PARENT_POLICY
     ESP_ERROR_CHECK(module_registry_add(parent_policy_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_USAGE_LEDGER
+    ESP_ERROR_CHECK(module_registry_add(usage_ledger_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME
+    ESP_ERROR_CHECK(module_registry_add(parent_control_runtime_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PLAYBACK_QUEUE
     ESP_ERROR_CHECK(module_registry_add(playback_queue_module_descriptor()));

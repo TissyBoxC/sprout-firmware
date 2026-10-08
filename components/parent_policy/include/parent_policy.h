@@ -37,6 +37,9 @@ typedef enum {
     PARENT_POLICY_REFRESH_REASON_INTERNAL,
 } parent_policy_refresh_reason_t;
 
+/** @brief Maximum number of policy-change observers registered at once. */
+#define PARENT_POLICY_MAX_OBSERVERS 4
+
 /** @brief One disabled local-time period from the guardian policy. */
 typedef struct {
     char start_time[6];
@@ -66,6 +69,15 @@ typedef struct {
     int64_t policy_version;
     int64_t attempted_at;
 } parent_policy_status_t;
+
+/**
+ * @brief Observer invoked after a policy apply or clear.
+ *
+ * Runs after the cache mutex is released so the callback may read the new
+ * snapshot without deadlocking. It must not block for long because it runs on
+ * the runtime reporter task.
+ */
+typedef void (*parent_policy_change_callback_t)(void *context);
 
 /**
  * @brief Initialize parent policy storage and the initial volume ceiling.
@@ -113,6 +125,25 @@ esp_err_t parent_policy_get_snapshot(parent_policy_snapshot_t *snapshot_out);
 
 /** @brief Return the current cache and refresh status. */
 parent_policy_status_t parent_policy_get_status(void);
+
+/**
+ * @brief Register one policy-change observer.
+ *
+ * Observers fire once after each successful apply, deletion, or explicit
+ * parent_policy_clear() so dependents such as child_prompt_profile cannot hold
+ * a stale category mirror. The same (callback, context) pair is not registered
+ * twice. Returns ESP_ERR_NO_MEM when PARENT_POLICY_MAX_OBSERVERS is reached.
+ */
+esp_err_t parent_policy_add_change_observer(
+    parent_policy_change_callback_t callback,
+    void *context
+);
+
+/** @brief Remove one previously registered observer. */
+esp_err_t parent_policy_remove_change_observer(
+    parent_policy_change_callback_t callback,
+    void *context
+);
 
 /**
  * @brief Clear the cached policy and restore the compiled volume maximum.

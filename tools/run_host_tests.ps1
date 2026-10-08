@@ -208,4 +208,66 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
+Invoke-HostTest `
+    -Name 'time_sync_timezone_boundaries' `
+    -Sources @(
+        (Join-Path $timeSyncRoot 'src/time_sync_pure.c')
+        (Join-Path $timeSyncRoot 'test/test_timezone_boundaries.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $timeSyncRoot 'include')
+        (Join-Path $timeSyncRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$usageLedgerRoot = Join-Path $firmwareRoot 'components/usage_ledger'
+Invoke-HostTest `
+    -Name 'usage_ledger_state' `
+    -Sources @(
+        (Join-Path $usageLedgerRoot 'src/usage_ledger_core.c')
+        (Join-Path $usageLedgerRoot 'test/test_usage_ledger.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $usageLedgerRoot 'include')
+        (Join-Path $usageLedgerRoot 'src')
+        (Join-Path $usageLedgerRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$parentControlRoot = Join-Path $firmwareRoot 'components/parent_control_runtime'
+Invoke-HostTest `
+    -Name 'parent_control_policy_evaluator' `
+    -Sources @(
+        (Join-Path $parentControlRoot 'src/parent_control_decision.c')
+        (Join-Path $parentControlRoot 'test/test_policy_evaluator.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $parentControlRoot 'include')
+        (Join-Path $parentControlRoot 'src')
+        (Join-Path $firmwareRoot 'components/parent_policy/include')
+        (Join-Path $firmwareRoot 'components/usage_ledger/include')
+        (Join-Path $parentControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'parent_control_consumption_gate' `
+    -Sources @(
+        (Join-Path $parentControlRoot 'src/parent_control_decision.c')
+        (Join-Path $parentControlRoot 'test/test_consumption_gate.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $parentControlRoot 'include')
+        (Join-Path $parentControlRoot 'src')
+        (Join-Path $firmwareRoot 'components/parent_policy/include')
+        (Join-Path $firmwareRoot 'components/usage_ledger/include')
+        (Join-Path $parentControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Write-Host 'Host verification passed.'
