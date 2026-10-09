@@ -1,0 +1,19 @@
+menu "Sprout feature modules"
+
+config FEATURE_TRANSPORT_SECURITY
+    bool "Enable shared transport security policy"
+    default y
+    help
+        Centralizes HTTPS, WSS, and MQTTS validation. Certificate and hostname
+        verification are always enabled, and cleartext or downgraded endpoints
+        are rejected before any client opens a connection.
+
+config TRANSPORT_SECURITY_ALLOWED_HOST
+    string "Optional additional host suffix"
+    depends on FEATURE_TRANSPORT_SECURITY
+    default ""
+    help
+        Optional comma-separated host suffixes in addition to clarkhub.cn.
+        Leave empty in production unless a second trusted domain is required.
+
+endmenu

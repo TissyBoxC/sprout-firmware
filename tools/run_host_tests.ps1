@@ -127,6 +127,69 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$transportSecurityRoot = Join-Path $firmwareRoot 'components/transport_security'
+Invoke-HostTest `
+    -Name 'transport_security' `
+    -Sources @(
+        (Join-Path $transportSecurityRoot 'src/transport_security.c')
+        (Join-Path $transportSecurityRoot 'src/transport_security_core.c')
+        (Join-Path $transportSecurityRoot 'test/test_transport_security.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $transportSecurityRoot 'include')
+        (Join-Path $transportSecurityRoot 'src')
+        (Join-Path $transportSecurityRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$privacyGuardRoot = Join-Path $firmwareRoot 'components/privacy_guard'
+Invoke-HostTest `
+    -Name 'privacy_guard_core' `
+    -Sources @(
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'test/test_privacy_guard_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+        (Join-Path $privacyGuardRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'privacy_guard_runtime' `
+    -Sources @(
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard.c')
+        (Join-Path $privacyGuardRoot 'test/stubs/config_store.c')
+        (Join-Path $privacyGuardRoot 'test/test_privacy_guard_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+        (Join-Path $privacyGuardRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
+Invoke-HostTest `
+    -Name 'content_filter' `
+    -Sources @(
+        (Join-Path $contentFilterRoot 'src/content_filter_core.c')
+        (Join-Path $contentFilterRoot 'src/content_filter.c')
+        (Join-Path $contentFilterRoot 'test/test_content_filter.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $contentFilterRoot 'include')
+        (Join-Path $contentFilterRoot 'src')
+        (Join-Path $contentFilterRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $conversationContextRoot = Join-Path $firmwareRoot 'components/conversation_context'
 Invoke-HostTest `
     -Name 'conversation_context_ring' `

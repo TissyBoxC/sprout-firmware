@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONTENT_FILTER
+    bool "Enable child content filter"
+    default y
+    help
+        Applies age-appropriate input and output moderation to every
+        conversation turn. Returns stable reason codes so the gateway, parent
+        app, and diagnostics can act without parsing log text.
+
+endmenu

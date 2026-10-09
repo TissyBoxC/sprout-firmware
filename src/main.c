@@ -89,6 +89,15 @@
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
 #include "device_capabilities.h"
 #endif
+#if CONFIG_FEATURE_TRANSPORT_SECURITY
+#include "transport_security.h"
+#endif
+#if CONFIG_FEATURE_PRIVACY_GUARD
+#include "privacy_guard.h"
+#endif
+#if CONFIG_FEATURE_CONTENT_FILTER
+#include "content_filter.h"
+#endif
 #if CONFIG_FEATURE_ERROR_RECOVERY
 #include "error_recovery.h"
 #endif
@@ -548,6 +557,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
     ESP_ERROR_CHECK(module_registry_add(device_capabilities_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_TRANSPORT_SECURITY
+    ESP_ERROR_CHECK(module_registry_add(transport_security_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PRIVACY_GUARD
+    ESP_ERROR_CHECK(module_registry_add(privacy_guard_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONTENT_FILTER
+    ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_AUDIO_CODEC
     ESP_ERROR_CHECK(module_registry_add(audio_codec_module_descriptor()));

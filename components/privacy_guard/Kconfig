@@ -1,0 +1,27 @@
+menu "Sprout feature modules"
+
+config FEATURE_PRIVACY_GUARD
+    bool "Enable child privacy guard"
+    default y
+    depends on FEATURE_CONFIG_STORE
+    help
+        Tracks guardian consent for audio upload, image upload, conversation
+        history, and usage analytics. Every class starts denied and a missing
+        or corrupt record is treated as denied.
+
+config PRIVACY_GUARD_AUDIO_UPLOAD_DEFAULT
+    bool "Allow audio upload before guardian consent"
+    depends on FEATURE_PRIVACY_GUARD
+    default n
+    help
+        Must remain disabled in production. This option exists only for
+        controlled development fixtures and is never enabled by default.
+
+config PRIVACY_GUARD_IMAGE_UPLOAD_DEFAULT
+    bool "Allow image upload before guardian consent"
+    depends on FEATURE_PRIVACY_GUARD
+    default n
+    help
+        Must remain disabled in production.
+
+endmenu

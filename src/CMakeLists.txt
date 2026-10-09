@@ -14,6 +14,18 @@ if(CONFIG_FEATURE_DEVICE_CAPABILITIES)
     list(APPEND app_requires "device_capabilities")
 endif()
 
+if(CONFIG_FEATURE_TRANSPORT_SECURITY)
+    list(APPEND app_requires "transport_security")
+endif()
+
+if(CONFIG_FEATURE_PRIVACY_GUARD)
+    list(APPEND app_requires "privacy_guard")
+endif()
+
+if(CONFIG_FEATURE_CONTENT_FILTER)
+    list(APPEND app_requires "content_filter")
+endif()
+
 if(CONFIG_FEATURE_AUDIO_CODEC)
     list(APPEND app_requires "audio_codec")
 endif()
