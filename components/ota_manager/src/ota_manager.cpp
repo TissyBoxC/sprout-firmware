@@ -23,7 +23,9 @@ extern "C" {
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#if CONFIG_FEATURE_LED_INDICATOR
 #include "led_indicator.h"
+#endif
 #include "network_manager.h"
 #include "ota_download.h"
 #include "ota_manager_event_sequence.h"

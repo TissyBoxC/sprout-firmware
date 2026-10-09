@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_MESSAGE
+    bool "Enable guardian device message presenter"
+    default y
+    help
+        Accepts the display_message runtime command and presents guardian
+        authored copy. Display builds render it on the device screen; builds
+        without the DISPLAY capability record the message and confirm the
+        command with a bounded LED cue instead of retrying forever.
+
+endmenu

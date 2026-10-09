@@ -167,6 +167,19 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$deviceMessageRoot = Join-Path $firmwareRoot 'components/device_message'
+Invoke-HostTest `
+    -Name 'device_message_core' `
+    -Sources @(
+        (Join-Path $deviceMessageRoot 'src/device_message_core.c')
+        (Join-Path $deviceMessageRoot 'test/test_device_message_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceMessageRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $provisioningRoot = Join-Path $firmwareRoot 'components/provisioning_reporter'
 Invoke-HostTest `
     -Name 'provisioning_reporter_state' `

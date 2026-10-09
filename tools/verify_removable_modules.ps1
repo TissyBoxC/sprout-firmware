@@ -140,6 +140,7 @@ function Test-OptionalModuleRemoval {
             'wake_feedback'
             'voice_wake'
             'diagnostic_reporter'
+            'device_message'
             'device_runtime_reporter'
             'provisioning_reporter'
             'parent_control_runtime'
@@ -155,8 +156,6 @@ function Test-OptionalModuleRemoval {
             'audio_input'
             'audio_pipeline'
             'audio_codec'
-            'cloud_auth'
-            'time_sync'
         )) {
             Remove-OptionalModule `
                 -ProjectPath $temporaryRoot `

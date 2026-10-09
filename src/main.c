@@ -56,6 +56,9 @@
 #if CONFIG_FEATURE_LED_INDICATOR
 #include "led_indicator.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_MESSAGE
+#include "device_message.h"
+#endif
 #if CONFIG_FEATURE_FACTORY_RESET
 #include "factory_reset.h"
 #endif
@@ -590,6 +593,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_LED_INDICATOR
     ESP_ERROR_CHECK(module_registry_add(led_indicator_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_MESSAGE
+    ESP_ERROR_CHECK(module_registry_add(device_message_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_FACTORY_RESET
     ESP_ERROR_CHECK(module_registry_add(factory_reset_module_descriptor()));

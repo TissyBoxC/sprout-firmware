@@ -58,6 +58,14 @@ if(CONFIG_FEATURE_FACTORY_RESET AND EXISTS
     list(APPEND device_runtime_reporter_requires "factory_reset")
 endif()
 
+# Guardian device messages are optional. When the component is absent the
+# reporter acknowledges display_message with a stable result instead of
+# failing the whole runtime.
+if(CONFIG_FEATURE_DEVICE_MESSAGE AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../device_message/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "device_message")
+endif()
+
 idf_component_register(
     SRCS ${device_runtime_reporter_sources}
     INCLUDE_DIRS "include"

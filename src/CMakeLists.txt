@@ -54,6 +54,10 @@ if(CONFIG_FEATURE_LED_INDICATOR)
     list(APPEND app_requires "led_indicator")
 endif()
 
+if(CONFIG_FEATURE_DEVICE_MESSAGE)
+    list(APPEND app_requires "device_message")
+endif()
+
 if(CONFIG_FEATURE_FACTORY_RESET)
     list(APPEND app_requires "factory_reset")
 endif()

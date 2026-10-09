@@ -78,6 +78,13 @@ extern "C" {
 #endif
 #include "time_sync.h"
 
+#if CONFIG_FEATURE_DEVICE_MESSAGE && __has_include("device_message.h")
+#include "device_message.h"
+#define DEVICE_RUNTIME_HAS_DEVICE_MESSAGE 1
+#else
+#define DEVICE_RUNTIME_HAS_DEVICE_MESSAGE 0
+#endif
+
 #define DEVICE_RUNTIME_RESPONSE_SIZE 8192
 #define DEVICE_RUNTIME_REQUEST_SIZE 16384
 #define DEVICE_RUNTIME_URL_SIZE 320
@@ -89,6 +96,14 @@ extern "C" {
 #define DEVICE_RUNTIME_COMMAND_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_LIMIT 4
 #define DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE 256
+#if DEVICE_RUNTIME_HAS_DEVICE_MESSAGE
+// The command payload is parsed straight into the bounded presenter struct.
+// Keeping it inside the command avoids a second heap allocation for the
+// verbatim authored copy.
+#define DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD 1
+#else
+#define DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD 0
+#endif
 #define DEVICE_RUNTIME_FACTORY_RESET_COMPLETED_MAGIC 0x52535431u
 
 static const char *const TAG = "device_runtime";
@@ -103,6 +118,10 @@ typedef struct {
 typedef struct {
     char id[DEVICE_RUNTIME_COMMAND_ID_SIZE];
     char type[32];
+#if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
+    device_message_t message;
+    bool has_message;
+#endif
 } device_runtime_command_t;
 
 typedef enum {
@@ -1150,6 +1169,27 @@ static device_runtime_command_execution_t device_runtime_execute_command(
 #else
         result = ESP_OK;
 #endif
+    } else if (strcmp(command->type, "display_message") == 0) {
+#if DEVICE_RUNTIME_HAS_DEVICE_MESSAGE
+        if (!command->has_message) {
+            result = ESP_ERR_INVALID_ARG;
+            result_code = "invalid_payload";
+        } else {
+            device_message_error_t message_error = DEVICE_MESSAGE_OK;
+            result = device_message_present(
+                &command->message,
+                &message_error
+            );
+            if (result != ESP_OK) {
+                result_code = device_message_error_name(message_error);
+            }
+        }
+#else
+        // This image has no presenter compiled in. Acknowledge the command so
+        // the platform does not retry a message the device cannot render.
+        result = ESP_OK;
+        result_code = "unsupported_command";
+#endif
 #if DEVICE_RUNTIME_HAS_FACTORY_RESET
     } else if (strcmp(command->type, "factory_reset") == 0) {
         if (device_runtime_factory_reset_completed_matches(command->id)) {
@@ -1291,6 +1331,54 @@ static esp_err_t device_runtime_poll_commands(const char *session_token) {
         }
         snprintf(command.id, sizeof(command.id), "%s", command_id);
         snprintf(command.type, sizeof(command.type), "%s", command_type);
+#if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
+        if (strcmp(command_type, "display_message") == 0) {
+            JsonObjectConst payload = command_value["payload"].as<JsonObjectConst>();
+            const char *message_id = payload["notification_id"] | "";
+            const char *title = payload["title"] | "";
+            const char *body = payload["body"] | "";
+            const char *severity = payload["severity"] | "";
+            const char *category = payload["category"] | "";
+            const int duration_seconds = payload["duration_seconds"] | 0;
+            if (message_id[0] != '\0' && title[0] != '\0') {
+                snprintf(
+                    command.message.id,
+                    sizeof(command.message.id),
+                    "%s",
+                    message_id
+                );
+                snprintf(
+                    command.message.title,
+                    sizeof(command.message.title),
+                    "%s",
+                    title
+                );
+                snprintf(
+                    command.message.body,
+                    sizeof(command.message.body),
+                    "%s",
+                    body
+                );
+                snprintf(
+                    command.message.severity,
+                    sizeof(command.message.severity),
+                    "%s",
+                    severity
+                );
+                snprintf(
+                    command.message.category,
+                    sizeof(command.message.category),
+                    "%s",
+                    category
+                );
+                command.message.duration_seconds =
+                    duration_seconds > 0
+                        ? (uint32_t)duration_seconds
+                        : 0;
+                command.has_message = true;
+            }
+        }
+#endif
         (void)device_runtime_execute_command(
             device_id,
             &command,
