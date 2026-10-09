@@ -10,6 +10,8 @@ compile_commands.json
 # ESP-IDF generated configuration and build files
 sdkconfig.*
 !sdkconfig.defaults
+# Host-test stubs must remain trackable despite the generated-config rule above.
+!components/*/test/stubs/sdkconfig.h
 sdkconfig
 dependencies.lock
 managed_components/
