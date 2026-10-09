@@ -1,0 +1,17 @@
+menu "Sprout feature modules"
+
+config FEATURE_OTA_ROLLBACK
+    bool "Enable OTA boot rollback protection"
+    default y
+    depends on FEATURE_OTA_VALIDATE && FEATURE_CONFIG_STORE
+    help
+        Tracks pending image validation, enforces a boot-attempt budget, and
+        rolls back to the previous known-good slot when validation fails.
+
+config OTA_ROLLBACK_MAX_BOOT_ATTEMPTS
+    int "Maximum pending image boot attempts"
+    depends on FEATURE_OTA_ROLLBACK
+    range 1 10
+    default 3
+
+endmenu

@@ -162,6 +162,10 @@ if(CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER)
     list(APPEND app_requires "content_package_manager")
 endif()
 
+if(CONFIG_FEATURE_OTA_MANAGER)
+    list(APPEND app_requires "ota_manager")
+endif()
+
 idf_component_register(
     SRCS "main.c"
     REQUIRES ${app_requires}

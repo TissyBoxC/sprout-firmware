@@ -74,6 +74,74 @@ function Invoke-HostTest {
 
 $compiler = Resolve-HostCompiler
 
+$otaValidateRoot = Join-Path $firmwareRoot 'components/ota_validate'
+Invoke-HostTest `
+    -Name 'ota_manifest' `
+    -Sources @(
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $otaValidateRoot 'test/test_ota_manifest.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaValidateRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$otaDownloadRoot = Join-Path $firmwareRoot 'components/ota_download'
+Invoke-HostTest `
+    -Name 'ota_download_core' `
+    -Sources @(
+        (Join-Path $otaDownloadRoot 'src/ota_download_core.c')
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $otaDownloadRoot 'test/test_ota_download_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaDownloadRoot 'include')
+        (Join-Path $otaValidateRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$otaManagerRoot = Join-Path $firmwareRoot 'components/ota_manager'
+Invoke-HostTest `
+    -Name 'ota_manager_event_sequence' `
+    -Sources @(
+        (Join-Path $otaManagerRoot 'src/ota_manager_event_sequence.c')
+        (Join-Path $otaManagerRoot 'test/test_ota_manager_event_sequence.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaManagerRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'ota_manager_state' `
+    -Sources @(
+        (Join-Path $otaManagerRoot 'src/ota_manager_state.c')
+        (Join-Path $otaManagerRoot 'test/test_ota_manager_state.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaManagerRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$otaRollbackRoot = Join-Path $firmwareRoot 'components/ota_rollback'
+Invoke-HostTest `
+    -Name 'ota_rollback_policy' `
+    -Sources @(
+        (Join-Path $otaRollbackRoot 'src/ota_rollback_policy.c')
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $otaRollbackRoot 'test/test_ota_rollback_policy.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaRollbackRoot 'include')
+        (Join-Path $otaValidateRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $diagnosticRoot = Join-Path $firmwareRoot 'components/diagnostic_reporter'
 Invoke-HostTest `
     -Name 'diagnostic_reporter_state' `

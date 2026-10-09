@@ -1,0 +1,42 @@
+menu "Sprout feature modules"
+
+config FEATURE_OTA_MANAGER
+    bool "Enable OTA update manager"
+    default y
+    depends on FEATURE_OTA_DOWNLOAD && FEATURE_OTA_VALIDATE && FEATURE_OTA_ROLLBACK && FEATURE_CLOUD_AUTH && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_CONFIG_STORE
+    help
+        Coordinates secure firmware downloads, validation, boot partition
+        selection, runtime reporting, and rollback validation.
+
+config OTA_MANAGER_CHANNEL
+    string "Firmware release channel"
+    depends on FEATURE_OTA_MANAGER
+    default "stable"
+    help
+        Only manifests for this channel are accepted. Supported values are
+        stable, canary, and internal.
+
+config OTA_MANAGER_HARDWARE_REVISION
+    string "Expected hardware revision"
+    depends on FEATURE_OTA_MANAGER
+    default "esp32s3"
+    help
+        Manifest hardware revision accepted by this firmware image.
+
+config OTA_MANAGER_POLL_INTERVAL_SECONDS
+    int "OTA poll interval in seconds"
+    depends on FEATURE_OTA_MANAGER
+    range 60 86400
+    default 900
+
+config OTA_MANAGER_TASK_STACK_SIZE
+    int "OTA worker task stack size"
+    depends on FEATURE_OTA_MANAGER
+    default 8192
+
+config OTA_MANAGER_TASK_PRIORITY
+    int "OTA worker task priority"
+    depends on FEATURE_OTA_MANAGER
+    default 3
+
+endmenu

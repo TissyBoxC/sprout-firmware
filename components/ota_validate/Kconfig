@@ -1,0 +1,10 @@
+menu "Sprout feature modules"
+
+config FEATURE_OTA_VALIDATE
+    bool "Enable OTA manifest and image validation"
+    default y
+    help
+        Parses immutable firmware manifests and validates hardware, channel,
+        source version, hashes, signatures, and ESP-IDF image metadata.
+
+endmenu

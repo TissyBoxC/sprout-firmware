@@ -1,0 +1,29 @@
+menu "Sprout feature modules"
+
+config FEATURE_OTA_DOWNLOAD
+    bool "Enable secure OTA image download"
+    default y
+    depends on FEATURE_OTA_VALIDATE
+    help
+        Streams firmware images over verified HTTPS into the inactive OTA
+        partition with SHA-256, size limits, retries, and cancellation.
+
+config OTA_DOWNLOAD_CHUNK_BYTES
+    int "OTA download read chunk bytes"
+    depends on FEATURE_OTA_DOWNLOAD
+    range 1024 16384
+    default 4096
+
+config OTA_DOWNLOAD_TIMEOUT_SECONDS
+    int "OTA download timeout in seconds"
+    depends on FEATURE_OTA_DOWNLOAD
+    range 10 600
+    default 60
+
+config OTA_DOWNLOAD_MAX_RETRIES
+    int "OTA download maximum attempts"
+    depends on FEATURE_OTA_DOWNLOAD
+    range 1 10
+    default 3
+
+endmenu
