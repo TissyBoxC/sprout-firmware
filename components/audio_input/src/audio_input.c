@@ -30,6 +30,7 @@ typedef struct {
     uint32_t stream_id;
     uint32_t next_sequence;
     audio_input_frame_callback_t callback;
+    audio_input_metrics_callback_t metrics_callback;
     void *callback_context;
 
     audio_input_dsp_t dsp;
@@ -162,7 +163,12 @@ static void audio_input_publish_dsp_snapshot(void) {
 
 static void audio_input_emit_packet(
     const int16_t *pcm,
-    uint64_t captured_at_ms
+    uint64_t captured_at_ms,
+    uint16_t microphone_level_q15,
+    uint16_t reference_level_q15,
+    bool has_reference,
+    bool is_speech,
+    bool report_metrics
 ) {
     audio_codec_packet_t packet;
     memset(&packet, 0, sizeof(packet));
@@ -181,8 +187,53 @@ static void audio_input_emit_packet(
     // The callback owns the packet only for this call, so a consumer that
     // queues the audio must copy it first.
     if (audio_input_state.callback != NULL) {
+        if (report_metrics && audio_input_state.metrics_callback != NULL) {
+            audio_input_frame_metrics_t metrics = {
+                .microphone_level_q15 = microphone_level_q15,
+                .reference_level_q15 = reference_level_q15,
+                .is_speech = is_speech,
+                .has_reference = has_reference,
+            };
+            audio_input_state.metrics_callback(
+                &metrics,
+                audio_input_state.callback_context
+            );
+        }
         audio_input_state.callback(&packet, audio_input_state.callback_context);
     }
+}
+
+static uint16_t audio_input_level_q15(const int16_t *samples, size_t count) {
+    if (samples == NULL || count == 0) {
+        return 0;
+    }
+    uint64_t sum_squares = 0;
+    for (size_t index = 0; index < count; ++index) {
+        const int32_t sample = samples[index];
+        sum_squares += (uint64_t)(sample * sample);
+    }
+    const uint32_t mean_square = (uint32_t)(
+        sum_squares / (uint64_t)count
+    );
+    uint32_t root = 0;
+    uint32_t bit = 1u << 15;
+    while (bit > 0) {
+        const uint32_t candidate = root | bit;
+        if (candidate != 0 && candidate <= mean_square / candidate) {
+            root = candidate;
+        }
+        bit >>= 1;
+    }
+    const uint32_t scaled = (root * 32767u) / 32768u;
+    return scaled > 32767u ? 32767u : (uint16_t)scaled;
+}
+
+static uint16_t audio_input_microphone_level_q15(const audio_codec_pcm_frame_t *frame) {
+    if (frame == NULL || frame->pcm_size < sizeof(int16_t)) {
+        return 0;
+    }
+    const size_t sample_count = frame->pcm_size / sizeof(int16_t);
+    return audio_input_level_q15(frame->pcm, sample_count);
 }
 
 static void audio_input_capture_task(void *argument) {
@@ -212,6 +263,17 @@ static void audio_input_capture_task(void *argument) {
             (size_t)CONFIG_AUDIO_INPUT_AEC_REFERENCE_DELAY_FRAMES,
             reference
         );
+        const uint16_t microphone_level_q15 =
+            audio_input_microphone_level_q15(&captured);
+        const uint16_t reference_level_q15 = has_reference
+            ? audio_input_level_q15(reference, AUDIO_INPUT_FRAME_SAMPLES)
+            : 0;
+        portENTER_CRITICAL(&audio_input_counter_lock);
+        audio_input_state.snapshot.microphone_level_q15 =
+            microphone_level_q15;
+        audio_input_state.snapshot.reference_level_q15 =
+            reference_level_q15;
+        portEXIT_CRITICAL(&audio_input_counter_lock);
 
         bool is_speech = false;
         audio_input_dsp_process_frame(
@@ -244,16 +306,41 @@ static void audio_input_capture_task(void *argument) {
                         AUDIO_CODEC_FRAME_DURATION_MS;
                     audio_input_emit_packet(
                         audio_input_state.preroll[slot],
-                        captured_at_ms > lag ? captured_at_ms - lag : 0
+                        captured_at_ms > lag ? captured_at_ms - lag : 0,
+                        0,
+                        0,
+                        false,
+                        true,
+                        false
                     );
                 }
                 audio_input_state.preroll_count = 0;
                 audio_input_state.speech_active = true;
             }
-            audio_input_emit_packet(processed, captured_at_ms);
+            audio_input_emit_packet(
+                processed,
+                captured_at_ms,
+                microphone_level_q15,
+                reference_level_q15,
+                has_reference,
+                true,
+                true
+            );
         } else {
             audio_input_increment(&audio_input_state.snapshot.suppressed_frames);
             audio_input_state.speech_active = false;
+            if (audio_input_state.metrics_callback != NULL) {
+                const audio_input_frame_metrics_t metrics = {
+                    .microphone_level_q15 = microphone_level_q15,
+                    .reference_level_q15 = reference_level_q15,
+                    .is_speech = false,
+                    .has_reference = has_reference,
+                };
+                audio_input_state.metrics_callback(
+                    &metrics,
+                    audio_input_state.callback_context
+                );
+            }
             memcpy(
                 audio_input_state.preroll[audio_input_state.preroll_write],
                 processed,
@@ -335,6 +422,20 @@ esp_err_t audio_input_start(
     audio_input_frame_callback_t callback,
     void *context
 ) {
+    return audio_input_start_with_metrics(
+        stream_id,
+        callback,
+        NULL,
+        context
+    );
+}
+
+esp_err_t audio_input_start_with_metrics(
+    uint32_t stream_id,
+    audio_input_frame_callback_t callback,
+    audio_input_metrics_callback_t metrics_callback,
+    void *context
+) {
     if (audio_input_state.lifecycle_mutex == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -358,6 +459,7 @@ esp_err_t audio_input_start(
         audio_input_state.stream_id = stream_id;
         audio_input_state.next_sequence = 0;
         audio_input_state.callback = callback;
+        audio_input_state.metrics_callback = metrics_callback;
         audio_input_state.callback_context = context;
 
         portENTER_CRITICAL(&audio_input_counter_lock);
@@ -444,6 +546,7 @@ static esp_err_t audio_input_stop_locked(void) {
     }
     audio_input_state.task_handle = NULL;
     audio_input_state.callback = NULL;
+    audio_input_state.metrics_callback = NULL;
     audio_input_state.callback_context = NULL;
     audio_input_reference_queue_flush(&audio_input_state.reference_queue);
     return result;

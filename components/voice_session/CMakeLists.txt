@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     list(APPEND voice_session_sources
         "src/voice_session.c"
         "src/voice_session_protocol.c"
+        "src/voice_duplex_core.c"
     )
 endif()
 
@@ -22,6 +23,7 @@ idf_component_register(
         freertos
         audio_input
         audio_pipeline
+        audio_output
         cloud_auth
         device_binding_client
         device_identity
@@ -58,5 +60,9 @@ if(CONFIG_FEATURE_VOICE_SESSION)
 
     if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
         idf_component_optional_requires(PRIVATE parent_control_runtime)
+    endif()
+
+    if(CONFIG_FEATURE_AUDIO_OUTPUT)
+        idf_component_optional_requires(PRIVATE audio_output)
     endif()
 endif()

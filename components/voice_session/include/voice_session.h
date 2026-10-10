@@ -18,6 +18,9 @@ extern "C" {
 /** @brief Longest stable failure reason copied into the snapshot. */
 #define VOICE_SESSION_REASON_SIZE 64
 
+/** @brief Number of quality counters retained for the latest conversation turn. */
+#define VOICE_SESSION_QUALITY_FRAME_COUNT 4
+
 /**
  * @brief Transport and orchestration errors returned by voice_session.
  *
@@ -69,6 +72,27 @@ typedef struct {
     uint32_t wake_events;
     uint32_t last_error;
 } voice_session_snapshot_t;
+
+/** @brief Non-audio quality metrics for one conversation turn. */
+typedef struct {
+    bool is_available;
+    uint32_t captured_frames;
+    uint32_t speech_frames;
+    uint32_t suppressed_frames;
+    uint32_t double_talk_frames;
+    uint32_t aec_convergence_q10;
+    uint32_t agc_gain_q8;
+    uint32_t barge_in_events;
+    uint32_t self_echo_rejections;
+    uint16_t last_microphone_level_q15;
+    uint16_t last_reference_level_q15;
+    uint32_t sample_count;
+    uint32_t samples[VOICE_SESSION_QUALITY_FRAME_COUNT];
+    uint32_t baseline_captured_frames;
+    uint32_t baseline_speech_frames;
+    uint32_t baseline_suppressed_frames;
+    uint32_t baseline_double_talk_frames;
+} voice_session_quality_snapshot_t;
 
 /**
  * @brief Initialize the WSS transport and orchestration resources.
@@ -126,6 +150,11 @@ esp_err_t voice_session_cancel(const char *reason);
 
 /** @brief Copy the bounded session snapshot. */
 esp_err_t voice_session_get_snapshot(voice_session_snapshot_t *snapshot_out);
+
+/** @brief Copy the latest bounded far-field quality metrics. */
+esp_err_t voice_session_get_quality_snapshot(
+    voice_session_quality_snapshot_t *snapshot_out
+);
 
 /** @brief Return the stable string for one voice session error. */
 const char *voice_session_error_name(voice_session_error_t error);

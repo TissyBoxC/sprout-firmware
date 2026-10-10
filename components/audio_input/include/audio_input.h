@@ -24,6 +24,25 @@ typedef void (*audio_input_frame_callback_t)(
     void *context
 );
 
+/** @brief Non-audio quality summary for the frame that produced a packet. */
+typedef struct {
+    uint16_t microphone_level_q15;
+    uint16_t reference_level_q15;
+    bool is_speech;
+    bool has_reference;
+} audio_input_frame_metrics_t;
+
+/**
+ * @brief Receives scalar metrics for the same frame as the packet callback.
+ *
+ * The metrics callback must also return quickly. It never receives raw audio
+ * and is safe to use for local barge-in decisions and bounded diagnostics.
+ */
+typedef void (*audio_input_metrics_callback_t)(
+    const audio_input_frame_metrics_t *metrics,
+    void *context
+);
+
 /** @brief Bounded audio input counters for diagnostics and telemetry. */
 typedef struct {
     bool is_running;
@@ -37,6 +56,10 @@ typedef struct {
     uint32_t aec_convergence_q10;
     /** Applied gain calibration on a Q8 scale; 256 means unity gain. */
     uint32_t agc_gain_q8;
+    /** RMS level of the frame before local preprocessing, on a Q15 scale. */
+    uint16_t microphone_level_q15;
+    /** RMS level of the latest echo reference frame, on a Q15 scale. */
+    uint16_t reference_level_q15;
 } audio_input_snapshot_t;
 
 /**
@@ -58,6 +81,19 @@ esp_err_t audio_input_init(void);
 esp_err_t audio_input_start(
     uint32_t stream_id,
     audio_input_frame_callback_t callback,
+    void *context
+);
+
+/**
+ * @brief Start capture with an optional per-frame scalar metrics callback.
+ *
+ * This is the full-diagnostics variant of audio_input_start. The metrics
+ * callback receives only levels, speech state, and reference presence.
+ */
+esp_err_t audio_input_start_with_metrics(
+    uint32_t stream_id,
+    audio_input_frame_callback_t callback,
+    audio_input_metrics_callback_t metrics_callback,
     void *context
 );
 

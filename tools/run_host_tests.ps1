@@ -208,6 +208,18 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'voice_duplex_core' `
+    -Sources @(
+        (Join-Path $voiceSessionRoot 'src/voice_duplex_core.c')
+        (Join-Path $voiceSessionRoot 'test/test_voice_duplex_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceSessionRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $transportSecurityRoot = Join-Path $firmwareRoot 'components/transport_security'
 Invoke-HostTest `
     -Name 'transport_security' `

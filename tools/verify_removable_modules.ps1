@@ -392,6 +392,16 @@ $contractChecks = @(
         Pattern = 'agc_gain_q8'
     },
     @{
+        Name = 'audio input scalar quality metrics'
+        Text = $audioInputHeader
+        Pattern = 'audio_input_start_with_metrics'
+    },
+    @{
+        Name = 'audio input microphone quality level'
+        Text = $audioInputHeader
+        Pattern = 'microphone_level_q15'
+    },
+    @{
         Name = 'audio input encodes opus frames'
         Text = $audioInputSource
         Pattern = 'audio_codec_encode_frame\('
@@ -439,6 +449,34 @@ $contractChecks = @(
         Name = 'audio pipeline reference sink API'
         Text = $audioPipelineHeader
         Pattern = 'audio_pipeline_set_reference_sink\('
+    },
+    @{
+        Name = 'voice session full-duplex core'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/voice_session/Kconfig'
+        ))
+        Pattern = 'FEATURE_VOICE_DUPLEX'
+    },
+    @{
+        Name = 'voice session idle timeout configuration'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/voice_session/Kconfig'
+        ))
+        Pattern = 'VOICE_SESSION_IDLE_TIMEOUT_MS'
+    },
+    @{
+        Name = 'voice session barge-in protocol frame'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/voice_session/src/voice_session.c'
+        ))
+        Pattern = 'voice_session_build_barge_in'
+    },
+    @{
+        Name = 'voice session quality protocol frame'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/voice_session/src/voice_session.c'
+        ))
+        Pattern = 'voice_session_build_quality'
     },
     @{
         Name = 'audio output priority lanes'

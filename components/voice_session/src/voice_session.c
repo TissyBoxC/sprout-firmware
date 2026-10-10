@@ -5,6 +5,9 @@
 #include <time.h>
 
 #include "audio_input.h"
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+#include "audio_output.h"
+#endif
 #include "audio_pipeline.h"
 #include "cloud_auth.h"
 #include "cJSON.h"
@@ -23,6 +26,10 @@
 #include "playback_queue.h"
 #include "sdkconfig.h"
 #include "voice_session_protocol.h"
+
+#if CONFIG_FEATURE_VOICE_DUPLEX
+#include "voice_duplex_core.h"
+#endif
 
 #if CONFIG_FEATURE_DEVICE_CAPABILITIES
 #include "device_capabilities.h"
@@ -89,6 +96,8 @@ static const char *const TAG = "voice_session";
 #define VOICE_SESSION_CONTROL_TYPE_TEXT 1u
 #define VOICE_SESSION_CONTROL_TYPE_AUDIO 2u
 #define VOICE_SESSION_CONTROL_TYPE_WAKE 3u
+#define VOICE_SESSION_CONTROL_TYPE_BARGE_IN 4u
+#define VOICE_SESSION_CONTROL_TYPE_QUALITY 5u
 
 typedef struct {
     uint32_t type;
@@ -128,6 +137,12 @@ typedef struct {
     uint32_t next_audio_sequence;
     uint32_t last_wake_detection_count;
 
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    voice_duplex_state_t duplex;
+    bool duplex_active;
+    voice_session_quality_snapshot_t quality;
+#endif
+
 #if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
     // Monotonic start of the active conversation, used to derive billed
     // conversation seconds without trusting wall-clock subtraction.
@@ -147,6 +162,14 @@ typedef struct {
 
 static voice_session_runtime_t voice_session_state;
 static portMUX_TYPE voice_session_counter_lock = portMUX_INITIALIZER_UNLOCKED;
+
+#if CONFIG_FEATURE_VOICE_DUPLEX
+static void voice_session_send_quality(void);
+#endif
+
+static uint32_t voice_session_now_ms(void) {
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
 
 static void voice_session_increment(uint32_t *counter) {
     portENTER_CRITICAL(&voice_session_counter_lock);
@@ -369,6 +392,111 @@ static size_t voice_session_build_wake_detected(
     return voice_session_serialize(root, output, output_size);
 }
 
+static size_t voice_session_build_barge_in(
+    uint32_t microphone_level_q15,
+    uint32_t reference_level_q15,
+    uint8_t *output,
+    size_t output_size
+) {
+    cJSON *root = voice_session_control_base("barge_in");
+    if (root == NULL) {
+        return 0;
+    }
+    cJSON_AddStringToObject(root, "stream_id", voice_session_state.stream_id);
+    cJSON_AddNumberToObject(
+        root,
+        "microphone_level_q15",
+        (double)microphone_level_q15
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "reference_level_q15",
+        (double)reference_level_q15
+    );
+    // The gateway owns synthesis state; a stable request lets it stop the
+    // current reply before the next user turn is committed.
+    cJSON_AddStringToObject(root, "action", "stop_speaking");
+    return voice_session_serialize(root, output, output_size);
+}
+
+static size_t voice_session_build_quality(
+    const voice_session_quality_snapshot_t *quality,
+    uint8_t *output,
+    size_t output_size
+) {
+    if (quality == NULL) {
+        return 0;
+    }
+    cJSON *root = voice_session_control_base("voice_quality");
+    if (root == NULL) {
+        return 0;
+    }
+    cJSON_AddStringToObject(root, "stream_id", voice_session_state.stream_id);
+    cJSON_AddNumberToObject(root, "captured_frames", quality->captured_frames);
+    cJSON_AddNumberToObject(root, "speech_frames", quality->speech_frames);
+    cJSON_AddNumberToObject(
+        root,
+        "suppressed_frames",
+        quality->suppressed_frames
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "double_talk_frames",
+        quality->double_talk_frames
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "aec_convergence_q10",
+        quality->aec_convergence_q10
+    );
+    cJSON_AddNumberToObject(root, "agc_gain_q8", quality->agc_gain_q8);
+    cJSON_AddNumberToObject(
+        root,
+        "barge_in_events",
+        quality->barge_in_events
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "self_echo_rejections",
+        quality->self_echo_rejections
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "microphone_level_q15",
+        quality->last_microphone_level_q15
+    );
+    cJSON_AddNumberToObject(
+        root,
+        "reference_level_q15",
+        quality->last_reference_level_q15
+    );
+    return voice_session_serialize(root, output, output_size);
+}
+
+static esp_err_t voice_session_enqueue_control(
+    uint32_t type,
+    const uint8_t *payload,
+    size_t length
+) {
+    if (payload == NULL || length == 0 ||
+        length >= VOICE_SESSION_CONTROL_FRAME_SIZE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    voice_session_control_item_t item;
+    memset(&item, 0, sizeof(item));
+    item.type = type;
+    item.length = length;
+    memcpy(item.data, payload, length);
+    if (xQueueSend(
+            voice_session_state.control_queue,
+            &item,
+            pdMS_TO_TICKS(20)
+        ) != pdTRUE) {
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
 static size_t voice_session_build_reason_frame(
     const char *type,
     const char *reason,
@@ -489,6 +617,16 @@ static void voice_session_sender_task(void *argument) {
 
     while (voice_session_state.sender_running) {
         voice_session_poll_wake();
+#if CONFIG_FEATURE_VOICE_DUPLEX
+        if (voice_session_state.duplex_active &&
+            voice_duplex_core_tick(
+                &voice_session_state.duplex,
+                voice_session_now_ms()
+            ) == VOICE_DUPLEX_EVENT_IDLE_TIMEOUT) {
+            voice_session_state.duplex_active = false;
+            (void)voice_session_end_session("idle_timeout");
+        }
+#endif
 #if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
         if (voice_session_state.has_active_session) {
             parent_control_decision_t decision = {};
@@ -526,7 +664,9 @@ static void voice_session_sender_task(void *argument) {
                 break;
             }
             if (control.type == VOICE_SESSION_CONTROL_TYPE_TEXT ||
-                control.type == VOICE_SESSION_CONTROL_TYPE_WAKE) {
+                control.type == VOICE_SESSION_CONTROL_TYPE_WAKE ||
+                control.type == VOICE_SESSION_CONTROL_TYPE_BARGE_IN ||
+                control.type == VOICE_SESSION_CONTROL_TYPE_QUALITY) {
                 // The handshake may complete a moment after the frame is
                 // queued, so retry a bounded number of times instead of
                 // dropping the frame while the TLS session is still opening.
@@ -589,6 +729,61 @@ static void voice_session_sender_task(void *argument) {
     vTaskDelete(NULL);
 }
 
+#if CONFIG_FEATURE_VOICE_DUPLEX
+static void voice_session_on_audio_metrics(
+    const audio_input_frame_metrics_t *metrics,
+    void *context
+) {
+    (void)context;
+    if (metrics == NULL || !voice_session_state.has_active_session) {
+        return;
+    }
+
+    const voice_duplex_event_t event = voice_duplex_core_process_frame(
+        &voice_session_state.duplex,
+        voice_session_now_ms(),
+        metrics->microphone_level_q15,
+        metrics->reference_level_q15,
+        metrics->is_speech
+    );
+    voice_session_state.quality.last_microphone_level_q15 =
+        metrics->microphone_level_q15;
+    voice_session_state.quality.last_reference_level_q15 =
+        metrics->reference_level_q15;
+    if (event != VOICE_DUPLEX_EVENT_BARGE_IN) {
+        return;
+    }
+
+    voice_session_state.is_speaking = false;
+    (void)playback_queue_clear(false);
+    // playback_queue_clear stops the producer, but the mixer may still hold
+    // already-submitted conversation frames. Discard only that lane so prompt
+    // and safety announcements are not interrupted by a child barge-in.
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+    (void)audio_output_discard_priority(
+        AUDIO_OUTPUT_PRIORITY_CONVERSATION,
+        NULL
+    );
+#endif
+    voice_session_increment(&voice_session_state.counters.barge_in_events);
+
+    uint8_t frame[VOICE_SESSION_CONTROL_FRAME_SIZE] = {0};
+    const size_t length = voice_session_build_barge_in(
+        metrics->microphone_level_q15,
+        metrics->reference_level_q15,
+        frame,
+        sizeof(frame)
+    );
+    if (length > 0) {
+        (void)voice_session_enqueue_control(
+            VOICE_SESSION_CONTROL_TYPE_BARGE_IN,
+            frame,
+            length
+        );
+    }
+}
+#endif
+
 static void voice_session_on_audio(
     const audio_codec_packet_t *packet,
     void *context
@@ -602,18 +797,15 @@ static void voice_session_on_audio(
         return;
     }
 
-    // Barge-in policy: capture stays on in every state so the child can
-    // interrupt. While the gateway is speaking, a frame only reaches it once
-    // the local VAD has marked speech; that first speech frame flushes local
-    // conversation playback without dropping safety frames and is forwarded so
-    // the gateway can stop its own synthesis. While listening or thinking the
-    // VAD-positive frame is forwarded directly, because audio_input already
-    // suppresses non-speech.
+#if !CONFIG_FEATURE_VOICE_DUPLEX
+    // Compatibility mode for a build that removes the feature: the existing
+    // VAD-driven interruption path remains available without the new module.
     if (voice_session_state.state == VOICE_SESSION_STATE_SPEAKING) {
         voice_session_state.is_speaking = false;
         (void)playback_queue_clear(false);
         voice_session_increment(&voice_session_state.counters.barge_in_events);
     }
+#endif
 
     voice_session_audio_item_t item;
     memset(&item, 0, sizeof(item));
@@ -638,6 +830,24 @@ static void voice_session_set_state(voice_session_state_t state) {
     voice_session_state.state = state;
     voice_session_state.is_speaking =
         state == VOICE_SESSION_STATE_SPEAKING;
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    if (state == VOICE_SESSION_STATE_SPEAKING) {
+        // The user turn is complete when the gateway starts its reply. Send
+        // the bounded metrics for that turn once, before playback starts, so
+        // continuous multi-turn sessions report per-turn quality rather than
+        // only one aggregate at session end.
+        voice_session_send_quality();
+        voice_duplex_core_playback_started(
+            &voice_session_state.duplex,
+            voice_session_now_ms()
+        );
+    } else {
+        voice_duplex_core_playback_stopped(
+            &voice_session_state.duplex,
+            voice_session_now_ms()
+        );
+    }
+#endif
     voice_session_publish_state(&voice_session_state);
 }
 
@@ -674,8 +884,105 @@ static void voice_session_finalize_conversation(void) {
 }
 #endif
 
+#if CONFIG_FEATURE_VOICE_DUPLEX
+static void voice_session_publish_quality(void) {
+    audio_input_snapshot_t input = {0};
+    if (audio_input_get_snapshot(&input) != ESP_OK) {
+        return;
+    }
+    voice_session_state.quality.captured_frames = input.captured_frames;
+    voice_session_state.quality.speech_frames = input.speech_frames;
+    voice_session_state.quality.suppressed_frames = input.suppressed_frames;
+    voice_session_state.quality.double_talk_frames = input.double_talk_frames;
+    if (voice_session_state.quality.captured_frames >=
+        voice_session_state.quality.baseline_captured_frames) {
+        voice_session_state.quality.captured_frames -=
+            voice_session_state.quality.baseline_captured_frames;
+    }
+    if (voice_session_state.quality.speech_frames >=
+        voice_session_state.quality.baseline_speech_frames) {
+        voice_session_state.quality.speech_frames -=
+            voice_session_state.quality.baseline_speech_frames;
+    }
+    if (voice_session_state.quality.suppressed_frames >=
+        voice_session_state.quality.baseline_suppressed_frames) {
+        voice_session_state.quality.suppressed_frames -=
+            voice_session_state.quality.baseline_suppressed_frames;
+    }
+    if (voice_session_state.quality.double_talk_frames >=
+        voice_session_state.quality.baseline_double_talk_frames) {
+        voice_session_state.quality.double_talk_frames -=
+            voice_session_state.quality.baseline_double_talk_frames;
+    }
+    voice_session_state.quality.aec_convergence_q10 =
+        input.aec_convergence_q10;
+    voice_session_state.quality.agc_gain_q8 = input.agc_gain_q8;
+    voice_session_state.quality.barge_in_events =
+        voice_session_state.duplex.barge_in_events;
+    voice_session_state.quality.self_echo_rejections =
+        voice_session_state.duplex.self_echo_rejections;
+    voice_session_state.quality.last_microphone_level_q15 =
+        input.microphone_level_q15;
+    voice_session_state.quality.last_reference_level_q15 =
+        input.reference_level_q15;
+    voice_session_state.quality.baseline_captured_frames =
+        input.captured_frames;
+    voice_session_state.quality.baseline_speech_frames = input.speech_frames;
+    voice_session_state.quality.baseline_suppressed_frames =
+        input.suppressed_frames;
+    voice_session_state.quality.baseline_double_talk_frames =
+        input.double_talk_frames;
+    voice_session_state.quality.is_available = true;
+}
+
+static void voice_session_send_quality(void) {
+    if (!voice_session_state.has_active_session) {
+        return;
+    }
+    voice_session_publish_quality();
+    uint8_t frame[VOICE_SESSION_CONTROL_FRAME_SIZE] = {0};
+    const size_t length = voice_session_build_quality(
+        &voice_session_state.quality,
+        frame,
+        sizeof(frame)
+    );
+    if (length > 0) {
+        (void)voice_session_enqueue_control(
+            VOICE_SESSION_CONTROL_TYPE_QUALITY,
+            frame,
+            length
+        );
+    }
+    // The next turn starts from a clean quality window. Counters in
+    // audio_input remain authoritative for diagnostics, but the protocol
+    // report describes the turn that just ended.
+    const uint32_t baseline_captured =
+        voice_session_state.quality.baseline_captured_frames;
+    const uint32_t baseline_speech =
+        voice_session_state.quality.baseline_speech_frames;
+    const uint32_t baseline_suppressed =
+        voice_session_state.quality.baseline_suppressed_frames;
+    const uint32_t baseline_double_talk =
+        voice_session_state.quality.baseline_double_talk_frames;
+    memset(&voice_session_state.quality, 0, sizeof(voice_session_state.quality));
+    voice_session_state.quality.baseline_captured_frames = baseline_captured;
+    voice_session_state.quality.baseline_speech_frames = baseline_speech;
+    voice_session_state.quality.baseline_suppressed_frames =
+        baseline_suppressed;
+    voice_session_state.quality.baseline_double_talk_frames =
+        baseline_double_talk;
+}
+#endif
+
 static void voice_session_handle_session_started(void) {
     voice_session_state.has_active_session = true;
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    voice_session_state.duplex_active = true;
+    voice_duplex_core_session_started(
+        &voice_session_state.duplex,
+        voice_session_now_ms()
+    );
+#endif
 #if VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME
     voice_session_state.conversation_started_ms = esp_timer_get_time() / 1000;
     voice_session_state.conversation_tracked = true;
@@ -745,6 +1052,13 @@ static void voice_session_handle_session_closed(const cJSON *root) {
     }
     voice_session_finalize_conversation();
     voice_session_state.has_active_session = false;
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    voice_session_state.duplex_active = false;
+    voice_duplex_core_session_ended(
+        &voice_session_state.duplex,
+        voice_session_now_ms()
+    );
+#endif
     voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
 }
 
@@ -839,6 +1153,17 @@ static void voice_session_handle_binary(
 
     playback_queue_item_t item;
     memset(&item, 0, sizeof(item));
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    // Some gateways send the first server audio frame immediately before the
+    // session_state=speaking control frame. Arm barge-in from the authoritative
+    // audio arrival so the first reply frame cannot mask a child interruption.
+    if (!voice_session_state.duplex.playback_active) {
+        voice_duplex_core_playback_started(
+            &voice_session_state.duplex,
+            voice_session_now_ms()
+        );
+    }
+#endif
     // item_id is bounded to PLAYBACK_QUEUE_ITEM_ID_SIZE, while the session id
     // may be up to VOICE_SESSION_IDENTIFIER_SIZE. Fold the session id into a
     // short stable hash so the id always fits and stays unique per frame.
@@ -1074,11 +1399,20 @@ static esp_err_t voice_session_open_transport_locked(void) {
 }
 
 static esp_err_t voice_session_start_capture_locked(void) {
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    const esp_err_t start_result = audio_input_start_with_metrics(
+        0,
+        voice_session_on_audio,
+        voice_session_on_audio_metrics,
+        NULL
+    );
+#else
     const esp_err_t start_result = audio_input_start(
         0,
         voice_session_on_audio,
         NULL
     );
+#endif
     if (start_result != ESP_OK) {
         return start_result;
     }
@@ -1243,6 +1577,13 @@ static esp_err_t voice_session_finish_session(
     if (voice_session_state.client == NULL) {
         result = ESP_ERR_INVALID_STATE;
     } else {
+#if CONFIG_FEATURE_VOICE_DUPLEX
+        // Report the latest bounded quality summary before the terminal
+        // session_end/cancel frame so the gateway can associate it with this
+        // conversation. No PCM, transcript, token, or child identifier is
+        // included.
+        voice_session_send_quality();
+#endif
         voice_session_control_item_t frame;
         memset(&frame, 0, sizeof(frame));
         frame.type = VOICE_SESSION_CONTROL_TYPE_TEXT;
@@ -1296,6 +1637,23 @@ esp_err_t voice_session_get_snapshot(voice_session_snapshot_t *snapshot_out) {
     }
     portENTER_CRITICAL(&voice_session_counter_lock);
     *snapshot_out = voice_session_state.counters;
+    portEXIT_CRITICAL(&voice_session_counter_lock);
+    return ESP_OK;
+}
+
+esp_err_t voice_session_get_quality_snapshot(
+    voice_session_quality_snapshot_t *snapshot_out
+) {
+    if (snapshot_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&voice_session_counter_lock);
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    *snapshot_out = voice_session_state.quality;
+    snapshot_out->is_available = voice_session_state.duplex_active;
+#else
+    memset(snapshot_out, 0, sizeof(*snapshot_out));
+#endif
     portEXIT_CRITICAL(&voice_session_counter_lock);
     return ESP_OK;
 }
@@ -1390,6 +1748,21 @@ esp_err_t voice_session_init(void) {
     }
 
     voice_session_state.state = VOICE_SESSION_STATE_IDLE;
+#if CONFIG_FEATURE_VOICE_DUPLEX
+    const voice_duplex_config_t duplex_config = {
+        .activity_threshold_q15 =
+            CONFIG_VOICE_SESSION_BARGE_IN_THRESHOLD_Q15,
+        .echo_guard_threshold_q15 =
+            CONFIG_VOICE_SESSION_ECHO_GUARD_THRESHOLD_Q15,
+        .barge_in_frames = CONFIG_VOICE_SESSION_BARGE_IN_FRAMES,
+        .idle_timeout_ms = CONFIG_VOICE_SESSION_IDLE_TIMEOUT_MS,
+        .playback_activity_hold_ms =
+            CONFIG_VOICE_SESSION_PLAYBACK_ACTIVITY_HOLD_MS,
+    };
+    voice_duplex_core_init(&voice_session_state.duplex, &duplex_config);
+    memset(&voice_session_state.quality, 0, sizeof(voice_session_state.quality));
+    voice_session_state.duplex_active = false;
+#endif
     voice_session_state.is_initialized = true;
     portENTER_CRITICAL(&voice_session_counter_lock);
     memset(

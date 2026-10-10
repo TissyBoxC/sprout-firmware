@@ -26,4 +26,62 @@ config VOICE_SESSION_ALLOW_INSECURE_WS
         Development only. Even when set, a release image refuses ws:// because
         the check is compiled out under the release optimization level.
 
+config FEATURE_VOICE_DUPLEX
+    bool "Enable full-duplex, barge-in, and continuous conversation"
+    depends on FEATURE_VOICE_SESSION
+    default y
+    help
+        Keep capture active while playback is running, feed the playback signal
+        into the echo reference, detect child barge-in without treating the
+        speaker output as speech, and keep a multi-turn session alive until the
+        idle window expires. Disabling this returns the session to the legacy
+        half-duplex-compatible behavior.
+
+config VOICE_SESSION_IDLE_TIMEOUT_MS
+    int "Continuous conversation idle timeout in milliseconds"
+    depends on FEATURE_VOICE_DUPLEX
+    range 3000 60000
+    default 12000
+    help
+        After the last user speech or gateway activity, the device keeps the
+        conversation session open for this window. A timeout returns it to the
+        wake-word state without requiring a new wake word per turn.
+
+config VOICE_SESSION_BARGE_IN_THRESHOLD_Q15
+    int "Microphone energy threshold for barge-in in Q15"
+    depends on FEATURE_VOICE_DUPLEX
+    range 1 32767
+    default 1200
+    help
+        A captured frame above this level can start the barge-in window. The
+        pure state machine still requires a stable non-echo speech run before
+        interrupting the assistant.
+
+config VOICE_SESSION_ECHO_GUARD_THRESHOLD_Q15
+    int "Echo-reference guard threshold in Q15"
+    depends on FEATURE_VOICE_DUPLEX
+    range 1 32767
+    default 1800
+    help
+        A loud frame whose level is close to the current playback reference is
+        treated as acoustic echo and does not trigger barge-in.
+
+config VOICE_SESSION_BARGE_IN_FRAMES
+    int "Consecutive non-echo speech frames required for barge-in"
+    depends on FEATURE_VOICE_DUPLEX
+    range 1 20
+    default 2
+    help
+        Two 20 ms frames (40 ms) rejects clicks and speaker transients while
+        keeping the interruption responsive.
+
+config VOICE_SESSION_PLAYBACK_ACTIVITY_HOLD_MS
+    int "Playback activity hold in milliseconds"
+    depends on FEATURE_VOICE_DUPLEX
+    range 0 2000
+    default 300
+    help
+        Keeps the output/reference activity observable briefly after the last
+        playback frame so a late echo cannot be mistaken for a child interrupt.
+
 endmenu
