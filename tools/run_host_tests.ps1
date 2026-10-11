@@ -818,6 +818,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$batteryRoot = Join-Path $firmwareRoot 'components/battery_power'
+Invoke-HostTest `
+    -Name 'battery_core' `
+    -Sources @(
+        (Join-Path $batteryRoot 'src/battery_core.c')
+        (Join-Path $batteryRoot 'test/test_battery_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $batteryRoot 'include')
+        (Join-Path $batteryRoot 'src')
+        (Join-Path $batteryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'battery_runtime' `
+    -Sources @(
+        (Join-Path $batteryRoot 'src/battery_core.c')
+        (Join-Path $batteryRoot 'src/battery_power.c')
+        (Join-Path $batteryRoot 'test/stubs/config_store.c')
+        (Join-Path $batteryRoot 'test/test_battery_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $batteryRoot 'include')
+        (Join-Path $batteryRoot 'src')
+        (Join-Path $batteryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(

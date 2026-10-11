@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_BATTERY_POWER
+    bool "Enable battery and low-power policy"
+    default n
+    help
+        Reads the battery gauge and charger pin, derives a bounded charge
+        snapshot, and applies the guardian's low-battery warning, low-power
+        entry and deep-sleep idle policy. The module only touches power state,
+        so a mains-powered device never links it.
+
+endmenu

@@ -179,6 +179,9 @@
 #if CONFIG_FEATURE_CELLULAR_4G
 #include "cellular_4g.h"
 #endif
+#if CONFIG_FEATURE_BATTERY_POWER
+#include "battery_power.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -650,6 +653,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CELLULAR_4G
     ESP_ERROR_CHECK(module_registry_add(cellular_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_BATTERY_POWER
+    ESP_ERROR_CHECK(module_registry_add(battery_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));
