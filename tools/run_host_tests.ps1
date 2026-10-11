@@ -601,6 +601,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$bluetoothAudioRoot = Join-Path $firmwareRoot 'components/bluetooth_audio'
+Invoke-HostTest `
+    -Name 'bluetooth_core' `
+    -Sources @(
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_core.c')
+        (Join-Path $bluetoothAudioRoot 'test/test_bluetooth_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $bluetoothAudioRoot 'include')
+        (Join-Path $bluetoothAudioRoot 'src')
+        (Join-Path $bluetoothAudioRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'bluetooth_audio_runtime' `
+    -Sources @(
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_core.c')
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_audio.c')
+        (Join-Path $bluetoothAudioRoot 'test/stubs/config_store.c')
+        (Join-Path $bluetoothAudioRoot 'test/test_bluetooth_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $bluetoothAudioRoot 'include')
+        (Join-Path $bluetoothAudioRoot 'src')
+        (Join-Path $bluetoothAudioRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $companionshipRoot = Join-Path $firmwareRoot 'components/companionship'
 Invoke-HostTest `
     -Name 'companionship_core' `

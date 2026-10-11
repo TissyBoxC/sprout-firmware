@@ -66,6 +66,7 @@ CONFIG_FEATURE_COMPANIONSHIP=y
 CONFIG_FEATURE_GROWTH_RECORD=y
 CONFIG_FEATURE_HABIT_REMINDER=y
 CONFIG_FEATURE_ALARM_REMINDER=y
+CONFIG_FEATURE_BLUETOOTH_AUDIO=y
 CONFIG_FEATURE_LONG_TERM_MEMORY=y
 # P1-04 English learning: the cached lesson catalog plus the local practice log
 # the parent app's English learning view mirrors.
