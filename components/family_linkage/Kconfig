@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_FAMILY_LINKAGE
+    bool "Enable family linkage, device groups and content sync"
+    default n
+    help
+        Runs the bounded family-linkage policy, evaluates message routing scope
+        and resolves content-sync conflicts by version. A lone device is a valid
+        family of one, so a body without a second device simply does not link
+        the component.
+
+endmenu

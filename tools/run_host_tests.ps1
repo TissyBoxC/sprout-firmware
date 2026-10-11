@@ -973,6 +973,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$familyRoot = Join-Path $firmwareRoot 'components/family_linkage'
+Invoke-HostTest `
+    -Name 'family_core' `
+    -Sources @(
+        (Join-Path $familyRoot 'src/family_core.c')
+        (Join-Path $familyRoot 'test/test_family_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $familyRoot 'include')
+        (Join-Path $familyRoot 'src')
+        (Join-Path $familyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'family_linkage_runtime' `
+    -Sources @(
+        (Join-Path $familyRoot 'src/family_core.c')
+        (Join-Path $familyRoot 'src/family_linkage.c')
+        (Join-Path $familyRoot 'test/stubs/config_store.c')
+        (Join-Path $familyRoot 'test/test_family_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $familyRoot 'include')
+        (Join-Path $familyRoot 'src')
+        (Join-Path $familyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(

@@ -62,6 +62,10 @@ if(CONFIG_FEATURE_WEARABLE_LOCATION)
     list(APPEND app_requires "wearable_location")
 endif()
 
+if(CONFIG_FEATURE_FAMILY_LINKAGE)
+    list(APPEND app_requires "family_linkage")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()
