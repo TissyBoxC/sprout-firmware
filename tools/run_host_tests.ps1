@@ -880,6 +880,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$formFactorRoot = Join-Path $firmwareRoot 'components/form_factor_profile'
+Invoke-HostTest `
+    -Name 'form_factor_core' `
+    -Sources @(
+        (Join-Path $formFactorRoot 'src/form_factor_core.c')
+        (Join-Path $formFactorRoot 'test/test_form_factor_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $formFactorRoot 'include')
+        (Join-Path $formFactorRoot 'src')
+        (Join-Path $formFactorRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'form_factor_runtime' `
+    -Sources @(
+        (Join-Path $formFactorRoot 'src/form_factor_core.c')
+        (Join-Path $formFactorRoot 'src/form_factor_profile.c')
+        (Join-Path $formFactorRoot 'test/stubs/config_store.c')
+        (Join-Path $formFactorRoot 'test/test_form_factor_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $formFactorRoot 'include')
+        (Join-Path $formFactorRoot 'src')
+        (Join-Path $formFactorRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(

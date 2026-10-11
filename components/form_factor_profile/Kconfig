@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_FORM_FACTOR_PROFILE
+    bool "Enable capability-composed form-factor profile"
+    default n
+    help
+        Composes the advertised action set from a body's capability set so the
+        same voice, content and platform modules run on a desktop, a moving
+        body or a wearable. Swapping a body only swaps the profile and its
+        assets; the profile never binds to a character or an appearance.
+
+endmenu

@@ -50,6 +50,10 @@ if(CONFIG_FEATURE_MOTION_CONTROL)
     list(APPEND app_requires "motion_control")
 endif()
 
+if(CONFIG_FEATURE_FORM_FACTOR_PROFILE)
+    list(APPEND app_requires "form_factor_profile")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()
