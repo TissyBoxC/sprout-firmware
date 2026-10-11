@@ -69,4 +69,9 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     if(CONFIG_FEATURE_TRANSPORT_SECURITY)
         idf_component_optional_requires(PRIVATE transport_security)
     endif()
+
+    if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
+            "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
+        idf_component_optional_requires(PRIVATE privacy_guard)
+    endif()
 endif()

@@ -104,7 +104,9 @@ content_filter_action_t content_filter_screen(
         }
         return CONTENT_FILTER_ACTION_BLOCK;
     }
-    return content_filter_core_evaluate(direction, text, decision_out);
+    // Route the runtime boundary through the public evaluator so the device
+    // and the host tests exercise exactly the same moderated decision path.
+    return content_filter_evaluate(direction, text, decision_out);
 }
 
 bool content_filter_screen_is_blocked(

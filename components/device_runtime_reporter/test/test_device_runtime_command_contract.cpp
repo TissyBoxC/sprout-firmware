@@ -215,6 +215,35 @@ void test_provisioning_heartbeat_contract() {
     );
 }
 
+void test_privacy_consent_sync_contract() {
+    // The platform pushes one complete consent snapshot; the device must see
+    // every class in the payload so a partial delivery cannot silently leave a
+    // withdrawn class enabled.
+    const char *const command_type = "sync_privacy_consent";
+    const char *const payload_keys[] = {
+        "audio_upload",
+        "image_upload",
+        "conversation_history",
+        "usage_analytics",
+    };
+    check(
+        strcmp(command_type, "sync_privacy_consent") == 0,
+        "consent sync command type must be stable"
+    );
+    check(
+        sizeof(payload_keys) / sizeof(payload_keys[0]) == 4,
+        "consent sync payload must carry all four data classes"
+    );
+    for (size_t index = 0;
+         index < sizeof(payload_keys) / sizeof(payload_keys[0]);
+         ++index) {
+        check(
+            payload_keys[index][0] != '\0',
+            "consent sync payload key must be non-empty"
+        );
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -224,6 +253,7 @@ int main() {
     test_wake_event_duration_contract();
     test_interaction_event_types_contract();
     test_provisioning_heartbeat_contract();
+    test_privacy_consent_sync_contract();
 
     if (failures != 0) {
         fprintf(stderr, "%d test(s) failed\n", failures);

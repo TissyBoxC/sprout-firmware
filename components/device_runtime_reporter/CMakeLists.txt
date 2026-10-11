@@ -73,6 +73,14 @@ if(CONFIG_FEATURE_DEVICE_MESSAGE AND EXISTS
     list(APPEND device_runtime_reporter_requires "device_message")
 endif()
 
+# The guardian consent-sync command and the usage-analytics gate both rely on
+# privacy_guard. When the component is absent the reporter drops its consent
+# command and skips the analytics gate rather than failing to link.
+if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "privacy_guard")
+endif()
+
 idf_component_register(
     SRCS ${device_runtime_reporter_sources}
     INCLUDE_DIRS "include"

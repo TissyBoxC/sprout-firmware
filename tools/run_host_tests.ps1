@@ -406,6 +406,27 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'conversation_context_runtime' `
+    -Sources @(
+        (Join-Path $conversationContextRoot 'src/conversation_context_ring.c')
+        (Join-Path $conversationContextRoot 'src/conversation_context.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard.c')
+        (Join-Path $privacyGuardRoot 'test/stubs/config_store.c')
+        (Join-Path $conversationContextRoot 'test/test_conversation_context_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $conversationContextRoot 'include')
+        (Join-Path $conversationContextRoot 'src')
+        (Join-Path $conversationContextRoot 'test/stubs')
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+        (Join-Path $privacyGuardRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @('-DCONFIG_FEATURE_PRIVACY_GUARD=1') `
+    -Compiler $compiler
+
 $contentLibraryRoot = Join-Path $firmwareRoot 'components/content_library'
 Invoke-HostTest `
     -Name 'content_library_index' `

@@ -6,6 +6,14 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_PRIVACY_GUARD && __has_include("privacy_guard.h")
+#include "privacy_guard.h"
+#define CONVERSATION_CONTEXT_HAS_PRIVACY_GUARD 1
+#else
+#define CONVERSATION_CONTEXT_HAS_PRIVACY_GUARD 0
+#endif
 
 typedef struct {
     bool is_initialized;
@@ -60,6 +68,16 @@ esp_err_t conversation_context_append(
     if (summary == NULL || summary[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+#if CONVERSATION_CONTEXT_HAS_PRIVACY_GUARD
+    // The bounded window is a child-data store gated by conversation-history
+    // consent. Without consent a turn must not be retained locally at all;
+    // fail-closed also covers a guard that has not been initialized yet.
+    if (!privacy_guard_has_consent(
+            PRIVACY_GUARD_DATA_CONVERSATION_HISTORY
+        )) {
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
     if (!conversation_context_state.is_initialized) {
         return ESP_ERR_INVALID_STATE;
     }

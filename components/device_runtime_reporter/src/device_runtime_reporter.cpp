@@ -101,6 +101,13 @@ extern "C" {
 #define DEVICE_RUNTIME_HAS_DEVICE_MESSAGE 0
 #endif
 
+#if CONFIG_FEATURE_PRIVACY_GUARD && __has_include("privacy_guard.h")
+#include "privacy_guard.h"
+#define DEVICE_RUNTIME_HAS_PRIVACY_GUARD 1
+#else
+#define DEVICE_RUNTIME_HAS_PRIVACY_GUARD 0
+#endif
+
 #define DEVICE_RUNTIME_RESPONSE_SIZE 8192
 #define DEVICE_RUNTIME_REQUEST_SIZE 16384
 #define DEVICE_RUNTIME_URL_SIZE 320
@@ -137,6 +144,13 @@ typedef struct {
 #if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
     device_message_t message;
     bool has_message;
+#endif
+#if DEVICE_RUNTIME_HAS_PRIVACY_GUARD
+    bool audio_upload_consent;
+    bool image_upload_consent;
+    bool conversation_history_consent;
+    bool usage_analytics_consent;
+    bool has_consent;
 #endif
 } device_runtime_command_t;
 
@@ -1032,6 +1046,15 @@ static esp_err_t device_runtime_send_heartbeat(void) {
 
 #if DEVICE_RUNTIME_HAS_USAGE_LEDGER
 static esp_err_t device_runtime_send_usage_report(void) {
+#if DEVICE_RUNTIME_HAS_PRIVACY_GUARD
+    // Usage analytics is a consent-gated data class. Without consent the day
+    // stays in the local ledger for the guardian to review instead of being
+    // uploaded, and the honest result is reported instead of a fake success.
+    // has_consent is false before the guard is ready, so this stays fail-closed.
+    if (!privacy_guard_has_consent(PRIVACY_GUARD_DATA_USAGE_ANALYTICS)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+#endif
     usage_ledger_upload_payload_t payload = {};
     const esp_err_t payload_result =
         usage_ledger_get_pending_upload(&payload);
@@ -1249,6 +1272,29 @@ static device_runtime_command_execution_t device_runtime_execute_command(
         result = ESP_OK;
         result_code = "unsupported_command";
 #endif
+#if DEVICE_RUNTIME_HAS_PRIVACY_GUARD
+    } else if (strcmp(command->type, "sync_privacy_consent") == 0) {
+        if (!command->has_consent) {
+            result = ESP_ERR_INVALID_ARG;
+            result_code = "invalid_payload";
+        } else {
+            bool revoked = false;
+            const privacy_guard_error_t consent_result =
+                privacy_guard_sync_consent(
+                    command->audio_upload_consent,
+                    command->image_upload_consent,
+                    command->conversation_history_consent,
+                    command->usage_analytics_consent,
+                    &revoked
+                );
+            if (consent_result != PRIVACY_GUARD_OK) {
+                result = ESP_ERR_INVALID_STATE;
+                result_code = privacy_guard_error_name(consent_result);
+            } else if (revoked) {
+                result_code = "consent_revoked";
+            }
+        }
+#endif
 #if DEVICE_RUNTIME_HAS_FACTORY_RESET
     } else if (strcmp(command->type, "factory_reset") == 0) {
         if (device_runtime_factory_reset_completed_matches(command->id)) {
@@ -1390,6 +1436,29 @@ static esp_err_t device_runtime_poll_commands(const char *session_token) {
         }
         snprintf(command.id, sizeof(command.id), "%s", command_id);
         snprintf(command.type, sizeof(command.type), "%s", command_type);
+#if DEVICE_RUNTIME_HAS_PRIVACY_GUARD
+        if (strcmp(command_type, "sync_privacy_consent") == 0) {
+            // The platform pushes one complete consent snapshot; every class
+            // is present so a partially delivered payload cannot silently
+            // leave a withdrawn class enabled.
+            JsonObjectConst payload =
+                command_value["payload"].as<JsonObjectConst>();
+            if (payload["audio_upload"].is<bool>() &&
+                payload["image_upload"].is<bool>() &&
+                payload["conversation_history"].is<bool>() &&
+                payload["usage_analytics"].is<bool>()) {
+                command.audio_upload_consent =
+                    payload["audio_upload"].as<bool>();
+                command.image_upload_consent =
+                    payload["image_upload"].as<bool>();
+                command.conversation_history_consent =
+                    payload["conversation_history"].as<bool>();
+                command.usage_analytics_consent =
+                    payload["usage_analytics"].as<bool>();
+                command.has_consent = true;
+            }
+        }
+#endif
 #if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
         if (strcmp(command_type, "display_message") == 0) {
             JsonObjectConst payload = command_value["payload"].as<JsonObjectConst>();

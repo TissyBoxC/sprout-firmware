@@ -285,6 +285,64 @@ privacy_guard_error_t privacy_guard_apply_consent(
     return privacy_guard_persist();
 }
 
+privacy_guard_error_t privacy_guard_sync_consent(
+    bool audio_upload_consent,
+    bool image_upload_consent,
+    bool conversation_history_consent,
+    bool usage_analytics_consent,
+    bool *revoked_out
+) {
+    if (revoked_out != NULL) {
+        *revoked_out = false;
+    }
+    if (!privacy_guard_ready) {
+        return PRIVACY_GUARD_ERR_NOT_INITIALIZED;
+    }
+    const bool previous[PRIVACY_GUARD_CORE_CLASS_COUNT] = {
+        privacy_guard_state.consent[PRIVACY_GUARD_DATA_AUDIO_UPLOAD],
+        privacy_guard_state.consent[PRIVACY_GUARD_DATA_IMAGE_UPLOAD],
+        privacy_guard_state.consent[
+            PRIVACY_GUARD_DATA_CONVERSATION_HISTORY
+        ],
+        privacy_guard_state.consent[PRIVACY_GUARD_DATA_USAGE_ANALYTICS],
+    };
+    const bool next[PRIVACY_GUARD_CORE_CLASS_COUNT] = {
+        audio_upload_consent,
+        image_upload_consent,
+        conversation_history_consent,
+        usage_analytics_consent,
+    };
+    const privacy_guard_error_t persist_result = privacy_guard_apply_consent(
+        audio_upload_consent,
+        image_upload_consent,
+        conversation_history_consent,
+        usage_analytics_consent
+    );
+    if (persist_result != PRIVACY_GUARD_OK) {
+        return persist_result;
+    }
+    bool revoked = false;
+    for (size_t index = 0; index < PRIVACY_GUARD_CORE_CLASS_COUNT; ++index) {
+        if (previous[index] && !next[index]) {
+            revoked = true;
+            break;
+        }
+    }
+    if (!revoked) {
+        // A pure grant or an unchanged snapshot has no local data to erase.
+        return PRIVACY_GUARD_OK;
+    }
+    if (revoked_out != NULL) {
+        *revoked_out = true;
+    }
+    // A withdrawal must remove the data collected under the old grant. The
+    // clear path fails safe when no handler is registered, and that failure is
+    // surfaced so the platform can retry rather than trust a false success.
+    return privacy_guard_clear_local_data(
+        PRIVACY_GUARD_ACTION_GUARDIAN_REQUEST
+    );
+}
+
 privacy_guard_error_t privacy_guard_clear_local_data(
     privacy_guard_action_t action
 ) {

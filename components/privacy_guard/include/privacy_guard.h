@@ -168,6 +168,24 @@ privacy_guard_error_t privacy_guard_apply_consent(
 );
 
 /**
+ * @brief Apply one consent snapshot pushed by the platform and erase on revoke.
+ *
+ * This is the runtime entry point for the platform-to-device consent-sync
+ * command. It persists the new consent for every class and, when any class
+ * transitions from granted to revoked, runs the registered cache eraser so a
+ * withdrawal removes the data collected under the old grant. revoked_out is
+ * set when a deletion was attempted, letting the caller report a stable result
+ * code back to the platform.
+ */
+privacy_guard_error_t privacy_guard_sync_consent(
+    bool audio_upload_consent,
+    bool image_upload_consent,
+    bool conversation_history_consent,
+    bool usage_analytics_consent,
+    bool *revoked_out
+);
+
+/**
  * @brief Clear local sensitive caches for an unbind, reset, or guardian action.
  *
  * The registered clear-cache callback must remove audio, image, and

@@ -62,6 +62,13 @@
 #define VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME 0
 #endif
 
+#if CONFIG_FEATURE_PRIVACY_GUARD && __has_include("privacy_guard.h")
+#include "privacy_guard.h"
+#define VOICE_SESSION_HAS_PRIVACY_GUARD 1
+#else
+#define VOICE_SESSION_HAS_PRIVACY_GUARD 0
+#endif
+
 static const char *const TAG = "voice_session";
 
 // ---------------------------------------------------------------------------
@@ -567,6 +574,15 @@ static void voice_session_send_audio_payload(
         return;
     }
 
+#if VOICE_SESSION_HAS_PRIVACY_GUARD
+    // Audio is the child's live voice. Without audio-upload consent no frame
+    // may leave the device, so drop it before it is encoded or sent. The check
+    // also fails closed when the guard has not been initialized.
+    if (!privacy_guard_has_consent(PRIVACY_GUARD_DATA_AUDIO_UPLOAD)) {
+        voice_session_increment(&voice_session_state.counters.audio_frames_dropped);
+        return;
+    }
+#endif
     uint8_t envelope[AUDIO_CODEC_MAX_PACKET_BYTES +
                      VOICE_SESSION_ENVELOPE_HEADER_SIZE +
                      VOICE_SESSION_IDENTIFIER_SIZE] = {0};
