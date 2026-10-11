@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_PLAYBACK_REQUEST
+    bool "Enable on-demand playback request cache"
+    default y
+    help
+        Caches a bounded list of the guardian's on-demand playback requests so
+        the device can drain them in order and report each request's terminal
+        outcome, staying consistent with the parent app's playback view
+        (/api/v1/playback/requests).
+
+endmenu

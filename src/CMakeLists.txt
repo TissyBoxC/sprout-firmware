@@ -198,6 +198,10 @@ if(CONFIG_FEATURE_ENGLISH_COURSE)
     list(APPEND app_requires "english_course")
 endif()
 
+if(CONFIG_FEATURE_PLAYBACK_REQUEST)
+    list(APPEND app_requires "playback_request")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()

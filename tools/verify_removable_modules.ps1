@@ -132,6 +132,7 @@ function Test-OptionalModuleRemoval {
             'habit_reminder'
             'long_term_memory'
             'english_course'
+            'playback_request'
             'favorites'
             'playback_history'
             'content_package_manager'

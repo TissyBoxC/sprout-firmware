@@ -66,6 +66,9 @@ CONFIG_FEATURE_LONG_TERM_MEMORY=y
 # P1-04 English learning: the cached lesson catalog plus the local practice log
 # the parent app's English learning view mirrors.
 CONFIG_FEATURE_ENGLISH_COURSE=y
+# P1-05 on-demand playback: the guardian's playback request cache the parent
+# app's playback view mirrors.
+CONFIG_FEATURE_PLAYBACK_REQUEST=y
 CONFIG_FEATURE_OTA_VALIDATE=y
 CONFIG_FEATURE_OTA_DOWNLOAD=y
 CONFIG_FEATURE_OTA_ROLLBACK=y

@@ -519,6 +519,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$playbackRequestRoot = Join-Path $firmwareRoot 'components/playback_request'
+Invoke-HostTest `
+    -Name 'playback_request_core' `
+    -Sources @(
+        (Join-Path $playbackRequestRoot 'src/playback_request_core.c')
+        (Join-Path $playbackRequestRoot 'test/test_playback_request_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackRequestRoot 'include')
+        (Join-Path $playbackRequestRoot 'src')
+        (Join-Path $playbackRequestRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'playback_request_runtime' `
+    -Sources @(
+        (Join-Path $playbackRequestRoot 'src/playback_request_core.c')
+        (Join-Path $playbackRequestRoot 'src/playback_request.c')
+        (Join-Path $playbackRequestRoot 'test/stubs/config_store.c')
+        (Join-Path $playbackRequestRoot 'test/test_playback_request_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackRequestRoot 'include')
+        (Join-Path $playbackRequestRoot 'src')
+        (Join-Path $playbackRequestRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

@@ -77,6 +77,10 @@
 #include "english_course.h"
 #endif
 
+#if CONFIG_FEATURE_PLAYBACK_REQUEST
+#include "playback_request.h"
+#endif
+
 #if CONFIG_FEATURE_OTA_MANAGER
 #include "ota_manager.h"
 #endif
@@ -701,6 +705,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_ENGLISH_COURSE
     ESP_ERROR_CHECK(module_registry_add(english_course_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PLAYBACK_REQUEST
+    ESP_ERROR_CHECK(module_registry_add(playback_request_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OTA_MANAGER
     ESP_ERROR_CHECK(module_registry_add(ota_manager_module_descriptor()));
