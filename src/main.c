@@ -167,6 +167,9 @@
 #if CONFIG_FEATURE_CAMERA_CAPTURE
 #include "camera_capture.h"
 #endif
+#if CONFIG_FEATURE_CAMERA_VISION
+#include "camera_vision.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -626,6 +629,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CAMERA_CAPTURE
     ESP_ERROR_CHECK(module_registry_add(camera_capture_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CAMERA_VISION
+    ESP_ERROR_CHECK(module_registry_add(camera_vision_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));

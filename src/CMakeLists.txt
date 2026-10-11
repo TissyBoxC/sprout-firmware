@@ -26,6 +26,10 @@ if(CONFIG_FEATURE_CAMERA_CAPTURE)
     list(APPEND app_requires "camera_capture")
 endif()
 
+if(CONFIG_FEATURE_CAMERA_VISION)
+    list(APPEND app_requires "camera_vision")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()

@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_CAMERA_VISION
+    bool "Enable camera vision tasks"
+    depends on FEATURE_CAMERA_CAPTURE
+    default n
+    help
+        Enables on-device vision tasks (object recognition, picture-book
+        recognition, and photo Q&A) that consume camera_capture frames. Every
+        task re-checks guardian image-upload consent; results carry only
+        bounded symbolic labels.
+
+endmenu

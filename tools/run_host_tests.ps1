@@ -302,6 +302,41 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$cameraVisionRoot = Join-Path $firmwareRoot 'components/camera_vision'
+Invoke-HostTest `
+    -Name 'camera_vision_core' `
+    -Sources @(
+        (Join-Path $cameraVisionRoot 'src/camera_vision_core.c')
+        (Join-Path $cameraVisionRoot 'test/test_camera_vision_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cameraVisionRoot 'include')
+        (Join-Path $cameraVisionRoot 'src')
+        (Join-Path $cameraVisionRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'camera_vision_runtime' `
+    -Sources @(
+        (Join-Path $cameraVisionRoot 'src/camera_vision_core.c')
+        (Join-Path $cameraVisionRoot 'src/camera_vision.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard.c')
+        (Join-Path $cameraVisionRoot 'test/stubs/config_store.c')
+        (Join-Path $cameraVisionRoot 'test/test_camera_vision_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cameraVisionRoot 'include')
+        (Join-Path $cameraVisionRoot 'src')
+        (Join-Path $cameraVisionRoot 'test/stubs')
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 Invoke-HostTest `
     -Name 'content_filter' `
