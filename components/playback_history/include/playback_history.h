@@ -67,6 +67,14 @@ esp_err_t playback_history_list(
 size_t playback_history_count(void);
 
 /**
+ * @brief Remove every recorded playback row.
+ *
+ * Used by the privacy deletion path so a child's content history cannot
+ * survive a guardian withdrawal, unbind, or factory reset.
+ */
+esp_err_t playback_history_forget_all(void);
+
+/**
  * @brief Return the most recent interrupted-but-resumable record.
  *
  * A completed play is not resumable; the newest interrupted record wins so the

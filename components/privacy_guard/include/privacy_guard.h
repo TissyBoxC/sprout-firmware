@@ -107,6 +107,18 @@ esp_err_t privacy_guard_init_with_storage(
     const privacy_guard_storage_t *storage
 );
 
+/**
+ * @brief Register the handler that erases real local sensitive caches.
+ *
+ * The guard itself stores only consent flags, so the composition root owns the
+ * deletion of audio, image, and conversation caches. Until a handler is
+ * registered, privacy_guard_clear_local_data fails instead of reporting a
+ * deletion that never happened.
+ */
+esp_err_t privacy_guard_set_clear_cache_handler(
+    privacy_guard_clear_cache_fn handler
+);
+
 /** @brief Return true after initialization. */
 bool privacy_guard_is_ready(void);
 
@@ -140,6 +152,20 @@ privacy_guard_error_t privacy_guard_revoke_consent(
 
 /** @brief Revoke every optional data class at once. */
 privacy_guard_error_t privacy_guard_revoke_all(void);
+
+/**
+ * @brief Apply one complete consent snapshot from the platform.
+ *
+ * Used by the guardian consent-sync command so one payload updates every data
+ * class and persists a single revision. The caller compares the previous
+ * snapshot to decide whether a revocation must also erase local data.
+ */
+privacy_guard_error_t privacy_guard_apply_consent(
+    bool audio_upload_consent,
+    bool image_upload_consent,
+    bool conversation_history_consent,
+    bool usage_analytics_consent
+);
 
 /**
  * @brief Clear local sensitive caches for an unbind, reset, or guardian action.

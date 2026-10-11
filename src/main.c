@@ -230,6 +230,45 @@
 
 static const char *const TAG = "sprout_main";
 
+#if CONFIG_FEATURE_PRIVACY_GUARD
+/*
+ * The privacy guard stores only consent flags, so the composition root owns
+ * the deletion of the real on-device caches. Every step is best-effort except
+ * the mandatory conversation window, because a guardian request must never
+ * leave child dialogue readable even if an optional cache is missing.
+ */
+static esp_err_t privacy_guard_clear_local_caches(
+    privacy_guard_action_t action
+) {
+    (void)action;
+    esp_err_t result = ESP_OK;
+#if CONFIG_FEATURE_CONVERSATION_CONTEXT
+    if (conversation_context_is_ready() &&
+        conversation_context_clear() != ESP_OK) {
+        result = ESP_FAIL;
+    }
+#endif
+#if CONFIG_FEATURE_PLAYBACK_QUEUE
+    // Drop any queued conversation/ambient frames, keeping safety prompts.
+    (void)playback_queue_clear(false);
+#endif
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+    (void)audio_output_discard_priority(
+        AUDIO_OUTPUT_PRIORITY_CONVERSATION,
+        NULL
+    );
+#endif
+#if CONFIG_FEATURE_LONG_TERM_MEMORY
+    // Revoking the authorization erases every remembered fact as well.
+    (void)long_term_memory_set_authorized(false);
+#endif
+#if CONFIG_FEATURE_PLAYBACK_HISTORY
+    (void)playback_history_forget_all();
+#endif
+    return result;
+}
+#endif
+
 #if CONFIG_FEATURE_PROVISIONING_REPORTER
 
 static bool provisioning_reporter_network_connected;
@@ -834,6 +873,16 @@ void app_main(void) {
         ESP_LOGE(TAG, "one or more modules failed to initialize: %s",
                  esp_err_to_name(result));
     } else {
+#if CONFIG_FEATURE_PRIVACY_GUARD
+        // Bind the real cache eraser after the guard loaded its consent state.
+        // Until this point clear_local_data fails closed, so a deletion can
+        // never report success without touching the caches.
+        if (privacy_guard_set_clear_cache_handler(
+                privacy_guard_clear_local_caches
+            ) != ESP_OK) {
+            ESP_LOGE(TAG, "privacy cache handler registration failed");
+        }
+#endif
 #if CONFIG_FEATURE_PROVISIONING_REPORTER
         provisioning_reporter_register_observers();
 #endif

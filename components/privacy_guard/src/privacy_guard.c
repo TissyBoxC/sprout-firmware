@@ -98,13 +98,6 @@ static esp_err_t privacy_guard_nvs_save(
     );
 }
 
-static esp_err_t privacy_guard_default_clear_cache(
-    privacy_guard_action_t action
-) {
-    (void)action;
-    return ESP_OK;
-}
-
 static privacy_guard_error_t privacy_guard_persist(void) {
     if (privacy_guard_storage.save == NULL) {
         return PRIVACY_GUARD_OK;
@@ -129,7 +122,10 @@ esp_err_t privacy_guard_init(void) {
     const privacy_guard_storage_t storage = {
         .load = privacy_guard_nvs_load,
         .save = privacy_guard_nvs_save,
-        .clear_cache = privacy_guard_default_clear_cache,
+        // A production image must register a real cache handler through
+        // privacy_guard_set_clear_cache_handler; an unregistered handler keeps
+        // clear_local_data failing instead of reporting a fake success.
+        .clear_cache = NULL,
     };
     return privacy_guard_init_with_storage(&storage);
 }
@@ -162,6 +158,19 @@ esp_err_t privacy_guard_init_with_storage(
     privacy_guard_ready = true;
     privacy_guard_last_error = PRIVACY_GUARD_OK;
     ESP_LOGI(TAG, "privacy guard initialized with deny-by-default consent");
+    return ESP_OK;
+}
+
+esp_err_t privacy_guard_set_clear_cache_handler(
+    privacy_guard_clear_cache_fn handler
+) {
+    if (!privacy_guard_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (handler == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    privacy_guard_storage.clear_cache = handler;
     return ESP_OK;
 }
 
@@ -256,6 +265,26 @@ privacy_guard_error_t privacy_guard_revoke_all(void) {
     return privacy_guard_persist();
 }
 
+privacy_guard_error_t privacy_guard_apply_consent(
+    bool audio_upload_consent,
+    bool image_upload_consent,
+    bool conversation_history_consent,
+    bool usage_analytics_consent
+) {
+    if (!privacy_guard_ready) {
+        return PRIVACY_GUARD_ERR_NOT_INITIALIZED;
+    }
+    privacy_guard_state.consent[PRIVACY_GUARD_DATA_AUDIO_UPLOAD] =
+        audio_upload_consent;
+    privacy_guard_state.consent[PRIVACY_GUARD_DATA_IMAGE_UPLOAD] =
+        image_upload_consent;
+    privacy_guard_state.consent[PRIVACY_GUARD_DATA_CONVERSATION_HISTORY] =
+        conversation_history_consent;
+    privacy_guard_state.consent[PRIVACY_GUARD_DATA_USAGE_ANALYTICS] =
+        usage_analytics_consent;
+    return privacy_guard_persist();
+}
+
 privacy_guard_error_t privacy_guard_clear_local_data(
     privacy_guard_action_t action
 ) {
@@ -263,7 +292,10 @@ privacy_guard_error_t privacy_guard_clear_local_data(
         return PRIVACY_GUARD_ERR_NOT_INITIALIZED;
     }
     if (privacy_guard_storage.clear_cache == NULL) {
-        return PRIVACY_GUARD_ERR_STORAGE;
+        // Reporting success here would let a caller believe local child data
+        // was erased when nothing was touched. Fail safe instead.
+        privacy_guard_last_error = PRIVACY_GUARD_ERR_CACHE_BUSY;
+        return PRIVACY_GUARD_ERR_CACHE_BUSY;
     }
     const esp_err_t result = privacy_guard_storage.clear_cache(action);
     if (result != ESP_OK) {

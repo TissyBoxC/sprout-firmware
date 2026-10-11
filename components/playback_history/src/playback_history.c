@@ -100,6 +100,14 @@ size_t playback_history_count(void) {
     return s_core.count;
 }
 
+esp_err_t playback_history_forget_all(void) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    playback_history_core_init(&s_core);
+    return playback_history_persist();
+}
+
 bool playback_history_latest_resumable(playback_record_t *record_out) {
     return playback_history_core_latest_resumable(&s_core, record_out);
 }
