@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_ALARM_REMINDER
+    bool "Enable alarm reminder cache and local firing state"
+    default y
+    help
+        Caches a bounded set of family alarms (local time of day, weekday set,
+        enable flag, snooze window, label and optional prompt), persists them
+        across restarts, and tracks the local firing state so the device rings
+        at most once per day and reports ringing/snoozed/dismissed/missed back
+        to the parent app's alarm reminders.
+
+endmenu

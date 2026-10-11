@@ -586,6 +586,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$alarmReminderRoot = Join-Path $firmwareRoot 'components/alarm_reminder'
+Invoke-HostTest `
+    -Name 'alarm_reminder_core' `
+    -Sources @(
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder_core.c')
+        (Join-Path $alarmReminderRoot 'test/test_alarm_reminder_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $alarmReminderRoot 'include')
+        (Join-Path $alarmReminderRoot 'src')
+        (Join-Path $alarmReminderRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $companionshipRoot = Join-Path $firmwareRoot 'components/companionship'
 Invoke-HostTest `
     -Name 'companionship_core' `
