@@ -457,6 +457,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$longTermMemoryRoot = Join-Path $firmwareRoot 'components/long_term_memory'
+Invoke-HostTest `
+    -Name 'long_term_memory_core' `
+    -Sources @(
+        (Join-Path $longTermMemoryRoot 'src/long_term_memory_core.c')
+        (Join-Path $longTermMemoryRoot 'test/test_long_term_memory_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $longTermMemoryRoot 'include')
+        (Join-Path $longTermMemoryRoot 'src')
+        (Join-Path $longTermMemoryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'long_term_memory_runtime' `
+    -Sources @(
+        (Join-Path $longTermMemoryRoot 'src/long_term_memory_core.c')
+        (Join-Path $longTermMemoryRoot 'src/long_term_memory.c')
+        (Join-Path $longTermMemoryRoot 'test/stubs/config_store.c')
+        (Join-Path $longTermMemoryRoot 'test/test_long_term_memory_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $longTermMemoryRoot 'include')
+        (Join-Path $longTermMemoryRoot 'src')
+        (Join-Path $longTermMemoryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

@@ -130,6 +130,7 @@ function Test-OptionalModuleRemoval {
             'companionship'
             'growth_record'
             'habit_reminder'
+            'long_term_memory'
             'favorites'
             'playback_history'
             'content_package_manager'

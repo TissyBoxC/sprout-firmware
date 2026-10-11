@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_LONG_TERM_MEMORY
+    bool "Enable guardian-authorized long-term memory"
+    default y
+    help
+        Stores a bounded set of guardian-authorized facts about a child
+        (preferences, routines, milestones the companion should recall) with a
+        minimal, deletion-capable, consent-gated store. Revoking authorization
+        erases every remembered fact.
+
+endmenu

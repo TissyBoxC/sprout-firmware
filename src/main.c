@@ -69,6 +69,10 @@
 #include "habit_reminder.h"
 #endif
 
+#if CONFIG_FEATURE_LONG_TERM_MEMORY
+#include "long_term_memory.h"
+#endif
+
 #if CONFIG_FEATURE_OTA_MANAGER
 #include "ota_manager.h"
 #endif
@@ -687,6 +691,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_HABIT_REMINDER
     ESP_ERROR_CHECK(module_registry_add(habit_reminder_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_LONG_TERM_MEMORY
+    ESP_ERROR_CHECK(module_registry_add(long_term_memory_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OTA_MANAGER
     ESP_ERROR_CHECK(module_registry_add(ota_manager_module_descriptor()));
