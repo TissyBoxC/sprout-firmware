@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_LEARNING_VISUALIZATION
+    bool "Enable touch learning visualization policy"
+    default n
+    help
+        Runs the bounded learning-visualization policy and surface state
+        machine: opt-in feedback style, animation level, touch/reward/lesson
+        linkage toggles and a session ceiling. A firmware profile without a
+        touch display simply does not link the component.
+
+endmenu
