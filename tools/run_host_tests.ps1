@@ -267,6 +267,41 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$cameraCaptureRoot = Join-Path $firmwareRoot 'components/camera_capture'
+Invoke-HostTest `
+    -Name 'camera_capture_core' `
+    -Sources @(
+        (Join-Path $cameraCaptureRoot 'src/camera_capture_core.c')
+        (Join-Path $cameraCaptureRoot 'test/test_camera_capture_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cameraCaptureRoot 'include')
+        (Join-Path $cameraCaptureRoot 'src')
+        (Join-Path $cameraCaptureRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'camera_capture_runtime' `
+    -Sources @(
+        (Join-Path $cameraCaptureRoot 'src/camera_capture_core.c')
+        (Join-Path $cameraCaptureRoot 'src/camera_capture.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard.c')
+        (Join-Path $cameraCaptureRoot 'test/stubs/config_store.c')
+        (Join-Path $cameraCaptureRoot 'test/test_camera_capture_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cameraCaptureRoot 'include')
+        (Join-Path $cameraCaptureRoot 'src')
+        (Join-Path $cameraCaptureRoot 'test/stubs')
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 Invoke-HostTest `
     -Name 'content_filter' `

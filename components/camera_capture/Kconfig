@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_CAMERA_CAPTURE
+    bool "Enable camera capture pipeline"
+    depends on CAPABILITY_CAMERA
+    default n
+    help
+        Enables the camera capture lifecycle. Capture always requires explicit
+        guardian consent for image upload; without consent the sensor is never
+        started. Firmware images built without the camera capability compile
+        the component out entirely.
+
+endmenu
