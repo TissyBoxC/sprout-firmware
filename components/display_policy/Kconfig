@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_DISPLAY_POLICY
+    bool "Enable eye-care display policy"
+    default n
+    help
+        Applies the guardian's brightness, colour temperature, viewing
+        distance, daily screen-time and break-reminder policy on the device.
+        The module only touches display and timing state, so a device without a
+        screen never links it.
+
+endmenu

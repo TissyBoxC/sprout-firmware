@@ -725,6 +725,37 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $parentControlRoot = Join-Path $firmwareRoot 'components/parent_control_runtime'
+$displayPolicyRoot = Join-Path $firmwareRoot 'components/display_policy'
+Invoke-HostTest `
+    -Name 'display_policy_core' `
+    -Sources @(
+        (Join-Path $displayPolicyRoot 'src/display_policy_core.c')
+        (Join-Path $displayPolicyRoot 'test/test_display_policy_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $displayPolicyRoot 'include')
+        (Join-Path $displayPolicyRoot 'src')
+        (Join-Path $displayPolicyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'display_policy_runtime' `
+    -Sources @(
+        (Join-Path $displayPolicyRoot 'src/display_policy_core.c')
+        (Join-Path $displayPolicyRoot 'src/display_policy.c')
+        (Join-Path $displayPolicyRoot 'test/stubs/config_store.c')
+        (Join-Path $displayPolicyRoot 'test/test_display_policy_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $displayPolicyRoot 'include')
+        (Join-Path $displayPolicyRoot 'src')
+        (Join-Path $displayPolicyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(
