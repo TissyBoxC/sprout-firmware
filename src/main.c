@@ -188,6 +188,9 @@
 #if CONFIG_FEATURE_FORM_FACTOR_PROFILE
 #include "form_factor_profile.h"
 #endif
+#if CONFIG_FEATURE_VIDEO_SESSION
+#include "video_session.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -668,6 +671,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_FORM_FACTOR_PROFILE
     ESP_ERROR_CHECK(module_registry_add(form_factor_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_VIDEO_SESSION
+    ESP_ERROR_CHECK(module_registry_add(video_session_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));

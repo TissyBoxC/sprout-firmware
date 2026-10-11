@@ -54,6 +54,10 @@ if(CONFIG_FEATURE_FORM_FACTOR_PROFILE)
     list(APPEND app_requires "form_factor_profile")
 endif()
 
+if(CONFIG_FEATURE_VIDEO_SESSION)
+    list(APPEND app_requires "video_session")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()

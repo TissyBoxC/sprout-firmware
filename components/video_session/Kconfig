@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_VIDEO_SESSION
+    bool "Enable video call and companionship session"
+    default n
+    help
+        Runs the bounded video session state machine, enforces the guardian
+        camera and microphone permission, keeps a child consent gate and ends a
+        call immediately when a permission is revoked. The default policy keeps
+        capture off until a guardian enables it, so an audio-only body never
+        links the component.
+
+endmenu
