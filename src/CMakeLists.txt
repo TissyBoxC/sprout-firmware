@@ -34,6 +34,10 @@ if(CONFIG_FEATURE_DISPLAY_POLICY)
     list(APPEND app_requires "display_policy")
 endif()
 
+if(CONFIG_FEATURE_TOUCH_INPUT)
+    list(APPEND app_requires "touch_input")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()

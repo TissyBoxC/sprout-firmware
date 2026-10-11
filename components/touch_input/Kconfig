@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_TOUCH_INPUT
+    bool "Enable touch input and gestures"
+    default n
+    help
+        Applies the guardian's touch configuration (enable, tap, swipe,
+        long-press, haptic feedback, sensitivity and rotation) and classifies
+        taps, swipes and long presses from bounded samples. The module only
+        touches input state, so a device without a touch panel never links it.
+
+endmenu

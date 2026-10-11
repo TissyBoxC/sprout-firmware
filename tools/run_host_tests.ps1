@@ -756,6 +756,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$touchInputRoot = Join-Path $firmwareRoot 'components/touch_input'
+Invoke-HostTest `
+    -Name 'touch_input_core' `
+    -Sources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchInputRoot 'test/test_touch_input_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $touchInputRoot 'include')
+        (Join-Path $touchInputRoot 'src')
+        (Join-Path $touchInputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'touch_input_runtime' `
+    -Sources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchInputRoot 'src/touch_input.c')
+        (Join-Path $touchInputRoot 'test/stubs/config_store.c')
+        (Join-Path $touchInputRoot 'test/test_touch_input_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $touchInputRoot 'include')
+        (Join-Path $touchInputRoot 'src')
+        (Join-Path $touchInputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(
