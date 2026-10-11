@@ -32,6 +32,14 @@ extern "C" {
 #include "ota_manifest.h"
 #include "ota_rollback.h"
 #include "ota_validate.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define OTA_MANAGER_HAS_TRANSPORT_SECURITY 1
+#else
+#define OTA_MANAGER_HAS_TRANSPORT_SECURITY 0
+#endif
 #include "time_sync.h"
 #include "version_info.h"
 
@@ -339,6 +347,15 @@ static esp_err_t ota_manager_platform_request(
     if (written <= 0 || (size_t)written >= sizeof(url)) {
         return ESP_ERR_INVALID_SIZE;
     }
+
+#if OTA_MANAGER_HAS_TRANSPORT_SECURITY
+    // OTA control requests carry the device session token, so refuse to send
+    // them to any host the shared policy does not trust.
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     ota_manager_response_t response = {};
     esp_http_client_config_t config = {};

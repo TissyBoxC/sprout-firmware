@@ -17,6 +17,9 @@ extern "C" {
 /** @brief Maximum accepted host length including the terminator. */
 #define TRANSPORT_SECURITY_HOST_SIZE 256
 
+/** @brief Base host suffix every device endpoint must belong to. */
+#define TRANSPORT_SECURITY_BASE_HOST_SUFFIX "clarkhub.cn"
+
 /** @brief Secure transports accepted by the device. */
 typedef enum {
     TRANSPORT_SECURITY_PROTOCOL_UNKNOWN = 0,
@@ -105,6 +108,32 @@ transport_security_error_t transport_security_validate_url_with_policy(
 transport_security_error_t transport_security_require_no_downgrade(
     transport_security_protocol_t current,
     transport_security_protocol_t candidate
+);
+
+/**
+ * @brief Return true when a host belongs to a trusted suffix.
+ *
+ * The base suffix `clarkhub.cn` is always trusted; the compiled
+ * `CONFIG_TRANSPORT_SECURITY_ALLOWED_HOST` value may add further comma-
+ * separated suffixes. A bare suffix matches its own apex domain and any
+ * subdomain, and matching is case-insensitive. This is the enforcement behind
+ * the allowed-host configuration so a firmware build cannot connect to an
+ * arbitrary endpoint.
+ */
+bool transport_security_host_is_allowed(const char *host);
+
+/**
+ * @brief Validate one outbound endpoint against the policy and the allowlist.
+ *
+ * This is the single call every network client uses before it opens a
+ * connection. It applies the production policy (scheme, credentials, port,
+ * fragment, downgrade) and additionally rejects any host outside the trusted
+ * suffix list, so a rogue or misconfigured endpoint can never be reached even
+ * if it uses a secure scheme.
+ */
+transport_security_error_t transport_security_validate_outbound(
+    const char *url,
+    transport_security_endpoint_t *endpoint_out
 );
 
 /** @brief Return the stable name for one protocol. */

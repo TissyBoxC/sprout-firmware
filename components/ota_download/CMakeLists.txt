@@ -13,3 +13,10 @@ idf_component_register(
     PRIV_REQUIRES esp_http_client esp-tls esp_timer mbedtls
     REQUIRES app_update esp_partition ota_validate
 )
+
+# An OTA image must come from a trusted host. The shared policy check is wired
+# in whenever transport_security is present and drops out in minimal builds.
+if(CONFIG_FEATURE_TRANSPORT_SECURITY AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../transport_security/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE transport_security)
+endif()

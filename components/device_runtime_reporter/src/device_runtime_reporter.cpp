@@ -27,6 +27,14 @@ extern "C" {
 #include "network_manager.h"
 #include "network_quality.h"
 #include "offline_fallback.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define DEVICE_RUNTIME_HAS_TRANSPORT_SECURITY 1
+#else
+#define DEVICE_RUNTIME_HAS_TRANSPORT_SECURITY 0
+#endif
 #if CONFIG_FEATURE_TEMPERATURE_MONITOR && __has_include("temperature_monitor.h")
 #define DEVICE_RUNTIME_HAS_TEMPERATURE_MONITOR 1
 #else
@@ -390,6 +398,14 @@ static esp_err_t device_runtime_platform_request(
     if (written <= 0 || (size_t)written >= sizeof(url)) {
         return ESP_ERR_INVALID_SIZE;
     }
+#if DEVICE_RUNTIME_HAS_TRANSPORT_SECURITY
+    // Runtime telemetry carries device identity, so refuse to send it to any
+    // host the shared policy does not trust.
+    if (transport_security_validate_outbound(url, nullptr) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     device_runtime_response_buffer_t response = {};
     result = device_runtime_response_buffer_init(

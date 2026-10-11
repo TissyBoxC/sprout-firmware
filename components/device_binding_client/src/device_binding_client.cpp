@@ -18,6 +18,14 @@ extern "C" {
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "mbedtls/base64.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define DEVICE_BINDING_HAS_TRANSPORT_SECURITY 1
+#else
+#define DEVICE_BINDING_HAS_TRANSPORT_SECURITY 0
+#endif
 
 #define DEVICE_BINDING_KEY_BOUND "device_bound"
 #define DEVICE_BINDING_KEY_SESSION_TOKEN "device_session"
@@ -168,6 +176,15 @@ static esp_err_t device_binding_request(
     if (written <= 0 || (size_t)written >= sizeof(url)) {
         return ESP_ERR_INVALID_SIZE;
     }
+#if DEVICE_BINDING_HAS_TRANSPORT_SECURITY
+    // Reject any host outside the trusted suffix list before opening a socket,
+    // so a poisoned stored base URL cannot redirect credentials elsewhere.
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        ESP_LOGE(TAG, "platform URL rejected by transport policy");
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     device_binding_response_t response{};
     esp_http_client_config_t client_config = {};

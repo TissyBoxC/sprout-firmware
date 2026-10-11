@@ -18,6 +18,14 @@
 #include "freertos/task.h"
 #include "network_manager.h"
 #include "time_sync.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define CONTENT_PACKAGE_HAS_TRANSPORT_SECURITY 1
+#else
+#define CONTENT_PACKAGE_HAS_TRANSPORT_SECURITY 0
+#endif
 
 #if CONFIG_FEATURE_PARENT_CONTROL_RUNTIME && __has_include("parent_control_runtime.h")
 #include "parent_control_runtime.h"
@@ -193,6 +201,16 @@ static content_package_error_t content_package_fetch_document(
         memset(session_token, 0, sizeof(session_token));
         return CONTENT_PACKAGE_ERR_MANIFEST;
     }
+
+#if CONTENT_PACKAGE_HAS_TRANSPORT_SECURITY
+    // A poisoned base URL must not be able to send device credentials to an
+    // untrusted host while fetching the content catalog.
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return CONTENT_PACKAGE_ERR_MANIFEST;
+    }
+#endif
 
     content_package_response_t response = {};
     if (content_package_response_init(&response, response_capacity) != ESP_OK) {

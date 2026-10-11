@@ -28,3 +28,10 @@ idf_component_register(
 if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
     idf_component_optional_requires(PRIVATE parent_control_runtime)
 endif()
+
+# Every content download URL must pass the shared transport policy. The check
+# disappears together with the component in a minimal build.
+if(CONFIG_FEATURE_TRANSPORT_SECURITY AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../transport_security/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE transport_security)
+endif()

@@ -21,6 +21,14 @@ extern "C" {
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define PARENT_POLICY_HAS_TRANSPORT_SECURITY 1
+#else
+#define PARENT_POLICY_HAS_TRANSPORT_SECURITY 0
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "volume_control.h"
@@ -931,6 +939,15 @@ static esp_err_t parent_policy_request(
     if (written <= 0 || (size_t)written >= sizeof(url)) {
         return ESP_ERR_INVALID_SIZE;
     }
+
+#if PARENT_POLICY_HAS_TRANSPORT_SECURITY
+    // The base URL comes from stored credentials, so re-check the final host
+    // here to keep a poisoned store from leaking the session token elsewhere.
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     parent_policy_response_t *const response =
         (parent_policy_response_t *)calloc(1, sizeof(parent_policy_response_t));

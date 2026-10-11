@@ -65,4 +65,8 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     if(CONFIG_FEATURE_AUDIO_OUTPUT)
         idf_component_optional_requires(PRIVATE audio_output)
     endif()
+
+    if(CONFIG_FEATURE_TRANSPORT_SECURITY)
+        idf_component_optional_requires(PRIVATE transport_security)
+    endif()
 endif()

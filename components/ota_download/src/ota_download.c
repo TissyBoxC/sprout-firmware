@@ -14,6 +14,14 @@
 #include "ota_download_core.h"
 #include "ota_manifest.h"
 #include "psa/crypto.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define OTA_DOWNLOAD_HAS_TRANSPORT_SECURITY 1
+#else
+#define OTA_DOWNLOAD_HAS_TRANSPORT_SECURITY 0
+#endif
 
 #ifndef CONFIG_OTA_DOWNLOAD_CHUNK_BYTES
 #define CONFIG_OTA_DOWNLOAD_CHUNK_BYTES 4096
@@ -351,6 +359,15 @@ esp_err_t ota_download_to_partition(
         request->expected_size > partition->size) {
         return ESP_ERR_INVALID_ARG;
     }
+#if OTA_DOWNLOAD_HAS_TRANSPORT_SECURITY
+    // Reject an OTA image host outside the trusted suffix list before any
+    // bytes are written, so a rogue manifest cannot flash arbitrary firmware.
+    if (transport_security_validate_outbound(request->url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        ESP_LOGE("ota_download", "OTA URL rejected by transport policy");
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     ota_download_session_t session = {
         .ota_handle = 0,

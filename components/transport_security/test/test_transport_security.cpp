@@ -134,6 +134,45 @@ static void test_protocol_names(void) {
     ) == 0);
 }
 
+static void test_allowed_host_suffixes(void) {
+    assert(transport_security_init() == ESP_OK);
+    // The base suffix matches its apex and any subdomain.
+    assert(transport_security_host_is_allowed("clarkhub.cn"));
+    assert(transport_security_host_is_allowed("api.clarkhub.cn"));
+    assert(transport_security_host_is_allowed("voice.clarkhub.cn"));
+    // Case-insensitive matching.
+    assert(transport_security_host_is_allowed("API.ClarkHub.CN"));
+    // A coincidental substring is not the same registrable domain.
+    assert(!transport_security_host_is_allowed("evilclarkhub.cn"));
+    assert(!transport_security_host_is_allowed("clarkhub.cn.evil.com"));
+    // The compiled extra suffix is trusted, and only as a real domain.
+    assert(transport_security_host_is_allowed("example.com"));
+    assert(transport_security_host_is_allowed("cdn.example.com"));
+    assert(!transport_security_host_is_allowed("notexample.com"));
+    // An unlisted domain stays rejected.
+    assert(!transport_security_host_is_allowed("exfil.example.net"));
+    assert(!transport_security_host_is_allowed(nullptr));
+    assert(!transport_security_host_is_allowed(""));
+
+    // The outbound helper combines the policy with the allowlist.
+    transport_security_endpoint_t endpoint = {};
+    assert(transport_security_validate_outbound(
+        "https://api.clarkhub.cn/v1/device",
+        &endpoint
+    ) == TRANSPORT_SECURITY_OK);
+    assert(std::strcmp(endpoint.host, "api.clarkhub.cn") == 0);
+    // A secure scheme alone is not enough; the host must be trusted.
+    assert(transport_security_validate_outbound(
+        "https://exfil.example.net/steal",
+        &endpoint
+    ) == TRANSPORT_SECURITY_ERR_INVALID_HOST);
+    // Cleartext is still rejected before the allowlist is consulted.
+    assert(transport_security_validate_outbound(
+        "http://api.clarkhub.cn",
+        &endpoint
+    ) == TRANSPORT_SECURITY_ERR_CLEARTEXT);
+}
+
 int main(void) {
     test_https_validation();
     test_wss_and_mqtts_validation();
@@ -142,5 +181,6 @@ int main(void) {
     test_policy_cannot_be_weakened();
     test_no_downgrade();
     test_protocol_names();
+    test_allowed_host_suffixes();
     return 0;
 }

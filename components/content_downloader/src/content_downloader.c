@@ -18,6 +18,14 @@
 #include "freertos/task.h"
 #include "psa/crypto.h"
 #include "network_manager.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define CONTENT_DOWNLOADER_HAS_TRANSPORT_SECURITY 1
+#else
+#define CONTENT_DOWNLOADER_HAS_TRANSPORT_SECURITY 0
+#endif
 
 #ifndef CONFIG_CONTENT_DOWNLOADER_TIMEOUT_SECONDS
 #define CONFIG_CONTENT_DOWNLOADER_TIMEOUT_SECONDS 60
@@ -693,6 +701,14 @@ esp_err_t content_downloader_enqueue(
         request->size_bytes > CONTENT_DOWNLOADER_MAX_PACKAGE_BYTES) {
         return ESP_ERR_INVALID_ARG;
     }
+#if CONTENT_DOWNLOADER_HAS_TRANSPORT_SECURITY
+    // The URL is chosen by the platform, but a compromised or misconfigured
+    // catalog must not be able to point the device at an untrusted host.
+    if (transport_security_validate_outbound(request->download_url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
     xSemaphoreTake(content_downloader_lock, portMAX_DELAY);
     if (content_downloader_find_locked(request->package_id) != NULL) {
         xSemaphoreGive(content_downloader_lock);

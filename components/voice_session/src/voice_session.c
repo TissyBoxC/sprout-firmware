@@ -27,6 +27,13 @@
 #include "sdkconfig.h"
 #include "voice_session_protocol.h"
 
+#if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
+#include "transport_security.h"
+#define VOICE_SESSION_HAS_TRANSPORT_SECURITY 1
+#else
+#define VOICE_SESSION_HAS_TRANSPORT_SECURITY 0
+#endif
+
 #if CONFIG_FEATURE_VOICE_DUPLEX
 #include "voice_duplex_core.h"
 #endif
@@ -210,6 +217,13 @@ static bool voice_session_endpoint_is_secure(const char *endpoint) {
     if (endpoint == NULL) {
         return false;
     }
+#if VOICE_SESSION_HAS_TRANSPORT_SECURITY
+    // The shared policy already accepts only wss:// (and the debug-only ws://
+    // branch is compiled out of release images), and it additionally rejects
+    // any host outside the trusted suffix list.
+    return transport_security_validate_outbound(endpoint, NULL) ==
+        TRANSPORT_SECURITY_OK;
+#else
     if (strncmp(endpoint, "wss://", 6) == 0) {
         return true;
     }
@@ -223,6 +237,7 @@ static bool voice_session_endpoint_is_secure(const char *endpoint) {
 #endif
 #endif
     return false;
+#endif
 }
 
 static esp_err_t voice_session_copy_token(char *output, size_t output_size) {
