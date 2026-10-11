@@ -238,6 +238,10 @@ if(CONFIG_FEATURE_HABIT_REMINDER)
     list(APPEND app_requires "habit_reminder")
 endif()
 
+if(CONFIG_FEATURE_ALARM_REMINDER)
+    list(APPEND app_requires "alarm_reminder")
+endif()
+
 if(CONFIG_FEATURE_LONG_TERM_MEMORY)
     list(APPEND app_requires "long_term_memory")
 endif()
