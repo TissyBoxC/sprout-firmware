@@ -3,8 +3,24 @@ menu "Sprout feature modules"
 config FEATURE_UI_TEXT
     bool "Enable remote UI text"
     default n
+    depends on FEATURE_CONFIG_STORE
     help
         Enable the optional remote UI text module. When disabled, UI text
         related source files and dependencies are not linked.
+
+config UI_TEXT_ENTRY_CAPACITY
+    int "Maximum text entries kept in the active package"
+    depends on FEATURE_UI_TEXT
+    range 8 256
+    default 128
+    help
+        Bounds the RAM and NVS footprint of the active remote package. A
+        package with more entries than this is rejected so the device keeps
+        rendering its last known good text.
+
+config UI_TEXT_METADATA_KEY
+    string "Configuration store key for the active UI text package"
+    depends on FEATURE_UI_TEXT
+    default "ui_text_index"
 
 endmenu

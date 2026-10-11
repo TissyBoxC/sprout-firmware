@@ -442,6 +442,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$uiTextRoot = Join-Path $firmwareRoot 'components/ui_text'
+Invoke-HostTest `
+    -Name 'ui_text_store' `
+    -Sources @(
+        (Join-Path $uiTextRoot 'src/ui_text_store.c')
+        (Join-Path $uiTextRoot 'test/test_ui_text_store.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $uiTextRoot 'include')
+        (Join-Path $uiTextRoot 'src')
+        (Join-Path $uiTextRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $contentDownloaderRoot = Join-Path $firmwareRoot 'components/content_downloader'
 Invoke-HostTest `
     -Name 'content_download_state' `
