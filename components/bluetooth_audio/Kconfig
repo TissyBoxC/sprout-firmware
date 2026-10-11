@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_BLUETOOTH_AUDIO
+    bool "Enable Bluetooth audio speaker and pairing policy"
+    default n
+    help
+        Runs the bounded Bluetooth audio policy and adapter state machine:
+        opt-in speaker mode, guardian-gated pairing, an auto-reconnect flag, a
+        preferred codec, a volume ceiling and a bounded adapter/disconnect
+        state. A firmware profile without a Bluetooth radio simply does not
+        link the component.
+
+endmenu
