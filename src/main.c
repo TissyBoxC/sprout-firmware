@@ -85,6 +85,10 @@
 #include "local_command.h"
 #endif
 
+#if CONFIG_FEATURE_OFFLINE_CONTENT
+#include "offline_content.h"
+#endif
+
 #if CONFIG_FEATURE_OTA_MANAGER
 #include "ota_manager.h"
 #endif
@@ -715,6 +719,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_LOCAL_COMMAND
     ESP_ERROR_CHECK(module_registry_add(local_command_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_OFFLINE_CONTENT
+    ESP_ERROR_CHECK(module_registry_add(offline_content_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OTA_MANAGER
     ESP_ERROR_CHECK(module_registry_add(ota_manager_module_descriptor()));

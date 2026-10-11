@@ -206,6 +206,10 @@ if(CONFIG_FEATURE_LOCAL_COMMAND)
     list(APPEND app_requires "local_command")
 endif()
 
+if(CONFIG_FEATURE_OFFLINE_CONTENT)
+    list(APPEND app_requires "offline_content")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()

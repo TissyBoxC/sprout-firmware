@@ -72,6 +72,9 @@ CONFIG_FEATURE_PLAYBACK_REQUEST=y
 # P1-06 local commands: guardian-published trigger phrases resolved on-device
 # so common actions keep working with no network.
 CONFIG_FEATURE_LOCAL_COMMAND=y
+# P1-06 offline content: the pinned, verified content index the device plays
+# with no network.
+CONFIG_FEATURE_OFFLINE_CONTENT=y
 CONFIG_FEATURE_OTA_VALIDATE=y
 CONFIG_FEATURE_OTA_DOWNLOAD=y
 CONFIG_FEATURE_OTA_ROLLBACK=y

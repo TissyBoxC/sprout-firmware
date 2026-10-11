@@ -581,6 +581,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$offlineContentRoot = Join-Path $firmwareRoot 'components/offline_content'
+Invoke-HostTest `
+    -Name 'offline_content_core' `
+    -Sources @(
+        (Join-Path $offlineContentRoot 'src/offline_content_core.c')
+        (Join-Path $offlineContentRoot 'test/test_offline_content_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlineContentRoot 'include')
+        (Join-Path $offlineContentRoot 'src')
+        (Join-Path $offlineContentRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'offline_content_runtime' `
+    -Sources @(
+        (Join-Path $offlineContentRoot 'src/offline_content_core.c')
+        (Join-Path $offlineContentRoot 'src/offline_content.c')
+        (Join-Path $offlineContentRoot 'test/stubs/config_store.c')
+        (Join-Path $offlineContentRoot 'test/test_offline_content_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlineContentRoot 'include')
+        (Join-Path $offlineContentRoot 'src')
+        (Join-Path $offlineContentRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

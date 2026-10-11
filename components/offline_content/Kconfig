@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_OFFLINE_CONTENT
+    bool "Enable offline content playback index"
+    default y
+    depends on FEATURE_CONFIG_STORE
+    help
+        Keeps a bounded index of the content packages pinned for offline
+        playback, marks a package playable only after the library verified its
+        bytes locally, and picks the next playable package. It stores metadata
+        only: never content bytes, audio, images, credentials, or child data.
+
+endmenu

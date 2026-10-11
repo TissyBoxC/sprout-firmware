@@ -134,6 +134,7 @@ function Test-OptionalModuleRemoval {
             'english_course'
             'playback_request'
             'local_command'
+            'offline_content'
             'favorites'
             'playback_history'
             'content_package_manager'
