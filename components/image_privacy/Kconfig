@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_IMAGE_PRIVACY
+    bool "Enable local image processing and upload authorisation"
+    default n
+    help
+        Runs the bounded image-privacy policy and processing pipeline gate:
+        opt-in local processing, guardian-gated upload, a processing mode, an
+        upload scope, a retention window, a redaction level and a consent gate.
+        A firmware profile without a camera simply does not link the component.
+
+endmenu
