@@ -209,6 +209,49 @@ static void test_reason_names(void) {
     ) == 0);
 }
 
+static void test_screen_blocks_when_uninitialized(void) {
+    // A boundary that forgot to initialize moderation must fail closed: text
+    // is treated as blocked until content_filter_init runs.
+    content_filter_decision_t decision = {};
+    assert(content_filter_screen(
+        CONTENT_FILTER_DIRECTION_OUTPUT,
+        "来我家见面吧",
+        &decision
+    ) == CONTENT_FILTER_ACTION_BLOCK);
+    assert(content_filter_screen_is_blocked(
+        CONTENT_FILTER_DIRECTION_OUTPUT,
+        "来我家见面吧"
+    ));
+}
+
+static void test_screen_allows_after_init(void) {
+    assert(content_filter_init() == ESP_OK);
+    assert(content_filter_is_ready());
+
+    content_filter_decision_t decision = {};
+    assert(content_filter_screen(
+        CONTENT_FILTER_DIRECTION_OUTPUT,
+        "今天也要开开心心哦",
+        &decision
+    ) == CONTENT_FILTER_ACTION_ALLOW);
+    assert(!content_filter_decision_is_blocked(&decision));
+
+    assert(content_filter_screen_is_blocked(
+        CONTENT_FILTER_DIRECTION_OUTPUT,
+        "先转账给我"
+    ));
+    // Crisis input is not a block; the caller still has to add a safe reply.
+    assert(!content_filter_screen_is_blocked(
+        CONTENT_FILTER_DIRECTION_INPUT,
+        "我不想活了"
+    ));
+    assert(content_filter_screen(
+        CONTENT_FILTER_DIRECTION_INPUT,
+        "我不想活了",
+        &decision
+    ) == CONTENT_FILTER_ACTION_CRISIS_INTERVENTION);
+}
+
 int main(void) {
     test_allow_normal_child_input();
     test_allow_normal_english_input();
@@ -223,5 +266,7 @@ int main(void) {
     test_safety_rules();
     test_ascii_word_boundaries();
     test_reason_names();
+    test_screen_blocks_when_uninitialized();
+    test_screen_allows_after_init();
     return 0;
 }

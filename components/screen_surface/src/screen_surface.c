@@ -4,6 +4,14 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "sdkconfig.h"
+
+#if CONFIG_FEATURE_CONTENT_FILTER && __has_include("content_filter.h")
+#include "content_filter.h"
+#define SCREEN_SURFACE_HAS_CONTENT_FILTER 1
+#else
+#define SCREEN_SURFACE_HAS_CONTENT_FILTER 0
+#endif
 
 // One bounded binary blob persists the screen policy without a dedicated
 // partition; a schema change is detected and replaced with the conservative
@@ -186,6 +194,16 @@ esp_err_t screen_surface_point_read_put(
     if (entry == NULL || entry->term[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+#if SCREEN_SURFACE_HAS_CONTENT_FILTER
+    // The surface speaks or shows this text to the child, so a blocked string
+    // must never enter the dictionary in the first place.
+    if (content_filter_screen_is_blocked(
+            CONTENT_FILTER_DIRECTION_OUTPUT,
+            entry->text
+        )) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
     screen_point_read_entry_t normalized = *entry;
     if (!normalize_entry(&normalized)) {
         return ESP_ERR_INVALID_ARG;

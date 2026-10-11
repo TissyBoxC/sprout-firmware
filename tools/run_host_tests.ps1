@@ -74,6 +74,8 @@ function Invoke-HostTest {
 
 $compiler = Resolve-HostCompiler
 
+$contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
+
 $otaValidateRoot = Join-Path $firmwareRoot 'components/ota_validate'
 Invoke-HostTest `
     -Name 'ota_manifest' `
@@ -180,6 +182,27 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'device_message_runtime' `
+    -Sources @(
+        (Join-Path $deviceMessageRoot 'src/device_message_core.c')
+        (Join-Path $deviceMessageRoot 'src/device_message.c')
+        (Join-Path $deviceMessageRoot 'test/stubs/device_capabilities_stub.c')
+        (Join-Path $contentFilterRoot 'src/content_filter_core.c')
+        (Join-Path $contentFilterRoot 'src/content_filter.c')
+        (Join-Path $deviceMessageRoot 'test/test_device_message_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceMessageRoot 'include')
+        (Join-Path $deviceMessageRoot 'src')
+        (Join-Path $deviceMessageRoot 'test/stubs')
+        (Join-Path $contentFilterRoot 'include')
+        (Join-Path $contentFilterRoot 'src')
+        (Join-Path $contentFilterRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $provisioningRoot = Join-Path $firmwareRoot 'components/provisioning_reporter'
 Invoke-HostTest `
     -Name 'provisioning_reporter_state' `
@@ -267,6 +290,22 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'privacy_guard_production' `
+    -Sources @(
+        (Join-Path $privacyGuardRoot 'src/privacy_guard_core.c')
+        (Join-Path $privacyGuardRoot 'src/privacy_guard.c')
+        (Join-Path $privacyGuardRoot 'test/stubs/config_store.c')
+        (Join-Path $privacyGuardRoot 'test/test_privacy_guard_production.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $privacyGuardRoot 'include')
+        (Join-Path $privacyGuardRoot 'src')
+        (Join-Path $privacyGuardRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $cameraCaptureRoot = Join-Path $firmwareRoot 'components/camera_capture'
 Invoke-HostTest `
     -Name 'camera_capture_core' `
@@ -337,7 +376,6 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
-$contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 Invoke-HostTest `
     -Name 'content_filter' `
     -Sources @(
@@ -1033,6 +1071,27 @@ Invoke-HostTest `
         (Join-Path $screenSurfaceRoot 'test/stubs')
     ) `
     -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'screen_surface_moderation' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenSurfaceRoot 'src/screen_surface.c')
+        (Join-Path $screenSurfaceRoot 'test/stubs/config_store.c')
+        (Join-Path $contentFilterRoot 'src/content_filter_core.c')
+        (Join-Path $contentFilterRoot 'src/content_filter.c')
+        (Join-Path $screenSurfaceRoot 'test/test_screen_moderation.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+        (Join-Path $contentFilterRoot 'include')
+        (Join-Path $contentFilterRoot 'src')
+        (Join-Path $contentFilterRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @('-DCONFIG_FEATURE_CONTENT_FILTER=1') `
     -Compiler $compiler
 
 Invoke-HostTest `

@@ -86,6 +86,36 @@ bool content_filter_is_ready(void) {
     return content_filter_ready;
 }
 
+content_filter_action_t content_filter_screen(
+    content_filter_direction_t direction,
+    const char *text,
+    content_filter_decision_t *decision_out
+) {
+    // An uninitialized filter must not silently pass text through. Deny by
+    // default so a build that forgot to initialize moderation blocks instead
+    // of exposing an unmoderated boundary.
+    if (!content_filter_ready) {
+        if (decision_out != NULL) {
+            decision_out->action = CONTENT_FILTER_ACTION_BLOCK;
+            decision_out->reason = CONTENT_FILTER_REASON_OK;
+            decision_out->direction = direction;
+            decision_out->matched_rule = NULL;
+            decision_out->text_length = 0;
+        }
+        return CONTENT_FILTER_ACTION_BLOCK;
+    }
+    return content_filter_core_evaluate(direction, text, decision_out);
+}
+
+bool content_filter_screen_is_blocked(
+    content_filter_direction_t direction,
+    const char *text
+) {
+    content_filter_decision_t decision = {};
+    return content_filter_screen(direction, text, &decision) ==
+        CONTENT_FILTER_ACTION_BLOCK;
+}
+
 const module_descriptor_t *content_filter_module_descriptor(void) {
     static const module_descriptor_t descriptor = {
         .module_name = "content_filter",

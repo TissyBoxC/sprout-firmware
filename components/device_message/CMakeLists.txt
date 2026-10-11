@@ -23,3 +23,10 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES ${device_message_requires}
 )
+
+# Moderation is optional. When removed, the presenter keeps its existing
+# validation and no content_filter symbol is referenced.
+if(CONFIG_FEATURE_CONTENT_FILTER AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../content_filter/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE content_filter)
+endif()

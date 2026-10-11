@@ -100,6 +100,34 @@ esp_err_t content_filter_init(void);
 /** @brief Return true after successful initialization. */
 bool content_filter_is_ready(void);
 
+/**
+ * @brief Screen one helper text that a device path is about to act on.
+ *
+ * This is the runtime entry point for the device's own text boundaries: the
+ * point-to-read dictionary the surface speaks, guardian display messages, and
+ * any locally recognized child phrase. It evaluates the shared pure rules and
+ * always returns a stable action so a caller can distinguish an allowed text,
+ * a blocked text, and a crisis input that must be answered with a safe
+ * response. The helper never logs or stores the text.
+ */
+content_filter_action_t content_filter_screen(
+    content_filter_direction_t direction,
+    const char *text,
+    content_filter_decision_t *decision_out
+);
+
+/**
+ * @brief Return true when a text must not be shown, spoken, or sent.
+ *
+ * Convenience wrapper for output boundaries that only need the block
+ * decision. A CRISIS_INTERVENTION result is not a block, so an input helper
+ * can still deliver it to a caller that adds the guardian-aware safe reply.
+ */
+bool content_filter_screen_is_blocked(
+    content_filter_direction_t direction,
+    const char *text
+);
+
 /** @brief Return the removable-module descriptor for content_filter. */
 const module_descriptor_t *content_filter_module_descriptor(void);
 

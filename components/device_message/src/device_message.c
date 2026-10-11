@@ -4,9 +4,17 @@
 #include <string.h>
 
 #include "esp_err.h"
+#include "sdkconfig.h"
 
 #include "device_capabilities.h"
 #include "device_message_core.h"
+
+#if CONFIG_FEATURE_CONTENT_FILTER && __has_include("content_filter.h")
+#include "content_filter.h"
+#define DEVICE_MESSAGE_HAS_CONTENT_FILTER 1
+#else
+#define DEVICE_MESSAGE_HAS_CONTENT_FILTER 0
+#endif
 
 #if CONFIG_FEATURE_LED_INDICATOR && __has_include("led_indicator.h")
 #include "led_indicator.h"
@@ -79,6 +87,18 @@ esp_err_t device_message_present(
         ++s_snapshot.rejected;
         return ESP_ERR_INVALID_ARG;
     }
+#if DEVICE_MESSAGE_HAS_CONTENT_FILTER
+    // The presenter shows this authored copy on the child's screen, so a body
+    // that matches a prohibited category must be rejected before it is stored.
+    if (content_filter_screen_is_blocked(
+            CONTENT_FILTER_DIRECTION_OUTPUT,
+            message->body
+        )) {
+        set_error(error_out, DEVICE_MESSAGE_ERR_INVALID_PAYLOAD);
+        ++s_snapshot.rejected;
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
 
     const uint32_t duration = device_message_clamp_duration(
         message->duration_seconds
