@@ -632,6 +632,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$learningVisualizationRoot = Join-Path $firmwareRoot 'components/learning_visualization'
+Invoke-HostTest `
+    -Name 'learning_core' `
+    -Sources @(
+        (Join-Path $learningVisualizationRoot 'src/learning_core.c')
+        (Join-Path $learningVisualizationRoot 'test/test_learning_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $learningVisualizationRoot 'include')
+        (Join-Path $learningVisualizationRoot 'src')
+        (Join-Path $learningVisualizationRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'learning_visualization_runtime' `
+    -Sources @(
+        (Join-Path $learningVisualizationRoot 'src/learning_core.c')
+        (Join-Path $learningVisualizationRoot 'src/learning_visualization.c')
+        (Join-Path $learningVisualizationRoot 'test/stubs/config_store.c')
+        (Join-Path $learningVisualizationRoot 'test/test_learning_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $learningVisualizationRoot 'include')
+        (Join-Path $learningVisualizationRoot 'src')
+        (Join-Path $learningVisualizationRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $companionshipRoot = Join-Path $firmwareRoot 'components/companionship'
 Invoke-HostTest `
     -Name 'companionship_core' `
