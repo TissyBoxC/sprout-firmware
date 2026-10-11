@@ -942,6 +942,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$wearableRoot = Join-Path $firmwareRoot 'components/wearable_location'
+Invoke-HostTest `
+    -Name 'wearable_core' `
+    -Sources @(
+        (Join-Path $wearableRoot 'src/wearable_core.c')
+        (Join-Path $wearableRoot 'test/test_wearable_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $wearableRoot 'include')
+        (Join-Path $wearableRoot 'src')
+        (Join-Path $wearableRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'wearable_location_runtime' `
+    -Sources @(
+        (Join-Path $wearableRoot 'src/wearable_core.c')
+        (Join-Path $wearableRoot 'src/wearable_location.c')
+        (Join-Path $wearableRoot 'test/stubs/config_store.c')
+        (Join-Path $wearableRoot 'test/test_wearable_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $wearableRoot 'include')
+        (Join-Path $wearableRoot 'src')
+        (Join-Path $wearableRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(

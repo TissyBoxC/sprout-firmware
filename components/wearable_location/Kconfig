@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_WEARABLE_LOCATION
+    bool "Enable wearable location, geofence and SOS"
+    default n
+    help
+        Runs the bounded wearable location policy, evaluates a geofence and
+        latches an SOS until it is cancelled. The default policy keeps sampling
+        off and requires a guardian permission, so a body without a wearable
+        sensor simply does not link the component.
+
+endmenu

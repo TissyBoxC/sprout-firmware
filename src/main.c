@@ -191,6 +191,9 @@
 #if CONFIG_FEATURE_VIDEO_SESSION
 #include "video_session.h"
 #endif
+#if CONFIG_FEATURE_WEARABLE_LOCATION
+#include "wearable_location.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -674,6 +677,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_VIDEO_SESSION
     ESP_ERROR_CHECK(module_registry_add(video_session_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_WEARABLE_LOCATION
+    ESP_ERROR_CHECK(module_registry_add(wearable_location_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));
