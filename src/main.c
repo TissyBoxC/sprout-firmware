@@ -44,6 +44,19 @@
 #if CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER
 #include "content_package_manager.h"
 #endif
+
+#if CONFIG_FEATURE_FAVORITES
+#include "favorites.h"
+#endif
+
+#if CONFIG_FEATURE_PLAYBACK_HISTORY
+#include "playback_history.h"
+#endif
+
+#if CONFIG_FEATURE_THEME_PACKAGE
+#include "theme_package.h"
+#endif
+
 #if CONFIG_FEATURE_OTA_MANAGER
 #include "ota_manager.h"
 #endif
@@ -644,6 +657,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER
     ESP_ERROR_CHECK(module_registry_add(content_package_manager_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_FAVORITES
+    ESP_ERROR_CHECK(module_registry_add(favorites_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PLAYBACK_HISTORY
+    ESP_ERROR_CHECK(module_registry_add(playback_history_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_THEME_PACKAGE
+    ESP_ERROR_CHECK(module_registry_add(theme_package_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OTA_MANAGER
     ESP_ERROR_CHECK(module_registry_add(ota_manager_module_descriptor()));

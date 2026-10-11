@@ -166,6 +166,18 @@ if(CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER)
     list(APPEND app_requires "content_package_manager")
 endif()
 
+if(CONFIG_FEATURE_FAVORITES)
+    list(APPEND app_requires "favorites")
+endif()
+
+if(CONFIG_FEATURE_PLAYBACK_HISTORY)
+    list(APPEND app_requires "playback_history")
+endif()
+
+if(CONFIG_FEATURE_THEME_PACKAGE)
+    list(APPEND app_requires "theme_package")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()

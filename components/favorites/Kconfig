@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_FAVORITES
+    bool "Enable guardian content favourites"
+    default y
+    help
+        Keeps a bounded, newest-first index of guardian-bookmarked content
+        package ids persisted across restarts so the device can offer a
+        quick-play menu for favourites and stay in sync with the parent app.
+
+endmenu

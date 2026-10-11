@@ -126,6 +126,9 @@ function Test-OptionalModuleRemoval {
         foreach ($moduleName in @(
             'ui_text'
             'content_filter'
+            'theme_package'
+            'favorites'
+            'playback_history'
             'content_package_manager'
             'content_downloader'
             'content_library'

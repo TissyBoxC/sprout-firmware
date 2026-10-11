@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_THEME_PACKAGE
+    bool "Enable theme pack cache"
+    default y
+    help
+        Caches a bounded list of published theme packs (ordered collections of
+        content package ids) persisted across restarts so the device can offer
+        a thematic quick-play menu that matches the parent app.
+
+endmenu

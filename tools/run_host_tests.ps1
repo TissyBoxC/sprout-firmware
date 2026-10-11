@@ -364,6 +364,54 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$favoritesRoot = Join-Path $firmwareRoot 'components/favorites'
+Invoke-HostTest `
+    -Name 'favorites_core' `
+    -Sources @(
+        (Join-Path $favoritesRoot 'src/favorites_core.c')
+        (Join-Path $favoritesRoot 'test/test_favorites_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $favoritesRoot 'include')
+        (Join-Path $favoritesRoot 'src')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $favoritesRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$playbackHistoryRoot = Join-Path $firmwareRoot 'components/playback_history'
+Invoke-HostTest `
+    -Name 'playback_history_core' `
+    -Sources @(
+        (Join-Path $playbackHistoryRoot 'src/playback_history_core.c')
+        (Join-Path $playbackHistoryRoot 'test/test_playback_history_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackHistoryRoot 'include')
+        (Join-Path $playbackHistoryRoot 'src')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $playbackHistoryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$themePackageRoot = Join-Path $firmwareRoot 'components/theme_package'
+Invoke-HostTest `
+    -Name 'theme_package_core' `
+    -Sources @(
+        (Join-Path $themePackageRoot 'src/theme_package_core.c')
+        (Join-Path $themePackageRoot 'test/test_theme_package_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $themePackageRoot 'include')
+        (Join-Path $themePackageRoot 'src')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $themePackageRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

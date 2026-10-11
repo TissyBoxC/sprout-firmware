@@ -1,0 +1,11 @@
+menu "Sprout feature modules"
+
+config FEATURE_PLAYBACK_HISTORY
+    bool "Enable playback history and resume"
+    default y
+    help
+        Keeps a bounded, newest-first ring of playback records (completed or
+        interrupted) persisted across restarts so the device can offer
+        "继续播放" and report playback history to the platform.
+
+endmenu
