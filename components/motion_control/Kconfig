@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_MOTION_CONTROL
+    bool "Enable motor, servo and action control"
+    default n
+    help
+        Drives bounded motor and servo channels, plays walk, dance, tail and
+        gesture actions, and enforces the guardian's speed, runtime and
+        locomotion envelope. Every accepted command is clamped and an action
+        stops on timeout, explicit stop or a lost link, so a device without a
+        moving body never links the component.
+
+endmenu

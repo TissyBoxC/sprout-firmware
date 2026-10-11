@@ -849,6 +849,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$motionRoot = Join-Path $firmwareRoot 'components/motion_control'
+Invoke-HostTest `
+    -Name 'motion_core' `
+    -Sources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionRoot 'test/test_motion_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $motionRoot 'include')
+        (Join-Path $motionRoot 'src')
+        (Join-Path $motionRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'motion_runtime' `
+    -Sources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionRoot 'src/motion_control.c')
+        (Join-Path $motionRoot 'test/stubs/config_store.c')
+        (Join-Path $motionRoot 'test/test_motion_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $motionRoot 'include')
+        (Join-Path $motionRoot 'src')
+        (Join-Path $motionRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(
