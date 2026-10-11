@@ -811,6 +811,30 @@ static esp_err_t device_runtime_send_heartbeat(void) {
             item["duration_ms"] = event->duration_ms;
             item["firmware_version"] = event->firmware_version;
         }
+
+        // Crash signatures are redacted and bounded: a symbolic cause, fault
+        // kind, task name, a single program counter, frame count, and core id.
+        // Raw memory, registers, full backtraces, audio, images, credentials,
+        // and child data are never placed in this array.
+        JsonArray crash_events =
+            diagnostics_object["crash_events"].to<JsonArray>();
+        for (size_t index = 0;
+             index < diagnostics->crash_event_count;
+             ++index) {
+            const diagnostic_reporter_crash_event_t *event =
+                &diagnostics->crash_events[index];
+            JsonObject item = crash_events.add<JsonObject>();
+            item["event_id"] = event->event_id;
+            item["event_type"] = "crash";
+            item["sequence"] = event->sequence;
+            item["cause"] = event->cause;
+            item["fault_kind"] = event->fault_kind;
+            item["task_name"] = event->task_name;
+            item["program_counter"] = event->program_counter;
+            item["frame_count"] = event->frame_count;
+            item["core_id"] = event->core_id;
+            item["firmware_version"] = event->firmware_version;
+        }
     } else if (diagnostics_result != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(
             TAG,

@@ -53,16 +53,29 @@ wake detection, rejection, indicator changes, and factory-reset transitions
 use zero. Wake confidence is encoded in the stable detail code instead of
 being misrepresented as a duration.
 
+Crash signatures are recorded from the reset reason at startup. A panic,
+task/interrupt/generic watchdog, brownout, power glitch, or CPU lockup records
+one bounded, redacted crash record; an expected power-on, external, software,
+or deep-sleep reset records nothing. Each record carries only a symbolic
+`cause`, `fault_kind`, a bounded `task_name`, a single `program_counter`, a
+`frame_count`, and a `core_id`. Raw memory, registers, full backtraces, audio,
+images, credentials, and child data are never stored or transmitted, and the
+platform rejects any cause, fault kind, or task name outside the shared
+contract. Crash records share the diagnostic sequence space so the platform's
+`sequence <= newest_sequence` contract holds and the heartbeat acknowledges
+them together with the other diagnostic records.
+
 The validator rejects unterminated fixed-size strings, invalid counts,
 over-capacity records, duplicate or regressing sequences, and invalid v4
 interaction fields before an old blob can be used. This keeps boot, failure,
-recovery, and interaction history intact across an interrupted or incompatible
-write.
+recovery, interaction, and crash history intact across an interrupted or
+incompatible write. A v5 layout is migrated to v6 by carrying every existing
+record forward unchanged and leaving the crash category empty.
 
-`test/test_diagnostic_reporter_state.cpp` covers v3/v4 migration, v5
-validation, capacity boundaries, duplicate and out-of-order sequences,
-unterminated strings, ACK retention, and the wake `duration_ms == 0`
-contract.
+`test/test_diagnostic_reporter_state.cpp` covers v3, v4, and v5 migration,
+crash cause/fault-kind contract validation, capacity boundaries, duplicate and
+out-of-order sequences, unterminated strings, ACK retention, and the wake
+`duration_ms == 0` contract.
 
 `CONFIG_FEATURE_DIAGNOSTIC_REPORTER` controls source inclusion. Removing this
 component disables diagnostics without changing the base heartbeat contract.

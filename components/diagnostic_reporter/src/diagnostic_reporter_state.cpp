@@ -6,7 +6,8 @@
 #define DIAGNOSTIC_REPORTER_TOTAL_EVENT_CAPACITY \
     (DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY + \
      DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY + \
-     DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY + 1u)
+     DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY + \
+     DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY + 1u)
 
 typedef struct {
     uint32_t values[DIAGNOSTIC_REPORTER_TOTAL_EVENT_CAPACITY];
@@ -143,6 +144,83 @@ static bool diagnostic_reporter_interaction_event_is_valid(
         diagnostic_reporter_detail_code_is_valid(event->detail_code);
 }
 
+static bool diagnostic_reporter_crash_cause_is_valid(const char *cause) {
+    if (cause == NULL) {
+        return false;
+    }
+    return strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_PANIC) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_WATCHDOG) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_TASK_WATCHDOG) == 0 ||
+        strcmp(
+            cause,
+            DIAGNOSTIC_REPORTER_CRASH_CAUSE_INTERRUPT_WATCHDOG
+        ) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_BROWNOUT) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_STACK_OVERFLOW) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_HEAP_CORRUPTION) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_ASSERT) == 0 ||
+        strcmp(cause, DIAGNOSTIC_REPORTER_CRASH_CAUSE_UNKNOWN) == 0;
+}
+
+static bool diagnostic_reporter_crash_fault_kind_is_valid(
+    const char *fault_kind
+) {
+    if (fault_kind == NULL) {
+        return false;
+    }
+    return strcmp(
+            fault_kind,
+            DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_EXCEPTION
+        ) == 0 ||
+        strcmp(
+            fault_kind,
+            DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_WATCHDOG
+        ) == 0 ||
+        strcmp(
+            fault_kind,
+            DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_POWER_LOSS
+        ) == 0 ||
+        strcmp(
+            fault_kind,
+            DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_MEMORY
+        ) == 0 ||
+        strcmp(
+            fault_kind,
+            DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_SOFTWARE
+        ) == 0;
+}
+
+static bool diagnostic_reporter_crash_event_is_valid(
+    const diagnostic_reporter_crash_state_t *event
+) {
+    return event->sequence != 0 &&
+        event->frame_count <= DIAGNOSTIC_REPORTER_CRASH_FRAME_COUNT_MAX &&
+        event->core_id <= DIAGNOSTIC_REPORTER_CRASH_CORE_ID_MAX &&
+        diagnostic_reporter_text_is_terminated(
+            event->event_id,
+            sizeof(event->event_id)
+        ) &&
+        diagnostic_reporter_text_is_terminated(
+            event->cause,
+            sizeof(event->cause)
+        ) &&
+        diagnostic_reporter_text_is_terminated(
+            event->fault_kind,
+            sizeof(event->fault_kind)
+        ) &&
+        diagnostic_reporter_text_is_terminated(
+            event->task_name,
+            sizeof(event->task_name)
+        ) &&
+        diagnostic_reporter_text_is_terminated(
+            event->firmware_version,
+            sizeof(event->firmware_version)
+        ) &&
+        diagnostic_reporter_crash_cause_is_valid(event->cause) &&
+        diagnostic_reporter_crash_fault_kind_is_valid(event->fault_kind) &&
+        diagnostic_reporter_detail_code_is_valid(event->task_name);
+}
+
 static bool diagnostic_reporter_sequence_set_add(
     diagnostic_reporter_sequence_set_t *set,
     uint32_t sequence,
@@ -253,6 +331,27 @@ static bool diagnostic_reporter_interaction_events_are_valid(
     return true;
 }
 
+static bool diagnostic_reporter_crash_events_are_valid(
+    size_t count,
+    const diagnostic_reporter_crash_state_t *events,
+    diagnostic_reporter_sequence_set_t *set
+) {
+    uint32_t previous = 0;
+    for (size_t index = 0; index < count; ++index) {
+        const diagnostic_reporter_crash_state_t *event = &events[index];
+        if (!diagnostic_reporter_crash_event_is_valid(event) ||
+            !diagnostic_reporter_sequence_set_add(
+                set,
+                event->sequence,
+                previous
+            )) {
+            return false;
+        }
+        previous = event->sequence;
+    }
+    return true;
+}
+
 bool diagnostic_reporter_text_is_terminated(
     const char *value,
     size_t buffer_size
@@ -346,11 +445,11 @@ bool diagnostic_reporter_v4_is_valid(
 }
 
 bool diagnostic_reporter_v5_is_valid(
-    const diagnostic_reporter_state_t *state
+    const diagnostic_reporter_state_v5_t *state
 ) {
     if (state == NULL ||
         state->magic != DIAGNOSTIC_REPORTER_STATE_MAGIC ||
-        state->version != DIAGNOSTIC_REPORTER_STATE_VERSION ||
+        state->version != DIAGNOSTIC_REPORTER_STATE_VERSION_V5 ||
         state->boot_event_count > DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY ||
         state->recovery_event_count >
             DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY ||
@@ -379,6 +478,54 @@ bool diagnostic_reporter_v5_is_valid(
         diagnostic_reporter_interaction_events_are_valid(
             state->interaction_event_count,
             state->interaction_events,
+            &set
+        ) &&
+        diagnostic_reporter_next_sequence_is_valid(
+            state->next_sequence,
+            &set
+        );
+}
+
+bool diagnostic_reporter_v6_is_valid(
+    const diagnostic_reporter_state_t *state
+) {
+    if (state == NULL ||
+        state->magic != DIAGNOSTIC_REPORTER_STATE_MAGIC ||
+        state->version != DIAGNOSTIC_REPORTER_STATE_VERSION ||
+        state->boot_event_count > DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY ||
+        state->recovery_event_count >
+            DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY ||
+        state->interaction_event_count >
+            DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY ||
+        state->crash_event_count > DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY ||
+        state->source_boot_count > state->boot_count ||
+        !diagnostic_reporter_failure_is_valid(&state->failure)) {
+        return false;
+    }
+
+    diagnostic_reporter_sequence_set_t set = {};
+    return diagnostic_reporter_boot_events_are_valid(
+            state->boot_event_count,
+            state->boot_events,
+            &set
+        ) &&
+        diagnostic_reporter_failure_sequence_is_valid(
+            &state->failure,
+            &set
+        ) &&
+        diagnostic_reporter_recovery_events_are_valid(
+            state->recovery_event_count,
+            state->recovery_events,
+            &set
+        ) &&
+        diagnostic_reporter_interaction_events_are_valid(
+            state->interaction_event_count,
+            state->interaction_events,
+            &set
+        ) &&
+        diagnostic_reporter_crash_events_are_valid(
+            state->crash_event_count,
+            state->crash_events,
             &set
         ) &&
         diagnostic_reporter_next_sequence_is_valid(
@@ -425,6 +572,16 @@ bool diagnostic_reporter_acknowledge_state(
     }
     state->interaction_event_count = retained_interaction_count;
 
+    size_t retained_crash_count = 0;
+    for (size_t index = 0; index < state->crash_event_count; ++index) {
+        const diagnostic_reporter_crash_state_t *event =
+            &state->crash_events[index];
+        if (event->sequence > through_sequence) {
+            state->crash_events[retained_crash_count++] = *event;
+        }
+    }
+    state->crash_event_count = (uint16_t)retained_crash_count;
+
     if (state->failure.pending &&
         state->failure.sequence <= through_sequence) {
         // Keep the delivered identity so the same source transition is not
@@ -470,6 +627,45 @@ void diagnostic_reporter_migrate_v3(
 void diagnostic_reporter_migrate_v4(
     diagnostic_reporter_state_t *destination,
     const diagnostic_reporter_state_v4_t *source
+) {
+    if (destination == NULL || source == NULL) {
+        return;
+    }
+    memset(destination, 0, sizeof(*destination));
+    destination->magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
+    destination->version = DIAGNOSTIC_REPORTER_STATE_VERSION;
+    destination->boot_event_count = source->boot_event_count;
+    destination->next_sequence = source->next_sequence;
+    destination->boot_count = source->boot_count;
+    destination->dropped_boot_events = source->dropped_boot_events;
+    destination->source_boot_count = source->source_boot_count;
+    destination->last_failure_transition_count =
+        source->last_failure_transition_count;
+    destination->last_recovery_transition_count =
+        source->last_recovery_transition_count;
+    destination->interaction_event_count = source->interaction_event_count;
+    destination->failure = source->failure;
+    destination->recovery_event_count = source->recovery_event_count;
+    memcpy(
+        destination->recovery_events,
+        source->recovery_events,
+        sizeof(destination->recovery_events)
+    );
+    memcpy(
+        destination->interaction_events,
+        source->interaction_events,
+        sizeof(destination->interaction_events)
+    );
+    memcpy(
+        destination->boot_events,
+        source->boot_events,
+        sizeof(destination->boot_events)
+    );
+}
+
+void diagnostic_reporter_migrate_v5(
+    diagnostic_reporter_state_t *destination,
+    const diagnostic_reporter_state_v5_t *source
 ) {
     if (destination == NULL || source == NULL) {
         return;

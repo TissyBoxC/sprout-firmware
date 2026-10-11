@@ -7,7 +7,8 @@
 #include "diagnostic_reporter.h"
 
 #define DIAGNOSTIC_REPORTER_STATE_MAGIC 0x53444731u
-#define DIAGNOSTIC_REPORTER_STATE_VERSION 5u
+#define DIAGNOSTIC_REPORTER_STATE_VERSION 6u
+#define DIAGNOSTIC_REPORTER_STATE_VERSION_V5 5u
 #define DIAGNOSTIC_REPORTER_STATE_VERSION_V4 4u
 #define DIAGNOSTIC_REPORTER_STATE_VERSION_V3 3u
 #define DIAGNOSTIC_REPORTER_MAX_STATE_SIZE 8192u
@@ -38,6 +39,18 @@ typedef struct {
     char detail_code[DIAGNOSTIC_REPORTER_DETAIL_CODE_SIZE];
     char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
 } diagnostic_reporter_interaction_state_t;
+
+typedef struct {
+    uint32_t sequence;
+    uint32_t program_counter;
+    uint32_t frame_count;
+    uint32_t core_id;
+    char event_id[DIAGNOSTIC_REPORTER_EVENT_ID_SIZE];
+    char cause[DIAGNOSTIC_REPORTER_CRASH_CAUSE_SIZE];
+    char fault_kind[DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_SIZE];
+    char task_name[DIAGNOSTIC_REPORTER_CRASH_TASK_NAME_SIZE];
+    char firmware_version[DIAGNOSTIC_REPORTER_FIRMWARE_VERSION_SIZE];
+} diagnostic_reporter_crash_state_t;
 
 typedef struct {
     uint32_t magic;
@@ -97,6 +110,30 @@ typedef struct {
         interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
     diagnostic_reporter_boot_event_t
         boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
+} diagnostic_reporter_state_v5_t;
+
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t boot_event_count;
+    uint32_t next_sequence;
+    uint32_t boot_count;
+    uint32_t dropped_boot_events;
+    uint32_t source_boot_count;
+    uint32_t last_failure_transition_count;
+    uint32_t last_recovery_transition_count;
+    uint16_t interaction_event_count;
+    diagnostic_reporter_failure_state_t failure;
+    uint16_t recovery_event_count;
+    diagnostic_reporter_recovery_state_t
+        recovery_events[DIAGNOSTIC_REPORTER_RECOVERY_EVENT_CAPACITY];
+    diagnostic_reporter_interaction_state_t
+        interaction_events[DIAGNOSTIC_REPORTER_INTERACTION_EVENT_CAPACITY];
+    uint16_t crash_event_count;
+    diagnostic_reporter_crash_state_t
+        crash_events[DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY];
+    diagnostic_reporter_boot_event_t
+        boot_events[DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY];
 } diagnostic_reporter_state_t;
 
 bool diagnostic_reporter_text_is_terminated(
@@ -110,6 +147,9 @@ bool diagnostic_reporter_v4_is_valid(
     const diagnostic_reporter_state_v4_t *state
 );
 bool diagnostic_reporter_v5_is_valid(
+    const diagnostic_reporter_state_v5_t *state
+);
+bool diagnostic_reporter_v6_is_valid(
     const diagnostic_reporter_state_t *state
 );
 bool diagnostic_reporter_acknowledge_state(
@@ -123,4 +163,8 @@ void diagnostic_reporter_migrate_v3(
 void diagnostic_reporter_migrate_v4(
     diagnostic_reporter_state_t *destination,
     const diagnostic_reporter_state_v4_t *source
+);
+void diagnostic_reporter_migrate_v5(
+    diagnostic_reporter_state_t *destination,
+    const diagnostic_reporter_state_v5_t *source
 );

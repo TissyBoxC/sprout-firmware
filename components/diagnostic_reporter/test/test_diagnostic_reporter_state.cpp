@@ -66,6 +66,20 @@ diagnostic_reporter_interaction_state_t make_interaction(
     return event;
 }
 
+diagnostic_reporter_crash_state_t make_crash(uint32_t sequence) {
+    diagnostic_reporter_crash_state_t event = {};
+    event.sequence = sequence;
+    event.program_counter = 0x400d1234;
+    event.frame_count = 12;
+    event.core_id = 0;
+    copy_text(event.event_id, sizeof(event.event_id), "crash_event");
+    copy_text(event.cause, sizeof(event.cause), "task_watchdog");
+    copy_text(event.fault_kind, sizeof(event.fault_kind), "watchdog");
+    copy_text(event.task_name, sizeof(event.task_name), "network_manager");
+    copy_text(event.firmware_version, sizeof(event.firmware_version), "0.1.0");
+    return event;
+}
+
 diagnostic_reporter_state_v3_t make_v3_state() {
     diagnostic_reporter_state_v3_t state = {};
     state.magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
@@ -104,6 +118,27 @@ diagnostic_reporter_state_v4_t make_v4_state() {
     return state;
 }
 
+diagnostic_reporter_state_v5_t make_v5_state() {
+    diagnostic_reporter_state_v5_t state = {};
+    state.magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
+    state.version = DIAGNOSTIC_REPORTER_STATE_VERSION_V5;
+    state.next_sequence = 5;
+    state.boot_count = 2;
+    state.source_boot_count = 2;
+    state.boot_event_count = 1;
+    state.boot_events[0] = make_boot_event(1);
+    state.failure = make_failure(2);
+    state.recovery_event_count = 1;
+    state.recovery_events[0] = make_recovery(3);
+    state.interaction_event_count = 1;
+    state.interaction_events[0] = make_interaction(
+        4,
+        "wake_detected",
+        "wake_1_confidence_0700"
+    );
+    return state;
+}
+
 void test_v3_migration_preserves_history() {
     const diagnostic_reporter_state_v3_t source = make_v3_state();
     diagnostic_reporter_state_t destination = {};
@@ -114,7 +149,7 @@ void test_v3_migration_preserves_history() {
         "v3 fixture must be valid"
     );
     check(
-        diagnostic_reporter_v5_is_valid(&destination),
+        diagnostic_reporter_v6_is_valid(&destination),
         "migrated v3 fixture must be valid"
     );
     check(destination.boot_count == source.boot_count, "v3 boot count");
@@ -148,7 +183,7 @@ void test_v4_migration_preserves_interaction() {
         "v4 fixture must be valid"
     );
     check(
-        diagnostic_reporter_v5_is_valid(&destination),
+        diagnostic_reporter_v6_is_valid(&destination),
         "migrated v4 fixture must be valid"
     );
     check(
@@ -183,20 +218,20 @@ void test_wake_interaction_uses_zero_duration_and_ascii_detail() {
     state.interaction_events[0].duration_ms = 0;
 
     check(
-        diagnostic_reporter_v5_is_valid(&state),
+        diagnostic_reporter_v6_is_valid(&state),
         "wake_detected with duration zero must be valid"
     );
 
     state.interaction_events[0].duration_ms = 1;
     check(
-        diagnostic_reporter_v5_is_valid(&state),
+        diagnostic_reporter_v6_is_valid(&state),
         "non-zero real duration must remain valid for timed interactions"
     );
 
     state.interaction_events[0].detail_code[0] = '\xE9';
     state.interaction_events[0].detail_code[1] = '\0';
     check(
-        !diagnostic_reporter_v5_is_valid(&state),
+        !diagnostic_reporter_v6_is_valid(&state),
         "non-ASCII detail code must be rejected"
     );
 }
@@ -213,13 +248,13 @@ void test_capacity_boundaries_are_bounded() {
         state.boot_events[index] = make_boot_event((uint32_t)index + 1);
     }
     check(
-        diagnostic_reporter_v5_is_valid(&state),
+        diagnostic_reporter_v6_is_valid(&state),
         "full boot capacity must be valid"
     );
 
     state.boot_event_count = DIAGNOSTIC_REPORTER_BOOT_EVENT_CAPACITY + 1;
     check(
-        !diagnostic_reporter_v5_is_valid(&state),
+        !diagnostic_reporter_v6_is_valid(&state),
         "over-capacity boot count must be rejected"
     );
 }
@@ -242,20 +277,20 @@ void test_sequences_must_be_strict_and_unique() {
         "listening"
     );
     check(
-        diagnostic_reporter_v5_is_valid(&state),
+        diagnostic_reporter_v6_is_valid(&state),
         "interleaved category sequences must be valid"
     );
 
     state.interaction_events[0].sequence = 3;
     check(
-        !diagnostic_reporter_v5_is_valid(&state),
+        !diagnostic_reporter_v6_is_valid(&state),
         "duplicate sequence across categories must be rejected"
     );
 
     state.interaction_events[0].sequence = 2;
     state.recovery_events[0].sequence = 1;
     check(
-        !diagnostic_reporter_v5_is_valid(&state),
+        !diagnostic_reporter_v6_is_valid(&state),
         "recovery sequence must not go backwards"
     );
 }
@@ -315,7 +350,7 @@ void test_ack_keeps_newer_records() {
         "ack must retain newer interaction records"
     );
     check(
-        diagnostic_reporter_v5_is_valid(&state),
+        diagnostic_reporter_v6_is_valid(&state),
         "ack-compacted state must remain valid"
     );
 
@@ -330,11 +365,135 @@ void test_ack_keeps_newer_records() {
     );
 }
 
+void test_v5_migration_preserves_history() {
+    const diagnostic_reporter_state_v5_t source = make_v5_state();
+    diagnostic_reporter_state_t destination = {};
+    diagnostic_reporter_migrate_v5(&destination, &source);
+
+    check(
+        diagnostic_reporter_v5_is_valid(&source),
+        "v5 fixture must be valid"
+    );
+    check(
+        diagnostic_reporter_v6_is_valid(&destination),
+        "migrated v5 fixture must be valid"
+    );
+    check(
+        destination.interaction_event_count == 1 &&
+            destination.interaction_events[0].sequence == 4,
+        "v5 interaction history"
+    );
+    check(
+        destination.crash_event_count == 0,
+        "v5 has no crash history"
+    );
+}
+
+void test_crash_event_round_trip() {
+    diagnostic_reporter_state_t state = {};
+    state.magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
+    state.version = DIAGNOSTIC_REPORTER_STATE_VERSION;
+    state.next_sequence = 3;
+    state.boot_count = 1;
+    state.source_boot_count = 1;
+    state.boot_event_count = 1;
+    state.boot_events[0] = make_boot_event(1);
+    state.crash_event_count = 1;
+    state.crash_events[0] = make_crash(2);
+
+    check(
+        diagnostic_reporter_v6_is_valid(&state),
+        "canonical crash record must be valid"
+    );
+
+    state.crash_events[0].cause[0] = '\0';
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "empty crash cause must be rejected"
+    );
+
+    state.crash_events[0] = make_crash(2);
+    copy_text(
+        state.crash_events[0].cause,
+        sizeof(state.crash_events[0].cause),
+        "kernel_segfault"
+    );
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "unknown crash cause must be rejected"
+    );
+
+    state.crash_events[0] = make_crash(2);
+    copy_text(
+        state.crash_events[0].fault_kind,
+        sizeof(state.crash_events[0].fault_kind),
+        "cosmic_ray"
+    );
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "unknown crash fault kind must be rejected"
+    );
+
+    state.crash_events[0] = make_crash(2);
+    state.crash_events[0].frame_count =
+        DIAGNOSTIC_REPORTER_CRASH_FRAME_COUNT_MAX + 1;
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "over-limit crash frame count must be rejected"
+    );
+
+    state.crash_events[0] = make_crash(2);
+    state.crash_events[0].core_id = DIAGNOSTIC_REPORTER_CRASH_CORE_ID_MAX + 1;
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "over-limit crash core id must be rejected"
+    );
+
+    state.crash_events[0] = make_crash(2);
+    state.crash_events[0].task_name[0] = '\xE9';
+    state.crash_events[0].task_name[1] = '\0';
+    check(
+        !diagnostic_reporter_v6_is_valid(&state),
+        "non-ASCII crash task name must be rejected"
+    );
+}
+
+void test_ack_keeps_newer_crash_records() {
+    diagnostic_reporter_state_t state = {};
+    state.magic = DIAGNOSTIC_REPORTER_STATE_MAGIC;
+    state.version = DIAGNOSTIC_REPORTER_STATE_VERSION;
+    state.next_sequence = 6;
+    state.boot_count = 1;
+    state.source_boot_count = 1;
+    state.boot_event_count = 1;
+    state.boot_events[0] = make_boot_event(1);
+    state.crash_event_count = 2;
+    state.crash_events[0] = make_crash(3);
+    state.crash_events[1] = make_crash(5);
+
+    check(
+        diagnostic_reporter_acknowledge_state(&state, 3),
+        "validated ACK compaction must succeed"
+    );
+    check(
+        state.crash_event_count == 1 &&
+            state.crash_events[0].sequence == 5,
+        "ack must retain newer crash records"
+    );
+    check(
+        diagnostic_reporter_v6_is_valid(&state),
+        "ack-compacted crash state must remain valid"
+    );
+}
+
 }  // namespace
 
 int main() {
     test_v3_migration_preserves_history();
     test_v4_migration_preserves_interaction();
+    test_v5_migration_preserves_history();
+    test_crash_event_round_trip();
+    test_ack_keeps_newer_crash_records();
     test_wake_interaction_uses_zero_duration_and_ascii_detail();
     test_capacity_boundaries_are_bounded();
     test_sequences_must_be_strict_and_unique();

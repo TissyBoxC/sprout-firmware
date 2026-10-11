@@ -37,6 +37,11 @@ static_assert(
         DIAGNOSTIC_REPORTER_MAX_STATE_SIZE,
     "v4 diagnostic state must remain a bounded NVS blob"
 );
+static_assert(
+    sizeof(diagnostic_reporter_state_v5_t) <=
+        DIAGNOSTIC_REPORTER_MAX_STATE_SIZE,
+    "v5 diagnostic state must remain a bounded NVS blob"
+);
 
 static const char *const TAG = "diagnostic_reporter";
 static bool diagnostic_reporter_ready;
@@ -118,6 +123,46 @@ static const char *diagnostic_reporter_reset_reason(void) {
     }
 }
 
+// Map the previous reset reason to a bounded crash signature. Expected
+// restarts (power-on, external, software, deep sleep) return false and record
+// nothing; panic, watchdogs, brownout, power glitch, and CPU lockup record a
+// redacted crash. The symbolic cause and fault kind stay inside the same set
+// the platform validator accepts.
+static bool diagnostic_reporter_crash_from_reset(
+    const char **cause,
+    const char **fault_kind
+) {
+    switch (esp_reset_reason()) {
+        case ESP_RST_PANIC:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_PANIC;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_EXCEPTION;
+            return true;
+        case ESP_RST_INT_WDT:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_INTERRUPT_WATCHDOG;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_WATCHDOG;
+            return true;
+        case ESP_RST_TASK_WDT:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_TASK_WATCHDOG;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_WATCHDOG;
+            return true;
+        case ESP_RST_WDT:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_WATCHDOG;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_WATCHDOG;
+            return true;
+        case ESP_RST_BROWNOUT:
+        case ESP_RST_PWR_GLITCH:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_BROWNOUT;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_POWER_LOSS;
+            return true;
+        case ESP_RST_CPU_LOCKUP:
+            *cause = DIAGNOSTIC_REPORTER_CRASH_CAUSE_STACK_OVERFLOW;
+            *fault_kind = DIAGNOSTIC_REPORTER_CRASH_FAULT_KIND_MEMORY;
+            return true;
+        default:
+            return false;
+    }
+}
+
 static uint32_t diagnostic_reporter_next_sequence_locked(void) {
     uint32_t sequence = diagnostic_reporter_state.next_sequence;
     if (sequence == 0 || sequence == UINT32_MAX) {
@@ -193,11 +238,38 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
     if (state_size == sizeof(diagnostic_reporter_state_t) &&
         version == DIAGNOSTIC_REPORTER_STATE_VERSION) {
         memcpy(&diagnostic_reporter_state, raw_state, state_size);
-        if (!diagnostic_reporter_v5_is_valid(&diagnostic_reporter_state)) {
+        if (!diagnostic_reporter_v6_is_valid(&diagnostic_reporter_state)) {
             ESP_LOGW(TAG, "stored diagnostic state is invalid; resetting");
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
         }
+        return ESP_OK;
+    }
+
+    if (state_size == sizeof(diagnostic_reporter_state_v5_t) &&
+        version == DIAGNOSTIC_REPORTER_STATE_VERSION_V5) {
+        diagnostic_reporter_state_v5_t old_state = {};
+        memcpy(&old_state, raw_state, sizeof(old_state));
+        if (!diagnostic_reporter_v5_is_valid(&old_state)) {
+            ESP_LOGW(TAG, "stored v5 diagnostic state is invalid; resetting");
+            diagnostic_reporter_clear_state_locked();
+            return ESP_ERR_INVALID_STATE;
+        }
+        diagnostic_reporter_state_t migrated = {};
+        diagnostic_reporter_migrate_v5(&migrated, &old_state);
+        if (!diagnostic_reporter_v6_is_valid(&migrated)) {
+            ESP_LOGW(TAG, "migrated v5 diagnostic state is invalid; resetting");
+            diagnostic_reporter_clear_state_locked();
+            return ESP_ERR_INVALID_STATE;
+        }
+        diagnostic_reporter_state = migrated;
+        const esp_err_t save_result =
+            diagnostic_reporter_save_state_locked();
+        if (save_result != ESP_OK) {
+            diagnostic_reporter_clear_state_locked();
+            return save_result;
+        }
+        ESP_LOGI(TAG, "migrated diagnostic state from v5 to v6");
         return ESP_OK;
     }
 
@@ -212,7 +284,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
         }
         diagnostic_reporter_state_t migrated = {};
         diagnostic_reporter_migrate_v3(&migrated, &old_state);
-        if (!diagnostic_reporter_v5_is_valid(&migrated)) {
+        if (!diagnostic_reporter_v6_is_valid(&migrated)) {
             ESP_LOGW(TAG, "migrated v3 diagnostic state is invalid; resetting");
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
@@ -224,7 +296,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
             diagnostic_reporter_clear_state_locked();
             return save_result;
         }
-        ESP_LOGI(TAG, "migrated diagnostic state from v3 to v5");
+        ESP_LOGI(TAG, "migrated diagnostic state from v3 to v6");
         return ESP_OK;
     }
 
@@ -239,7 +311,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
         }
         diagnostic_reporter_state_t migrated = {};
         diagnostic_reporter_migrate_v4(&migrated, &old_state);
-        if (!diagnostic_reporter_v5_is_valid(&migrated)) {
+        if (!diagnostic_reporter_v6_is_valid(&migrated)) {
             ESP_LOGW(TAG, "migrated v4 diagnostic state is invalid; resetting");
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
@@ -251,7 +323,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
             diagnostic_reporter_clear_state_locked();
             return save_result;
         }
-        ESP_LOGI(TAG, "migrated diagnostic state from v4 to v5");
+        ESP_LOGI(TAG, "migrated diagnostic state from v4 to v6");
         return ESP_OK;
     }
 
@@ -362,6 +434,23 @@ static void diagnostic_reporter_append_interaction_event_locked(
         [diagnostic_reporter_state.interaction_event_count++] = *event;
 }
 
+static void diagnostic_reporter_append_crash_event_locked(
+    const diagnostic_reporter_crash_state_t *event
+) {
+    if (diagnostic_reporter_state.crash_event_count ==
+        DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY) {
+        memmove(
+            &diagnostic_reporter_state.crash_events[0],
+            &diagnostic_reporter_state.crash_events[1],
+            sizeof(diagnostic_reporter_state.crash_events[0]) *
+                (DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY - 1)
+        );
+        --diagnostic_reporter_state.crash_event_count;
+    }
+    diagnostic_reporter_state.crash_events
+        [diagnostic_reporter_state.crash_event_count++] = *event;
+}
+
 static uint32_t diagnostic_reporter_newest_sequence_locked(void) {
     uint32_t newest = 0;
     for (size_t index = 0;
@@ -389,6 +478,15 @@ static uint32_t diagnostic_reporter_newest_sequence_locked(void) {
          ++index) {
         const uint32_t sequence =
             diagnostic_reporter_state.interaction_events[index].sequence;
+        if (sequence > newest) {
+            newest = sequence;
+        }
+    }
+    for (size_t index = 0;
+         index < diagnostic_reporter_state.crash_event_count;
+         ++index) {
+        const uint32_t sequence =
+            diagnostic_reporter_state.crash_events[index].sequence;
         if (sequence > newest) {
             newest = sequence;
         }
@@ -514,7 +612,7 @@ esp_err_t diagnostic_reporter_record_interaction(
     // event types, detail codes, or field combinations that a restored device
     // would reject later. The candidate append is rolled back if invalid.
     diagnostic_reporter_append_interaction_event_locked(&event);
-    if (!diagnostic_reporter_v5_is_valid(&diagnostic_reporter_state)) {
+    if (!diagnostic_reporter_v6_is_valid(&diagnostic_reporter_state)) {
         diagnostic_reporter_state = previous_state;
         diagnostic_reporter_unlock();
         return ESP_ERR_INVALID_ARG;
@@ -522,6 +620,80 @@ esp_err_t diagnostic_reporter_record_interaction(
     diagnostic_reporter_state = previous_state;
 
     diagnostic_reporter_append_interaction_event_locked(&event);
+    const esp_err_t result = diagnostic_reporter_save_state_locked();
+    if (result != ESP_OK) {
+        diagnostic_reporter_state = previous_state;
+    }
+    diagnostic_reporter_unlock();
+    return result;
+}
+
+esp_err_t diagnostic_reporter_record_crash(
+    const char *cause,
+    const char *fault_kind,
+    const char *task_name,
+    uint32_t program_counter,
+    uint32_t frame_count,
+    uint32_t core_id
+) {
+    if (!diagnostic_reporter_ready ||
+        cause == NULL ||
+        cause[0] == '\0' ||
+        fault_kind == NULL ||
+        fault_kind[0] == '\0' ||
+        task_name == NULL ||
+        task_name[0] == '\0' ||
+        frame_count > DIAGNOSTIC_REPORTER_CRASH_FRAME_COUNT_MAX ||
+        core_id > DIAGNOSTIC_REPORTER_CRASH_CORE_ID_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!diagnostic_reporter_lock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    diagnostic_reporter_crash_state_t event = {};
+    const diagnostic_reporter_state_t previous_state =
+        diagnostic_reporter_state;
+
+    event.sequence = diagnostic_reporter_next_sequence_locked();
+    event.program_counter = program_counter;
+    event.frame_count = frame_count;
+    event.core_id = core_id;
+    snprintf(
+        event.event_id,
+        sizeof(event.event_id),
+        "crash_%08lx",
+        (unsigned long)event.sequence
+    );
+    diagnostic_reporter_copy_text(event.cause, sizeof(event.cause), cause);
+    diagnostic_reporter_copy_text(
+        event.fault_kind,
+        sizeof(event.fault_kind),
+        fault_kind
+    );
+    diagnostic_reporter_copy_text(
+        event.task_name,
+        sizeof(event.task_name),
+        task_name
+    );
+    const version_info_t version = version_info_get();
+    diagnostic_reporter_copy_text(
+        event.firmware_version,
+        sizeof(event.firmware_version),
+        version.firmware_version
+    );
+
+    // Reuse the persisted-state validator so a live producer cannot record a
+    // crash category or task name that a restored device would later reject.
+    diagnostic_reporter_append_crash_event_locked(&event);
+    if (!diagnostic_reporter_v6_is_valid(&diagnostic_reporter_state)) {
+        diagnostic_reporter_state = previous_state;
+        diagnostic_reporter_unlock();
+        return ESP_ERR_INVALID_ARG;
+    }
+    diagnostic_reporter_state = previous_state;
+
+    diagnostic_reporter_append_crash_event_locked(&event);
     const esp_err_t result = diagnostic_reporter_save_state_locked();
     if (result != ESP_OK) {
         diagnostic_reporter_state = previous_state;
@@ -679,6 +851,50 @@ esp_err_t diagnostic_reporter_init(void) {
         );
         diagnostic_reporter_append_boot_event_locked(&event);
         result = diagnostic_reporter_save_state_locked();
+
+        if (result == ESP_OK) {
+            const char *crash_cause = NULL;
+            const char *crash_fault_kind = NULL;
+            if (diagnostic_reporter_crash_from_reset(
+                    &crash_cause,
+                    &crash_fault_kind
+                )) {
+                diagnostic_reporter_crash_state_t crash = {};
+                crash.sequence =
+                    diagnostic_reporter_next_sequence_locked();
+                crash.program_counter = 0;
+                crash.frame_count = 0;
+                crash.core_id = 0;
+                snprintf(
+                    crash.event_id,
+                    sizeof(crash.event_id),
+                    "crash_%08lx",
+                    (unsigned long)crash.sequence
+                );
+                diagnostic_reporter_copy_text(
+                    crash.cause,
+                    sizeof(crash.cause),
+                    crash_cause
+                );
+                diagnostic_reporter_copy_text(
+                    crash.fault_kind,
+                    sizeof(crash.fault_kind),
+                    crash_fault_kind
+                );
+                diagnostic_reporter_copy_text(
+                    crash.task_name,
+                    sizeof(crash.task_name),
+                    DIAGNOSTIC_REPORTER_CRASH_CAUSE_UNKNOWN
+                );
+                diagnostic_reporter_copy_text(
+                    crash.firmware_version,
+                    sizeof(crash.firmware_version),
+                    version.firmware_version
+                );
+                diagnostic_reporter_append_crash_event_locked(&crash);
+                result = diagnostic_reporter_save_state_locked();
+            }
+        }
     }
 
     diagnostic_reporter_unlock();
@@ -771,6 +987,44 @@ esp_err_t diagnostic_reporter_get_snapshot(
                 sizeof(
                     snapshot->interaction_events[index].firmware_version
                 ),
+                event->firmware_version
+            );
+        }
+        snapshot->crash_event_count =
+            diagnostic_reporter_state.crash_event_count;
+        for (size_t index = 0;
+             index < diagnostic_reporter_state.crash_event_count;
+             ++index) {
+            const diagnostic_reporter_crash_state_t *event =
+                &diagnostic_reporter_state.crash_events[index];
+            snapshot->crash_events[index].sequence = event->sequence;
+            snapshot->crash_events[index].program_counter =
+                event->program_counter;
+            snapshot->crash_events[index].frame_count = event->frame_count;
+            snapshot->crash_events[index].core_id = event->core_id;
+            diagnostic_reporter_copy_text(
+                snapshot->crash_events[index].event_id,
+                sizeof(snapshot->crash_events[index].event_id),
+                event->event_id
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->crash_events[index].cause,
+                sizeof(snapshot->crash_events[index].cause),
+                event->cause
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->crash_events[index].fault_kind,
+                sizeof(snapshot->crash_events[index].fault_kind),
+                event->fault_kind
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->crash_events[index].task_name,
+                sizeof(snapshot->crash_events[index].task_name),
+                event->task_name
+            );
+            diagnostic_reporter_copy_text(
+                snapshot->crash_events[index].firmware_version,
+                sizeof(snapshot->crash_events[index].firmware_version),
                 event->firmware_version
             );
         }

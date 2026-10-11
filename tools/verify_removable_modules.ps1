@@ -248,7 +248,39 @@ $contractChecks = @(
     @{
         Name = 'diagnostic state layout version'
         Text = $diagnosticStateHeader
-        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 5u'
+        Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 6u'
+    },
+    @{
+        Name = 'v5 diagnostic state migration'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_migrate_v5'
+    },
+    @{
+        Name = 'bounded crash capacity'
+        Text = $diagnosticHeader
+        Pattern = '#define DIAGNOSTIC_REPORTER_CRASH_EVENT_CAPACITY 8'
+    },
+    @{
+        Name = 'crash cause contract validation'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_crash_cause_is_valid'
+    },
+    @{
+        Name = 'crash fault kind contract validation'
+        Text = $diagnosticSource
+        Pattern = 'diagnostic_reporter_crash_fault_kind_is_valid'
+    },
+    @{
+        Name = 'crash event serialization'
+        Text = $runtimeSource
+        Pattern = 'diagnostics_object\["crash_events"\]'
+    },
+    @{
+        Name = 'crash reset classification'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter.cpp'
+        ))
+        Pattern = 'diagnostic_reporter_crash_from_reset'
     },
     @{
         Name = 'v3 diagnostic state migration'
