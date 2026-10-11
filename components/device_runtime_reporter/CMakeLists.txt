@@ -27,6 +27,13 @@ if(CONFIG_FEATURE_USAGE_LEDGER AND EXISTS
     list(APPEND device_runtime_reporter_requires "usage_ledger")
 endif()
 
+# Thermal telemetry is optional. When the component is absent the heartbeat
+# simply omits the temperature block.
+if(CONFIG_FEATURE_TEMPERATURE_MONITOR AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../temperature_monitor/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "temperature_monitor")
+endif()
+
 if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME AND EXISTS
         "${CMAKE_CURRENT_LIST_DIR}/../parent_control_runtime/CMakeLists.txt")
     list(APPEND device_runtime_reporter_requires "parent_control_runtime")

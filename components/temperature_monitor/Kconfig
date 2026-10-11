@@ -1,0 +1,41 @@
+menu "Sprout feature modules"
+
+config FEATURE_TEMPERATURE_MONITOR
+    bool "Enable device temperature monitoring"
+    default y
+    help
+        Reads the on-die temperature sensor and reports a normalized thermal
+        band with the runtime heartbeat so operators can alert on heat and the
+        device can protect itself.
+
+config TEMPERATURE_MIN_CELSIUS
+    int "Minimum measurable temperature in Celsius"
+    depends on FEATURE_TEMPERATURE_MONITOR
+    range -40 - 0
+    default -10
+
+config TEMPERATURE_MAX_CELSIUS
+    int "Maximum measurable temperature in Celsius"
+    depends on FEATURE_TEMPERATURE_MONITOR
+    range 50 - 125
+    default 80
+
+config TEMPERATURE_WARM_CELSIUS
+    int "Warm band lower bound in Celsius"
+    depends on FEATURE_TEMPERATURE_MONITOR
+    range 30 - 70
+    default 45
+
+config TEMPERATURE_HOT_CELSIUS
+    int "Hot band lower bound in Celsius"
+    depends on FEATURE_TEMPERATURE_MONITOR
+    range 40 - 90
+    default 60
+
+config TEMPERATURE_CRITICAL_CELSIUS
+    int "Critical band lower bound in Celsius"
+    depends on FEATURE_TEMPERATURE_MONITOR
+    range 50 - 110
+    default 75
+
+endmenu

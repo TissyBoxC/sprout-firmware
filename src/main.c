@@ -161,6 +161,9 @@
 #if CONFIG_FEATURE_NETWORK_QUALITY
 #include "network_quality.h"
 #endif
+#if CONFIG_FEATURE_TEMPERATURE_MONITOR
+#include "temperature_monitor.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -581,6 +584,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_NETWORK_QUALITY
     ESP_ERROR_CHECK(module_registry_add(network_quality_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_TEMPERATURE_MONITOR
+    ESP_ERROR_CHECK(module_registry_add(temperature_monitor_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
     ESP_ERROR_CHECK(module_registry_add(offline_fallback_module_descriptor()));

@@ -33,6 +33,9 @@ CONFIG_FEATURE_USAGE_LEDGER=y
 CONFIG_FEATURE_PARENT_CONTROL_RUNTIME=y
 CONFIG_FEATURE_DIAGNOSTIC_REPORTER=y
 CONFIG_FEATURE_PROVISIONING_REPORTER=y
+# Thermal telemetry shares the runtime heartbeat so operators can alert on
+# heat and the device can protect itself.
+CONFIG_FEATURE_TEMPERATURE_MONITOR=y
 # Realtime voice conversation. voice_session owns the WSS transport and drives
 # the listening -> thinking -> speaking loop, conversation_context keeps a
 # bounded on-device turn window, and child_prompt_profile persists the age

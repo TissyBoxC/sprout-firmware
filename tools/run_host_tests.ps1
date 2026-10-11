@@ -641,6 +641,19 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$temperatureMonitorRoot = Join-Path $firmwareRoot 'components/temperature_monitor'
+Invoke-HostTest `
+    -Name 'temperature_monitor_core' `
+    -Sources @(
+        (Join-Path $temperatureMonitorRoot 'src/temperature_monitor_core.c')
+        (Join-Path $temperatureMonitorRoot 'test/test_temperature_monitor_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $temperatureMonitorRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $parentControlRoot = Join-Path $firmwareRoot 'components/parent_control_runtime'
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `

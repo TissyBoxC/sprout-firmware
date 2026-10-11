@@ -27,6 +27,14 @@ extern "C" {
 #include "network_manager.h"
 #include "network_quality.h"
 #include "offline_fallback.h"
+#if CONFIG_FEATURE_TEMPERATURE_MONITOR && __has_include("temperature_monitor.h")
+#define DEVICE_RUNTIME_HAS_TEMPERATURE_MONITOR 1
+#else
+#define DEVICE_RUNTIME_HAS_TEMPERATURE_MONITOR 0
+#endif
+#if DEVICE_RUNTIME_HAS_TEMPERATURE_MONITOR
+#include "temperature_monitor.h"
+#endif
 #if CONFIG_FEATURE_DIAGNOSTIC_REPORTER && __has_include("diagnostic_reporter.h")
 #define DEVICE_RUNTIME_HAS_DIAGNOSTIC_REPORTER 1
 #else
@@ -620,6 +628,17 @@ static esp_err_t device_runtime_send_heartbeat(void) {
     payload["network_quality"]["latency_ms"] = quality.latency_ms;
     payload["network_quality"]["packet_loss_percent"] =
         quality.packet_loss_percent;
+#if DEVICE_RUNTIME_HAS_TEMPERATURE_MONITOR
+    const temperature_snapshot_t temperature =
+        temperature_monitor_get_snapshot();
+    payload["temperature"]["state"] =
+        temperature_monitor_state_name(temperature.state);
+    if (temperature.has_measurement) {
+        payload["temperature"]["celsius_tenths"] = temperature.celsius_tenths;
+    } else {
+        payload["temperature"]["celsius_tenths"] = nullptr;
+    }
+#endif
     payload["time_sync"]["state"] = device_runtime_time_state();
     payload["time_sync"]["source"] = device_runtime_time_source();
     payload["time_sync"]["offset_ms"] = time_sync_get_offset_ms();
