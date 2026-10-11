@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_GROWTH_RECORD
+    bool "Enable growth record cache"
+    default y
+    help
+        Caches a bounded list of the guardian's growth records (milestones,
+        encouragement, habits and emotions) persisted across restarts so the
+        device can celebrate progress offline and echo it in the parent app's
+        companionship timeline.
+
+endmenu

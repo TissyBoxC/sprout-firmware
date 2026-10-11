@@ -57,6 +57,18 @@
 #include "theme_package.h"
 #endif
 
+#if CONFIG_FEATURE_COMPANIONSHIP
+#include "companionship.h"
+#endif
+
+#if CONFIG_FEATURE_GROWTH_RECORD
+#include "growth_record.h"
+#endif
+
+#if CONFIG_FEATURE_HABIT_REMINDER
+#include "habit_reminder.h"
+#endif
+
 #if CONFIG_FEATURE_OTA_MANAGER
 #include "ota_manager.h"
 #endif
@@ -666,6 +678,15 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_THEME_PACKAGE
     ESP_ERROR_CHECK(module_registry_add(theme_package_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_COMPANIONSHIP
+    ESP_ERROR_CHECK(module_registry_add(companionship_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_GROWTH_RECORD
+    ESP_ERROR_CHECK(module_registry_add(growth_record_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_HABIT_REMINDER
+    ESP_ERROR_CHECK(module_registry_add(habit_reminder_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_OTA_MANAGER
     ESP_ERROR_CHECK(module_registry_add(ota_manager_module_descriptor()));

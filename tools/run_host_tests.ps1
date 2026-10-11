@@ -412,6 +412,51 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$growthRecordRoot = Join-Path $firmwareRoot 'components/growth_record'
+Invoke-HostTest `
+    -Name 'growth_record_core' `
+    -Sources @(
+        (Join-Path $growthRecordRoot 'src/growth_record_core.c')
+        (Join-Path $growthRecordRoot 'test/test_growth_record_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $growthRecordRoot 'include')
+        (Join-Path $growthRecordRoot 'src')
+        (Join-Path $growthRecordRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$habitReminderRoot = Join-Path $firmwareRoot 'components/habit_reminder'
+Invoke-HostTest `
+    -Name 'habit_reminder_core' `
+    -Sources @(
+        (Join-Path $habitReminderRoot 'src/habit_reminder_core.c')
+        (Join-Path $habitReminderRoot 'test/test_habit_reminder_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $habitReminderRoot 'include')
+        (Join-Path $habitReminderRoot 'src')
+        (Join-Path $habitReminderRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+$companionshipRoot = Join-Path $firmwareRoot 'components/companionship'
+Invoke-HostTest `
+    -Name 'companionship_core' `
+    -Sources @(
+        (Join-Path $companionshipRoot 'src/companionship_core.c')
+        (Join-Path $companionshipRoot 'test/test_companionship_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $companionshipRoot 'include')
+        (Join-Path $companionshipRoot 'src')
+        (Join-Path $companionshipRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

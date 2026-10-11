@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_HABIT_REMINDER
+    bool "Enable habit reminder cache"
+    default y
+    help
+        Caches a bounded set of family habit reminders (local time of day,
+        weekday set, enable flag and an optional prompt) persisted across
+        restarts so the device can nudge a child offline and stay consistent
+        with the parent app's companionship reminders.
+
+endmenu

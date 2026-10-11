@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_COMPANIONSHIP
+    bool "Enable local companionship encouragement"
+    default y
+    help
+        Provides a local, bounded encouragement reply keyed to a child's
+        emotion so the device stays kind and responsive when the AI reply is
+        unavailable. It pairs with the growth record and habit reminder caches
+        to complete the offline companionship loop.
+
+endmenu

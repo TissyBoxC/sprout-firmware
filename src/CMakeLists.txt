@@ -178,6 +178,18 @@ if(CONFIG_FEATURE_THEME_PACKAGE)
     list(APPEND app_requires "theme_package")
 endif()
 
+if(CONFIG_FEATURE_COMPANIONSHIP)
+    list(APPEND app_requires "companionship")
+endif()
+
+if(CONFIG_FEATURE_GROWTH_RECORD)
+    list(APPEND app_requires "growth_record")
+endif()
+
+if(CONFIG_FEATURE_HABIT_REMINDER)
+    list(APPEND app_requires "habit_reminder")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()
