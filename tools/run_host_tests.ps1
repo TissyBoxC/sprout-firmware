@@ -787,6 +787,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$cellularRoot = Join-Path $firmwareRoot 'components/cellular_4g'
+Invoke-HostTest `
+    -Name 'cellular_core' `
+    -Sources @(
+        (Join-Path $cellularRoot 'src/cellular_core.c')
+        (Join-Path $cellularRoot 'test/test_cellular_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cellularRoot 'include')
+        (Join-Path $cellularRoot 'src')
+        (Join-Path $cellularRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'cellular_runtime' `
+    -Sources @(
+        (Join-Path $cellularRoot 'src/cellular_core.c')
+        (Join-Path $cellularRoot 'src/cellular_4g.c')
+        (Join-Path $cellularRoot 'test/stubs/config_store.c')
+        (Join-Path $cellularRoot 'test/test_cellular_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cellularRoot 'include')
+        (Join-Path $cellularRoot 'src')
+        (Join-Path $cellularRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(

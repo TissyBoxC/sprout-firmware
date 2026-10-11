@@ -176,6 +176,9 @@
 #if CONFIG_FEATURE_TOUCH_INPUT
 #include "touch_input.h"
 #endif
+#if CONFIG_FEATURE_CELLULAR_4G
+#include "cellular_4g.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -644,6 +647,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_TOUCH_INPUT
     ESP_ERROR_CHECK(module_registry_add(touch_input_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CELLULAR_4G
+    ESP_ERROR_CHECK(module_registry_add(cellular_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));

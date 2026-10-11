@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_CELLULAR_4G
+    bool "Enable cellular 4G, eSIM and data policy"
+    default n
+    help
+        Applies the guardian's cellular policy (enable, roaming, cellular vs
+        Wi-Fi preference, monthly data quota, low-quota warning, metered upload
+        limit, remote wake and keepalive) and records eSIM and modem status.
+        The module only touches connectivity state, so a Wi-Fi-only device never
+        links it.
+
+endmenu

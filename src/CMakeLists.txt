@@ -38,6 +38,10 @@ if(CONFIG_FEATURE_TOUCH_INPUT)
     list(APPEND app_requires "touch_input")
 endif()
 
+if(CONFIG_FEATURE_CELLULAR_4G)
+    list(APPEND app_requires "cellular_4g")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()
