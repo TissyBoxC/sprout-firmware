@@ -550,6 +550,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$localCommandRoot = Join-Path $firmwareRoot 'components/local_command'
+Invoke-HostTest `
+    -Name 'local_command_core' `
+    -Sources @(
+        (Join-Path $localCommandRoot 'src/local_command_core.c')
+        (Join-Path $localCommandRoot 'test/test_local_command_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $localCommandRoot 'include')
+        (Join-Path $localCommandRoot 'src')
+        (Join-Path $localCommandRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'local_command_runtime' `
+    -Sources @(
+        (Join-Path $localCommandRoot 'src/local_command_core.c')
+        (Join-Path $localCommandRoot 'src/local_command.c')
+        (Join-Path $localCommandRoot 'test/stubs/config_store.c')
+        (Join-Path $localCommandRoot 'test/test_local_command_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $localCommandRoot 'include')
+        (Join-Path $localCommandRoot 'src')
+        (Join-Path $localCommandRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

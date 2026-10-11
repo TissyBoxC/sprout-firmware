@@ -133,6 +133,7 @@ function Test-OptionalModuleRemoval {
             'long_term_memory'
             'english_course'
             'playback_request'
+            'local_command'
             'favorites'
             'playback_history'
             'content_package_manager'

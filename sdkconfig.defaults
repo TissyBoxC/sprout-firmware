@@ -69,6 +69,9 @@ CONFIG_FEATURE_ENGLISH_COURSE=y
 # P1-05 on-demand playback: the guardian's playback request cache the parent
 # app's playback view mirrors.
 CONFIG_FEATURE_PLAYBACK_REQUEST=y
+# P1-06 local commands: guardian-published trigger phrases resolved on-device
+# so common actions keep working with no network.
+CONFIG_FEATURE_LOCAL_COMMAND=y
 CONFIG_FEATURE_OTA_VALIDATE=y
 CONFIG_FEATURE_OTA_DOWNLOAD=y
 CONFIG_FEATURE_OTA_ROLLBACK=y

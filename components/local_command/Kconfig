@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_LOCAL_COMMAND
+    bool "Enable offline local command macros"
+    default y
+    depends on FEATURE_CONFIG_STORE
+    help
+        Caches a bounded set of guardian-published trigger phrases that map to
+        local device actions, so common commands keep working with no network.
+        The device resolves phrases locally and never queues audio or child
+        data.
+
+endmenu
