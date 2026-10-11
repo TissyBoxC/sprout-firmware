@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_SCREEN_SURFACE
+    bool "Enable screen expressions, animations, point-to-read and video"
+    default n
+    help
+        Runs the bounded screen-surface policy and helpers: facial expressions,
+        built-in animation clips, a point-to-read dictionary and clamped video
+        playback plans. A device without a display simply does not link the
+        component.
+
+endmenu

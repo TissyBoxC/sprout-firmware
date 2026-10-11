@@ -197,6 +197,9 @@
 #if CONFIG_FEATURE_FAMILY_LINKAGE
 #include "family_linkage.h"
 #endif
+#if CONFIG_FEATURE_SCREEN_SURFACE
+#include "screen_surface.h"
+#endif
 #if CONFIG_FEATURE_OFFLINE_FALLBACK
 #include "offline_fallback.h"
 #endif
@@ -686,6 +689,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_FAMILY_LINKAGE
     ESP_ERROR_CHECK(module_registry_add(family_linkage_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_SCREEN_SURFACE
+    ESP_ERROR_CHECK(module_registry_add(screen_surface_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONTENT_FILTER
     ESP_ERROR_CHECK(module_registry_add(content_filter_module_descriptor()));

@@ -66,6 +66,10 @@ if(CONFIG_FEATURE_FAMILY_LINKAGE)
     list(APPEND app_requires "family_linkage")
 endif()
 
+if(CONFIG_FEATURE_SCREEN_SURFACE)
+    list(APPEND app_requires "screen_surface")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()

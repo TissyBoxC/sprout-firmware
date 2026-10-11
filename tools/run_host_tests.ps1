@@ -1004,6 +1004,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$screenSurfaceRoot = Join-Path $firmwareRoot 'components/screen_surface'
+Invoke-HostTest `
+    -Name 'screen_core' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenSurfaceRoot 'test/test_screen_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'screen_surface_runtime' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenSurfaceRoot 'src/screen_surface.c')
+        (Join-Path $screenSurfaceRoot 'test/stubs/config_store.c')
+        (Join-Path $screenSurfaceRoot 'test/test_screen_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'parent_control_policy_evaluator' `
     -Sources @(
