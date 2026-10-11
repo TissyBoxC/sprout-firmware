@@ -131,6 +131,7 @@ function Test-OptionalModuleRemoval {
             'growth_record'
             'habit_reminder'
             'long_term_memory'
+            'english_course'
             'favorites'
             'playback_history'
             'content_package_manager'

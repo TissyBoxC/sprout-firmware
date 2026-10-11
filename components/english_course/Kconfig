@@ -1,0 +1,12 @@
+menu "Sprout feature modules"
+
+config FEATURE_ENGLISH_COURSE
+    bool "Enable English course cache and practice log"
+    default y
+    help
+        Caches a bounded English lesson catalog (words and sentence patterns)
+        and a bounded local practice-attempt log with pronunciation scores. The
+        device can keep the lessons and the child's practice offline and echo
+        the scores in the parent app's English learning view.
+
+endmenu

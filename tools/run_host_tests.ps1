@@ -488,6 +488,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$englishCourseRoot = Join-Path $firmwareRoot 'components/english_course'
+Invoke-HostTest `
+    -Name 'english_course_core' `
+    -Sources @(
+        (Join-Path $englishCourseRoot 'src/english_course_core.c')
+        (Join-Path $englishCourseRoot 'test/test_english_course_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $englishCourseRoot 'include')
+        (Join-Path $englishCourseRoot 'src')
+        (Join-Path $englishCourseRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'english_course_runtime' `
+    -Sources @(
+        (Join-Path $englishCourseRoot 'src/english_course_core.c')
+        (Join-Path $englishCourseRoot 'src/english_course.c')
+        (Join-Path $englishCourseRoot 'test/stubs/config_store.c')
+        (Join-Path $englishCourseRoot 'test/test_english_course_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $englishCourseRoot 'include')
+        (Join-Path $englishCourseRoot 'src')
+        (Join-Path $englishCourseRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

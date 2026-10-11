@@ -194,6 +194,10 @@ if(CONFIG_FEATURE_LONG_TERM_MEMORY)
     list(APPEND app_requires "long_term_memory")
 endif()
 
+if(CONFIG_FEATURE_ENGLISH_COURSE)
+    list(APPEND app_requires "english_course")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()
