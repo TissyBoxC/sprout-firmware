@@ -651,6 +651,13 @@ $contractChecks = @(
         ))
         Pattern = 'env:esp32-s3-n16r8-production[\s\S]*sdkconfig\.production\.defaults'
     }
+    @{
+        Name = 'production environment fails closed without a signing key'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'platformio.ini'
+        ))
+        Pattern = 'env:esp32-s3-n16r8-production[\s\S]*verify_production_signing\.py'
+    }
 )
 
 foreach ($contractCheck in $contractChecks) {
