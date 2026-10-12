@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "esp_heap_caps.h"
 #include "english_course_core.h"
 
 // The bounded lesson cache and the practice attempt log persist as one binary
@@ -11,14 +12,17 @@
 // scores across restarts without a dedicated partition.
 #define ENGLISH_COURSE_STORE_KEY "english_course_index"
 
-static english_course_core_t s_core;
+// The lesson catalog is large enough that a static copy exhausts internal
+// DRAM, so the cache is allocated once from PSRAM (internal RAM as a fallback)
+// and every access goes through this pointer.
+static english_course_core_t *s_core;
 static bool s_ready;
 
 static esp_err_t english_course_persist(void) {
     const esp_err_t stored = config_store_set_blob(
         ENGLISH_COURSE_STORE_KEY,
-        &s_core,
-        sizeof(s_core)
+        s_core,
+        sizeof(*s_core)
     );
     if (stored != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
@@ -27,27 +31,37 @@ static esp_err_t english_course_persist(void) {
 }
 
 static void english_course_restore(void) {
-    english_course_core_t restored;
-    memset(&restored, 0, sizeof(restored));
-    size_t size = sizeof(restored);
+    // Read straight into the allocated cache so a corrupt or oversized blob
+    // never needs a second full-size buffer on the stack.
+    size_t size = sizeof(*s_core);
     const esp_err_t read = config_store_get_blob(
         ENGLISH_COURSE_STORE_KEY,
-        &restored,
+        s_core,
         &size
     );
-    if (read == ESP_OK && size == sizeof(restored) &&
-        restored.lesson_count <= ENGLISH_COURSE_LESSON_CAPACITY &&
-        restored.attempt_count <= ENGLISH_COURSE_ATTEMPT_CAPACITY) {
-        s_core = restored;
+    if (read == ESP_OK && size == sizeof(*s_core) &&
+        s_core->lesson_count <= ENGLISH_COURSE_LESSON_CAPACITY &&
+        s_core->attempt_count <= ENGLISH_COURSE_ATTEMPT_CAPACITY) {
         return;
     }
     // A missing or malformed blob starts from an empty, valid cache so a
     // corrupt store never blocks startup.
-    english_course_core_init(&s_core);
+    english_course_core_init(s_core);
 }
 
 esp_err_t english_course_init(void) {
-    english_course_core_init(&s_core);
+    if (s_core == NULL) {
+        s_core = (english_course_core_t *)heap_caps_malloc_prefer(
+            sizeof(*s_core),
+            2,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+            MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+        );
+        if (s_core == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    english_course_core_init(s_core);
     english_course_restore();
     s_ready = true;
     return ESP_OK;
@@ -62,7 +76,7 @@ esp_err_t english_course_upsert_lesson(const english_course_lesson_t *lesson) {
         return ESP_ERR_INVALID_STATE;
     }
     const english_course_error_t result = english_course_core_upsert_lesson(
-        &s_core,
+        s_core,
         lesson
     );
     if (result != ENGLISH_COURSE_OK) {
@@ -76,7 +90,7 @@ esp_err_t english_course_remove_lesson(const char *lesson_id) {
         return ESP_ERR_INVALID_STATE;
     }
     const english_course_error_t result = english_course_core_remove_lesson(
-        &s_core,
+        s_core,
         lesson_id
     );
     if (result != ENGLISH_COURSE_OK) {
@@ -99,13 +113,13 @@ esp_err_t english_course_list_lessons(
     if (lessons_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    const size_t copied = s_core.lesson_count < capacity
-        ? s_core.lesson_count
+    const size_t copied = s_core->lesson_count < capacity
+        ? s_core->lesson_count
         : capacity;
     for (size_t index = 0; index < copied; ++index) {
-        lessons_out[index] = s_core.lessons[index];
+        lessons_out[index] = s_core->lessons[index];
     }
-    *count_out = s_core.lesson_count;
+    *count_out = s_core->lesson_count;
     return ESP_OK;
 }
 
@@ -116,16 +130,16 @@ bool english_course_get_lesson(
     if (lesson_id == NULL || lesson_out == NULL) {
         return false;
     }
-    const size_t index = english_course_core_find_lesson(&s_core, lesson_id);
-    if (index >= s_core.lesson_count) {
+    const size_t index = english_course_core_find_lesson(s_core, lesson_id);
+    if (index >= s_core->lesson_count) {
         return false;
     }
-    *lesson_out = s_core.lessons[index];
+    *lesson_out = s_core->lessons[index];
     return true;
 }
 
 size_t english_course_lesson_count(void) {
-    return s_core.lesson_count;
+    return s_core->lesson_count;
 }
 
 esp_err_t english_course_record_attempt(
@@ -135,7 +149,7 @@ esp_err_t english_course_record_attempt(
         return ESP_ERR_INVALID_STATE;
     }
     const english_course_error_t result =
-        english_course_core_record_attempt(&s_core, attempt);
+        english_course_core_record_attempt(s_core, attempt);
     if (result != ENGLISH_COURSE_OK) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -156,13 +170,13 @@ esp_err_t english_course_list_attempts(
     if (attempts_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    const size_t copied = s_core.attempt_count < capacity
-        ? s_core.attempt_count
+    const size_t copied = s_core->attempt_count < capacity
+        ? s_core->attempt_count
         : capacity;
     for (size_t index = 0; index < copied; ++index) {
-        attempts_out[index] = s_core.attempts[index];
+        attempts_out[index] = s_core->attempts[index];
     }
-    *count_out = s_core.attempt_count;
+    *count_out = s_core->attempt_count;
     return ESP_OK;
 }
 
@@ -177,7 +191,7 @@ esp_err_t english_course_lesson_progress(
     }
     const english_course_error_t result =
         english_course_core_lesson_progress(
-            &s_core,
+            s_core,
             lesson_id,
             progress_out,
             capacity,
@@ -190,7 +204,7 @@ esp_err_t english_course_lesson_progress(
 }
 
 size_t english_course_attempt_count(void) {
-    return s_core.attempt_count;
+    return s_core->attempt_count;
 }
 
 esp_err_t english_course_clear_attempts(void) {
@@ -198,7 +212,7 @@ esp_err_t english_course_clear_attempts(void) {
         return ESP_ERR_INVALID_STATE;
     }
     const english_course_error_t result =
-        english_course_core_clear_attempts(&s_core);
+        english_course_core_clear_attempts(s_core);
     if (result != ENGLISH_COURSE_OK) {
         return ESP_ERR_INVALID_ARG;
     }

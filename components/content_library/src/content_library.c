@@ -24,21 +24,18 @@ typedef struct {
     content_library_entry_t entries[CONFIG_CONTENT_LIBRARY_INDEX_CAPACITY];
 } content_library_persisted_t;
 
-static content_library_entry_t content_library_entries[
-    CONFIG_CONTENT_LIBRARY_INDEX_CAPACITY
-];
+// The persisted blob is the single source of truth for the index. The index
+// operates directly on its entries array, so the module does not keep a second
+// 24 KB copy in internal RAM just to serialize it.
 static content_library_persisted_t content_library_persisted;
 static content_index_t content_library_index;
 static bool content_library_ready;
 
 static esp_err_t content_library_persist(void) {
-    memset(&content_library_persisted, 0, sizeof(content_library_persisted));
+    // Only the header changes here; the index already wrote its entries into
+    // the persisted array in place, so a full memset would erase them.
     content_library_persisted.magic = CONTENT_LIBRARY_INDEX_MAGIC;
     content_library_persisted.count = (uint32_t)content_library_index.count;
-    for (size_t index = 0; index < content_library_index.count; ++index) {
-        content_library_persisted.entries[index] =
-            content_library_index.entries[index];
-    }
     const esp_err_t result = config_store_set_blob(
         CONFIG_CONTENT_LIBRARY_METADATA_KEY,
         &content_library_persisted,
@@ -79,10 +76,8 @@ static void content_library_load(void) {
             return;
         }
     }
-    for (size_t index = 0; index < content_library_persisted.count; ++index) {
-        content_library_entries[index] =
-            content_library_persisted.entries[index];
-    }
+    // content_library_index.entries aliases content_library_persisted.entries,
+    // so the loaded entries are already in place; only the count is applied.
     content_library_index.count = content_library_persisted.count;
 }
 
@@ -95,7 +90,7 @@ esp_err_t content_library_init(void) {
     }
     const content_index_result_t index_result = content_index_init(
         &content_library_index,
-        content_library_entries,
+        content_library_persisted.entries,
         CONFIG_CONTENT_LIBRARY_INDEX_CAPACITY
     );
     if (index_result != CONTENT_INDEX_OK) {

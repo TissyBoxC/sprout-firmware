@@ -12,6 +12,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         config_store
+        heap
     REQUIRES
         module_registry
 )
