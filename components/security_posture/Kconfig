@@ -1,0 +1,21 @@
+menu "Sprout feature modules"
+
+config FEATURE_SECURITY_POSTURE
+    bool "Enable production security posture enforcement"
+    default y
+    help
+        Refuses to run a production image unless Secure Boot and Flash
+        Encryption are active, so unsigned firmware and readable keys never
+        reach application logic.
+
+config SPROUT_PRODUCTION_BUILD
+    bool "Refuse to run without Secure Boot and Flash Encryption"
+    depends on FEATURE_SECURITY_POSTURE
+    default n
+    help
+        Enable only for images that ship with Secure Boot and Flash
+        Encryption provisioned. When enabled, the firmware halts before any
+        module starts if either control is missing. Leave disabled for
+        development and factory-provisioning images.
+
+endmenu

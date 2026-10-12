@@ -76,6 +76,20 @@ $compiler = Resolve-HostCompiler
 
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 
+$securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
+Invoke-HostTest `
+    -Name 'security_posture_core' `
+    -Sources @(
+        (Join-Path $securityPostureRoot 'src/security_posture_core.c')
+        (Join-Path $securityPostureRoot 'test/test_security_posture_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $securityPostureRoot 'include')
+        (Join-Path $securityPostureRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $otaValidateRoot = Join-Path $firmwareRoot 'components/ota_validate'
 Invoke-HostTest `
     -Name 'ota_manifest' `
@@ -338,7 +352,7 @@ Invoke-HostTest `
         (Join-Path $privacyGuardRoot 'include')
         (Join-Path $privacyGuardRoot 'src')
     ) `
-    -AdditionalArguments @() `
+    -AdditionalArguments @('-DCONFIG_FEATURE_PRIVACY_GUARD=1') `
     -Compiler $compiler
 
 $cameraVisionRoot = Join-Path $firmwareRoot 'components/camera_vision'
@@ -373,7 +387,7 @@ Invoke-HostTest `
         (Join-Path $privacyGuardRoot 'include')
         (Join-Path $privacyGuardRoot 'src')
     ) `
-    -AdditionalArguments @() `
+    -AdditionalArguments @('-DCONFIG_FEATURE_PRIVACY_GUARD=1') `
     -Compiler $compiler
 
 Invoke-HostTest `

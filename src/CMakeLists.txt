@@ -202,6 +202,10 @@ if(CONFIG_FEATURE_VERSION_INFO)
     list(APPEND app_requires "version_info")
 endif()
 
+if(CONFIG_FEATURE_SECURITY_POSTURE)
+    list(APPEND app_requires "security_posture")
+endif()
+
 if(CONFIG_FEATURE_CONVERSATION_CONTEXT)
     list(APPEND app_requires "conversation_context")
 endif()

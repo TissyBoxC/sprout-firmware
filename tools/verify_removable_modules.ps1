@@ -243,6 +243,15 @@ $audioOutputSource = Get-Content -Raw -LiteralPath (
 $playbackQueueHeader = Get-Content -Raw -LiteralPath (
     Join-Path $firmwareRoot 'components/playback_queue/include/playback_queue.h'
 )
+$securityPostureHeader = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/security_posture/include/security_posture.h'
+)
+$securityPostureSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'components/security_posture/src/security_posture.c'
+)
+$mainSource = Get-Content -Raw -LiteralPath (
+    Join-Path $firmwareRoot 'src/main.c'
+)
 
 $contractChecks = @(
     @{
@@ -569,6 +578,45 @@ $contractChecks = @(
             Join-Path $firmwareRoot 'components/prompt_tone/src/prompt_tone.c'
         ))
         Pattern = 'prompt_tone_play_mixed\('
+    }
+    @{
+        Name = 'production security posture gate exists'
+        Text = $securityPostureHeader
+        Pattern = 'security_posture_guard'
+    }
+    @{
+        Name = 'security posture refuses insecure boot'
+        Text = $securityPostureSource
+        Pattern = 'SECURITY_POSTURE_VERDICT_INSECURE_BOOT'
+    }
+    @{
+        Name = 'security posture refuses unencrypted flash'
+        Text = $securityPostureSource
+        Pattern = 'SECURITY_POSTURE_VERDICT_UNENCRYPTED_FLASH'
+    }
+    @{
+        Name = 'security posture halts instead of continuing'
+        Text = $securityPostureSource
+        Pattern = 'security_posture_halt\(\)'
+    }
+    @{
+        Name = 'security posture runs first in the composition root'
+        Text = $mainSource
+        Pattern = 'module_registry_add\(security_posture_module_descriptor\(\)\)\);[\s\S]*module_registry_add\(system_core_module_descriptor\(\)\)\)'
+    }
+    @{
+        Name = 'production build gate defaults closed'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/security_posture/Kconfig'
+        ))
+        Pattern = 'config SPROUT_PRODUCTION_BUILD[\s\S]*default n'
+    }
+    @{
+        Name = 'english course cache lives in external RAM'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/english_course/src/english_course.c'
+        ))
+        Pattern = 'MALLOC_CAP_SPIRAM'
     }
 )
 

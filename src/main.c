@@ -240,6 +240,9 @@
 #if CONFIG_FEATURE_VERSION_INFO
 #include "version_info.h"
 #endif
+#if CONFIG_FEATURE_SECURITY_POSTURE
+#include "security_posture.h"
+#endif
 
 static const char *const TAG = "sprout_main";
 
@@ -649,6 +652,9 @@ static void handle_button_gesture(const button_input_event_t *event) {
 
 #if CONFIG_FEATURE_MODULE_REGISTRY
 static void register_modules(void) {
+#if CONFIG_FEATURE_SECURITY_POSTURE
+    ESP_ERROR_CHECK(module_registry_add(security_posture_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_SYSTEM_CORE
     ESP_ERROR_CHECK(module_registry_add(system_core_module_descriptor()));
 #endif
