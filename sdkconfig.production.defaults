@@ -1,0 +1,29 @@
+# Production hardening overlay. Layer it on top of sdkconfig.defaults for any
+# image that ships to customers, so the runtime security_posture gate and the
+# bootloader both refuse an unhardened device.
+#
+# This file intentionally carries only the security switches. Signing and
+# encryption keys are provisioned by the manufacturing pipeline and never live
+# in the repository (see docs in README.md).
+
+# Refuse to boot application logic unless Secure Boot and Flash Encryption are
+# actually active in eFuse. Development and factory images leave this off.
+CONFIG_SPROUT_PRODUCTION_BUILD=y
+
+# Secure Boot V2 (RSA) so the bootloader only runs signed images.
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+
+# Flash Encryption in release mode. Release mode disables the ROM download
+# mode encryption path, so a stolen device cannot be used as an oracle.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+
+# Flash Encryption turns on NVS encryption. Derive the NVS keys from the HMAC
+# peripheral instead of a plaintext key partition, and pick the last eFuse key
+# block so manufacturing can burn it after the flash-encryption key. Production
+# provisioning must write a block 5 key with purpose HMAC_UP before the first
+# boot; a missing key fails closed at boot rather than exposing NVS.
+CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y
+CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID=5

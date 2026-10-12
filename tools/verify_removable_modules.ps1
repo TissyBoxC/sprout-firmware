@@ -186,6 +186,9 @@ function Test-OptionalModuleRemoval {
 }
 
 $platformIoCommand = Resolve-PlatformIoCommand
+# The production profile needs a signing key and a burned HMAC key on real
+# hardware, so it is verified by config contract checks below rather than a
+# full build in CI. The default and minimal profiles build end to end.
 $environments = @(
     'esp32-s3-n16r8',
     'esp32-s3-n16r8-minimal'
@@ -619,6 +622,34 @@ $contractChecks = @(
             Join-Path $firmwareRoot 'components/english_course/src/english_course.c'
         ))
         Pattern = 'MALLOC_CAP_SPIRAM'
+    }
+    @{
+        Name = 'production profile turns on the runtime gate'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'sdkconfig.production.defaults'
+        ))
+        Pattern = 'CONFIG_SPROUT_PRODUCTION_BUILD=y'
+    }
+    @{
+        Name = 'production profile enables Secure Boot and Flash Encryption'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'sdkconfig.production.defaults'
+        ))
+        Pattern = 'CONFIG_SECURE_BOOT=y[\s\S]*CONFIG_SECURE_FLASH_ENC_ENABLED=y'
+    }
+    @{
+        Name = 'production profile derives NVS keys from an HMAC eFuse block'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'sdkconfig.production.defaults'
+        ))
+        Pattern = 'CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y[\s\S]*CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID=[0-5]'
+    }
+    @{
+        Name = 'production environment layers the hardening overlay'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'platformio.ini'
+        ))
+        Pattern = 'env:esp32-s3-n16r8-production[\s\S]*sdkconfig\.production\.defaults'
     }
 )
 

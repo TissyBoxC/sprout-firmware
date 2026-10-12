@@ -32,6 +32,16 @@
 不会进入模块、配网或联网逻辑，避免未签名固件或可读密钥泄露设备密钥与儿童
 数据。
 
+量产镜像使用独立构建环境，默认叠加 `sdkconfig.production.defaults`，同时开启
+运行时门禁、安全启动 V2、Flash 加密发布模式和 NVS 加密：
+
+```powershell
+platformio run -e esp32-s3-n16r8-production
+```
+
+签名私钥与 Flash 加密密钥由产线流程下发，不进入仓库；NVS 加密密钥由
+eFuse 5 号 HMAC 密钥派生，缺失时启动失败而不是明文落盘。
+
 ## 模块化
 
 - 每个功能都是独立模块，可以按构建配置增删。
