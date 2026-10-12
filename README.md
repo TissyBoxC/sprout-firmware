@@ -42,6 +42,12 @@ platformio run -e esp32-s3-n16r8-production
 签名私钥与 Flash 加密密钥由产线流程下发，不进入仓库；NVS 加密密钥由
 eFuse 5 号 HMAC 密钥派生，缺失时启动失败而不是明文落盘。
 
+本地或 CI 构建量产镜像时，通过 `board_build.secure_boot_signing_key` 或
+`SPROUT_SECURE_BOOT_SIGNING_KEY` 环境变量指向签名私钥。缺少私钥时构建会
+直接失败，不会产出未签名镜像。发布流程从 `SPROUT_SECURE_BOOT_SIGNING_KEY`
+密钥解码私钥，构建 `esp32-s3-n16r8-production` 并发布已签名的 bootloader、
+分区表和应用镜像。
+
 ## 模块化
 
 - 每个功能都是独立模块，可以按构建配置增删。
