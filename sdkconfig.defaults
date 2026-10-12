@@ -93,7 +93,10 @@ CONFIG_FEATURE_WAKE_FEEDBACK=y
 CONFIG_FEATURE_LED_INDICATOR=y
 CONFIG_FEATURE_BUTTON_INPUT=y
 CONFIG_FEATURE_FACTORY_RESET=y
-CONFIG_MODULE_REGISTRY_CAPACITY=64
+# The full feature profile currently registers 64 modules, so keep a little
+# headroom above the live count to avoid a hard boot failure when one more
+# module is enabled.
+CONFIG_MODULE_REGISTRY_CAPACITY=80
 
 # Local wake detection uses ESP-SR WakeNet in production. The model lives in
 # its own flash partition so OTA updates of the application do not rewrite it.

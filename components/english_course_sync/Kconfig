@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_ENGLISH_COURSE_SYNC
+    bool "Enable English lesson catalog synchronisation"
+    default y
+    depends on FEATURE_ENGLISH_COURSE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the published English lesson catalog (words and sentence
+        patterns) and replaces the local lesson cache so the child can practise
+        offline with the same content the parent app shows.
+
+config ENGLISH_COURSE_SYNC_INTERVAL_SECONDS
+    int "English lesson sync interval in seconds"
+    depends on FEATURE_ENGLISH_COURSE_SYNC
+    range 300 86400
+    default 3600
+
+config ENGLISH_COURSE_SYNC_RETRY_INTERVAL_SECONDS
+    int "English lesson sync retry interval while offline"
+    depends on FEATURE_ENGLISH_COURSE_SYNC
+    range 5 300
+    default 15
+
+endmenu

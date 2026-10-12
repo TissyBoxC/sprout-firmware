@@ -274,6 +274,10 @@ if(CONFIG_FEATURE_ENGLISH_COURSE)
     list(APPEND app_requires "english_course")
 endif()
 
+if(CONFIG_FEATURE_ENGLISH_COURSE_SYNC)
+    list(APPEND app_requires "english_course_sync")
+endif()
+
 if(CONFIG_FEATURE_PLAYBACK_REQUEST)
     list(APPEND app_requires "playback_request")
 endif()

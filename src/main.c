@@ -89,6 +89,10 @@
 #include "english_course.h"
 #endif
 
+#if CONFIG_FEATURE_ENGLISH_COURSE_SYNC
+#include "english_course_sync.h"
+#endif
+
 #if CONFIG_FEATURE_PLAYBACK_REQUEST
 #include "playback_request.h"
 #endif
@@ -875,6 +879,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_ENGLISH_COURSE
     ESP_ERROR_CHECK(module_registry_add(english_course_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_ENGLISH_COURSE_SYNC
+    ESP_ERROR_CHECK(module_registry_add(english_course_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PLAYBACK_REQUEST
     ESP_ERROR_CHECK(module_registry_add(playback_request_module_descriptor()));

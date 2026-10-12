@@ -119,6 +119,19 @@ esp_err_t english_course_upsert_lesson(const english_course_lesson_t *lesson);
 /** @brief Remove one lesson. A missing lesson is success. */
 esp_err_t english_course_remove_lesson(const char *lesson_id);
 
+/**
+ * @brief Atomically replace the lesson catalog with one authoritative snapshot.
+ *
+ * An empty snapshot clears the catalog. Invalid or duplicate lessons are
+ * dropped, but a non-empty snapshot that ends up empty is rejected so a
+ * malformed remote response cannot erase the cached lessons. The local
+ * practice-attempt log is preserved.
+ */
+esp_err_t english_course_replace_lessons(
+    const english_course_lesson_t *lessons,
+    size_t lesson_count
+);
+
 /** @brief Copy the cached lesson summaries newest-first. */
 esp_err_t english_course_list_lessons(
     english_course_lesson_t *lessons_out,
