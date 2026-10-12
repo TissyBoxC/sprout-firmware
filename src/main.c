@@ -61,6 +61,10 @@
 #include "theme_package.h"
 #endif
 
+#if CONFIG_FEATURE_THEME_PACKAGE_SYNC
+#include "theme_package_sync.h"
+#endif
+
 #if CONFIG_FEATURE_COMPANIONSHIP
 #include "companionship.h"
 #endif
@@ -850,6 +854,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_THEME_PACKAGE
     ESP_ERROR_CHECK(module_registry_add(theme_package_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_THEME_PACKAGE_SYNC
+    ESP_ERROR_CHECK(module_registry_add(theme_package_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_COMPANIONSHIP
     ESP_ERROR_CHECK(module_registry_add(companionship_module_descriptor()));

@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_THEME_PACKAGE_SYNC
+    bool "Enable theme pack synchronisation"
+    default y
+    depends on FEATURE_THEME_PACKAGE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the published theme packs and replaces the local theme cache,
+        keeping the device's thematic quick-play menu consistent with the
+        parent app.
+
+config THEME_PACKAGE_SYNC_INTERVAL_SECONDS
+    int "Theme pack sync interval in seconds"
+    depends on FEATURE_THEME_PACKAGE_SYNC
+    range 60 86400
+    default 1800
+
+config THEME_PACKAGE_SYNC_RETRY_INTERVAL_SECONDS
+    int "Theme pack sync retry interval while offline"
+    depends on FEATURE_THEME_PACKAGE_SYNC
+    range 5 300
+    default 15
+
+endmenu

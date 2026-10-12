@@ -4,20 +4,29 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "theme_package_core.h"
+#include "theme_package_sync_core.h"
 
 // The bounded theme cache persists as one binary blob so a device keeps its
 // theme menu across restarts without a dedicated partition.
 #define THEME_PACKAGE_STORE_KEY "theme_package_index"
 
 static theme_package_core_t s_core;
+static SemaphoreHandle_t s_lock;
 static bool s_ready;
 
-static esp_err_t theme_package_persist(void) {
+static esp_err_t theme_package_persist_core(
+    const theme_package_core_t *core
+) {
+    if (core == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const esp_err_t stored = config_store_set_blob(
         THEME_PACKAGE_STORE_KEY,
-        &s_core,
-        sizeof(s_core)
+        core,
+        sizeof(*core)
     );
     if (stored != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
@@ -44,6 +53,15 @@ static void theme_package_restore(void) {
 }
 
 esp_err_t theme_package_init(void) {
+    if (s_ready) {
+        return ESP_OK;
+    }
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
     theme_package_core_init(&s_core);
     theme_package_restore();
     s_ready = true;
@@ -58,28 +76,70 @@ esp_err_t theme_package_upsert(const theme_pack_t *pack) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    theme_package_core_t updated = s_core;
     const theme_package_error_t result = theme_package_core_upsert(
-        &s_core,
+        &updated,
         pack
     );
     if (result != THEME_PACKAGE_OK) {
+        xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_ARG;
     }
-    return theme_package_persist();
+    const esp_err_t persisted = theme_package_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 esp_err_t theme_package_remove(const char *theme_id) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    theme_package_core_t updated = s_core;
     const theme_package_error_t result = theme_package_core_remove(
-        &s_core,
+        &updated,
         theme_id
     );
     if (result != THEME_PACKAGE_OK) {
+        xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_ARG;
     }
-    return theme_package_persist();
+    const esp_err_t persisted = theme_package_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
+}
+
+esp_err_t theme_package_replace(
+    const theme_pack_t *packs,
+    size_t pack_count
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    theme_package_core_t updated = {0};
+    const theme_package_error_t result = theme_package_sync_core_replace(
+        &updated,
+        packs,
+        pack_count
+    );
+    if (result != THEME_PACKAGE_OK) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = theme_package_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 esp_err_t theme_package_list(
@@ -96,23 +156,28 @@ esp_err_t theme_package_list(
     if (packs_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t copied = s_core.count < capacity ? s_core.count : capacity;
     for (size_t index = 0; index < copied; ++index) {
         packs_out[index] = s_core.packs[index];
     }
     *count_out = s_core.count;
+    xSemaphoreGive(s_lock);
     return ESP_OK;
 }
 
 bool theme_package_get(const char *theme_id, theme_pack_t *pack_out) {
-    if (theme_id == NULL || pack_out == NULL) {
+    if (!s_ready || theme_id == NULL || pack_out == NULL) {
         return false;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t index = theme_package_core_find(&s_core, theme_id);
     if (index >= s_core.count) {
+        xSemaphoreGive(s_lock);
         return false;
     }
     *pack_out = s_core.packs[index];
+    xSemaphoreGive(s_lock);
     return true;
 }
 
@@ -121,11 +186,13 @@ bool theme_package_contains_package(
     const char *package_id,
     size_t *member_index_out
 ) {
-    if (theme_id == NULL || package_id == NULL) {
+    if (!s_ready || theme_id == NULL || package_id == NULL) {
         return false;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t pack_index = theme_package_core_find(&s_core, theme_id);
     if (pack_index >= s_core.count) {
+        xSemaphoreGive(s_lock);
         return false;
     }
     const theme_pack_t *pack = &s_core.packs[pack_index];
@@ -134,14 +201,22 @@ bool theme_package_contains_package(
             if (member_index_out != NULL) {
                 *member_index_out = index;
             }
+            xSemaphoreGive(s_lock);
             return true;
         }
     }
+    xSemaphoreGive(s_lock);
     return false;
 }
 
 size_t theme_package_count(void) {
-    return s_core.count;
+    if (!s_ready) {
+        return 0;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const size_t count = s_core.count;
+    xSemaphoreGive(s_lock);
+    return count;
 }
 
 const char *theme_package_error_name(theme_package_error_t error) {

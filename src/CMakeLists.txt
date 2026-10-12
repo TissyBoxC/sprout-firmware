@@ -246,6 +246,10 @@ if(CONFIG_FEATURE_THEME_PACKAGE)
     list(APPEND app_requires "theme_package")
 endif()
 
+if(CONFIG_FEATURE_THEME_PACKAGE_SYNC)
+    list(APPEND app_requires "theme_package_sync")
+endif()
+
 if(CONFIG_FEATURE_COMPANIONSHIP)
     list(APPEND app_requires "companionship")
 endif()

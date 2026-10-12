@@ -52,6 +52,18 @@ esp_err_t theme_package_upsert(const theme_pack_t *pack);
 /** @brief Remove one theme pack. A missing pack is success. */
 esp_err_t theme_package_remove(const char *theme_id);
 
+/**
+ * @brief Atomically replace the whole cache with one authoritative snapshot.
+ *
+ * An empty snapshot clears the cache. Invalid or duplicate packs are dropped,
+ * but a non-empty snapshot that ends up empty is rejected so a malformed
+ * remote response cannot erase the cached themes.
+ */
+esp_err_t theme_package_replace(
+    const theme_pack_t *packs,
+    size_t pack_count
+);
+
 /** @brief Copy the cached theme packs newest-first. */
 esp_err_t theme_package_list(
     theme_pack_t *packs_out,

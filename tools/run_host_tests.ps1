@@ -586,6 +586,22 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'theme_package_sync_core' `
+    -Sources @(
+        (Join-Path $themePackageRoot 'src/theme_package_core.c')
+        (Join-Path $themePackageRoot 'src/theme_package_sync_core.c')
+        (Join-Path $themePackageRoot 'test/test_theme_package_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $themePackageRoot 'include')
+        (Join-Path $themePackageRoot 'src')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $themePackageRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $growthRecordRoot = Join-Path $firmwareRoot 'components/growth_record'
 Invoke-HostTest `
     -Name 'growth_record_core' `
