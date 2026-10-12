@@ -234,6 +234,10 @@ if(CONFIG_FEATURE_FAVORITES)
     list(APPEND app_requires "favorites")
 endif()
 
+if(CONFIG_FEATURE_FAVORITES_SYNC)
+    list(APPEND app_requires "favorites_sync")
+endif()
+
 if(CONFIG_FEATURE_PLAYBACK_HISTORY)
     list(APPEND app_requires "playback_history")
 endif()

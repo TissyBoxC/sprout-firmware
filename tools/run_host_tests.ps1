@@ -538,6 +538,22 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'favorites_sync_core' `
+    -Sources @(
+        (Join-Path $favoritesRoot 'src/favorites_core.c')
+        (Join-Path $favoritesRoot 'src/favorites_sync_core.c')
+        (Join-Path $favoritesRoot 'test/test_favorites_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $favoritesRoot 'include')
+        (Join-Path $favoritesRoot 'src')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $favoritesRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $playbackHistoryRoot = Join-Path $firmwareRoot 'components/playback_history'
 Invoke-HostTest `
     -Name 'playback_history_core' `

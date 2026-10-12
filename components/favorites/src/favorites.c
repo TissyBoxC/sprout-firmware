@@ -5,19 +5,26 @@
 
 #include "config_store.h"
 #include "favorites_core.h"
+#include "favorites_sync_core.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 // The favourites index is persisted as one binary blob so the device keeps the
 // guardian's bookmarks across restarts without a dedicated partition.
 #define FAVORITES_STORE_KEY "favorites_index"
 
 static favorites_core_t s_core;
+static SemaphoreHandle_t s_lock;
 static bool s_ready;
 
-static esp_err_t favorites_persist(void) {
+static esp_err_t favorites_persist_core(const favorites_core_t *core) {
+    if (core == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const esp_err_t stored = config_store_set_blob(
         FAVORITES_STORE_KEY,
-        &s_core,
-        sizeof(s_core)
+        core,
+        sizeof(*core)
     );
     if (stored != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
@@ -44,6 +51,15 @@ static void favorites_restore(void) {
 }
 
 esp_err_t favorites_init(void) {
+    if (s_ready) {
+        return ESP_OK;
+    }
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
     favorites_core_init(&s_core);
     favorites_restore();
     s_ready = true;
@@ -58,41 +74,97 @@ esp_err_t favorites_add(const char *package_id) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    const favorites_error_t result = favorites_core_add(&s_core, package_id);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    favorites_core_t updated = s_core;
+    const favorites_error_t result = favorites_core_add(&updated, package_id);
     if (result != FAVORITES_OK) {
+        xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_ARG;
     }
-    return favorites_persist();
+    const esp_err_t persisted = favorites_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 esp_err_t favorites_remove(const char *package_id) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    const favorites_error_t result = favorites_core_remove(&s_core, package_id);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    favorites_core_t updated = s_core;
+    const favorites_error_t result = favorites_core_remove(&updated, package_id);
     if (result != FAVORITES_OK) {
+        xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_ARG;
     }
-    return favorites_persist();
+    const esp_err_t persisted = favorites_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
+}
+
+esp_err_t favorites_replace(
+    const char *const *package_ids,
+    size_t package_id_count
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    favorites_core_t updated = {0};
+    const favorites_error_t result = favorites_sync_core_replace(
+        &updated,
+        package_ids,
+        package_id_count
+    );
+    if (result != FAVORITES_OK) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = favorites_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 esp_err_t favorites_toggle(const char *package_id, bool *is_favorite_out) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    favorites_core_t updated = s_core;
     const favorites_error_t result = favorites_core_toggle(
-        &s_core,
+        &updated,
         package_id,
         is_favorite_out
     );
     if (result != FAVORITES_OK) {
+        xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_ARG;
     }
-    return favorites_persist();
+    const esp_err_t persisted = favorites_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 bool favorites_contains(const char *package_id) {
-    return favorites_core_contains(&s_core, package_id);
+    if (!s_ready) {
+        return false;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool contains = favorites_core_contains(&s_core, package_id);
+    xSemaphoreGive(s_lock);
+    return contains;
 }
 
 esp_err_t favorites_list(
@@ -109,6 +181,7 @@ esp_err_t favorites_list(
     if (package_ids_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t copied = s_core.count < capacity ? s_core.count : capacity;
     for (size_t index = 0; index < copied; ++index) {
         memcpy(
@@ -118,11 +191,18 @@ esp_err_t favorites_list(
         );
     }
     *count_out = s_core.count;
+    xSemaphoreGive(s_lock);
     return ESP_OK;
 }
 
 size_t favorites_count(void) {
-    return s_core.count;
+    if (!s_ready) {
+        return 0;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const size_t count = s_core.count;
+    xSemaphoreGive(s_lock);
+    return count;
 }
 
 const char *favorites_error_name(favorites_error_t error) {

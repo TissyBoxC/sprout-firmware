@@ -37,6 +37,18 @@ esp_err_t favorites_add(const char *package_id);
 /** @brief Remove one bookmark. A missing bookmark is success. */
 esp_err_t favorites_remove(const char *package_id);
 
+/**
+ * @brief Atomically replace every bookmark with one authoritative snapshot.
+ *
+ * An empty snapshot clears the list. Invalid ids are ignored, but a non-empty
+ * snapshot containing only invalid ids is rejected so a malformed remote
+ * response cannot erase the local list.
+ */
+esp_err_t favorites_replace(
+    const char *const *package_ids,
+    size_t package_id_count
+);
+
 /** @brief Toggle one bookmark, reporting the resulting membership. */
 esp_err_t favorites_toggle(const char *package_id, bool *is_favorite_out);
 

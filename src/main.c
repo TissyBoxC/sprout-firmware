@@ -49,6 +49,10 @@
 #include "favorites.h"
 #endif
 
+#if CONFIG_FEATURE_FAVORITES_SYNC
+#include "favorites_sync.h"
+#endif
+
 #if CONFIG_FEATURE_PLAYBACK_HISTORY
 #include "playback_history.h"
 #endif
@@ -837,6 +841,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_FAVORITES
     ESP_ERROR_CHECK(module_registry_add(favorites_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_FAVORITES_SYNC
+    ESP_ERROR_CHECK(module_registry_add(favorites_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PLAYBACK_HISTORY
     ESP_ERROR_CHECK(module_registry_add(playback_history_module_descriptor()));

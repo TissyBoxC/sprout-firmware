@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_FAVORITES_SYNC
+    bool "Enable guardian favourites synchronisation"
+    default y
+    depends on FEATURE_FAVORITES && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the authenticated family favourites snapshot and replaces the
+        local favourites cache, keeping a device's quick-play menu consistent
+        with the parent app.
+
+config FAVORITES_SYNC_INTERVAL_SECONDS
+    int "Favourites sync interval in seconds"
+    depends on FEATURE_FAVORITES_SYNC
+    range 60 86400
+    default 900
+
+config FAVORITES_SYNC_RETRY_INTERVAL_SECONDS
+    int "Favourites sync retry interval while offline"
+    depends on FEATURE_FAVORITES_SYNC
+    range 5 300
+    default 15
+
+endmenu
