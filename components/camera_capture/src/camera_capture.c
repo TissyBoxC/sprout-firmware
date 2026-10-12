@@ -3,7 +3,9 @@
 #include "esp_log.h"
 
 #include "camera_capture_core.h"
+#if CONFIG_FEATURE_PRIVACY_GUARD
 #include "privacy_guard.h"
+#endif
 
 static const char *const CAMERA_CAPTURE_TAG = "sprout_camera";
 
@@ -19,6 +21,7 @@ static camera_capture_snapshot_t camera_capture_snapshot = {
 };
 
 static bool camera_capture_image_consent(void) {
+#if CONFIG_FEATURE_PRIVACY_GUARD
     if (!privacy_guard_is_ready()) {
         return false;
     }
@@ -36,6 +39,11 @@ static bool camera_capture_image_consent(void) {
         return false;
     }
     return decision.allowed;
+#else
+    // Without the privacy guard there is no consent source, so image upload
+    // is denied rather than silently allowing capture.
+    return false;
+#endif
 }
 
 esp_err_t camera_capture_init(void) {

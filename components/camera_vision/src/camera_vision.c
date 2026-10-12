@@ -5,7 +5,9 @@
 #include "esp_log.h"
 
 #include "camera_vision_core.h"
+#if CONFIG_FEATURE_PRIVACY_GUARD
 #include "privacy_guard.h"
+#endif
 
 static const char *const CAMERA_VISION_TAG = "sprout_vision";
 
@@ -19,6 +21,7 @@ static camera_vision_snapshot_t camera_vision_snapshot = {
 };
 
 static bool camera_vision_image_consent(void) {
+#if CONFIG_FEATURE_PRIVACY_GUARD
     if (!privacy_guard_is_ready()) {
         return false;
     }
@@ -36,6 +39,10 @@ static bool camera_vision_image_consent(void) {
         return false;
     }
     return decision.allowed;
+#else
+    // No guard means no consent source; keep vision uploads denied.
+    return false;
+#endif
 }
 
 esp_err_t camera_vision_init(void) {

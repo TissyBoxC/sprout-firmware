@@ -12,5 +12,12 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
     PRIV_REQUIRES esp_common
-    REQUIRES camera_capture module_registry privacy_guard
+    REQUIRES camera_capture module_registry
 )
+
+# Vision results can carry child images, so the privacy guard is mandatory
+# whenever present. A minimal image without it keeps a deny-all consent path.
+if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE privacy_guard)
+endif()
