@@ -126,6 +126,8 @@ function Test-OptionalModuleRemoval {
         foreach ($moduleName in @(
             'ui_text'
             'content_filter'
+            'camera_vision'
+            'camera_capture'
             'theme_package'
             'companionship'
             'growth_record'

@@ -15,10 +15,12 @@ idf_component_register(
     REQUIRES device_capabilities module_registry
 )
 
-# Image upload is only possible with the privacy guard present. When the
-# component is removed from a minimal image the source compiles a conservative
-# deny-all consent path instead of referencing a missing component.
-if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
-        "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
-    idf_component_optional_requires(PRIVATE privacy_guard)
+# Image upload is only possible with the privacy guard present. A profile that
+# compiles every source out makes COMPONENT_LIB an INTERFACE target with no link
+# step, so the optional dependency is only added when the component has sources.
+if(CONFIG_FEATURE_CAMERA_CAPTURE)
+    if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
+            "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
+        idf_component_optional_requires(PRIVATE privacy_guard)
+    endif()
 endif()

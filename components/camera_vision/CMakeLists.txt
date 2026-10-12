@@ -15,9 +15,12 @@ idf_component_register(
     REQUIRES camera_capture module_registry
 )
 
-# Vision results can carry child images, so the privacy guard is mandatory
-# whenever present. A minimal image without it keeps a deny-all consent path.
-if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
-        "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
-    idf_component_optional_requires(PRIVATE privacy_guard)
+# Vision results can carry child images, so the privacy guard is required
+# whenever present. A profile that compiles every source out makes COMPONENT_LIB
+# an INTERFACE target with no link step, so the dependency is gated on sources.
+if(CONFIG_FEATURE_CAMERA_VISION)
+    if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
+            "${CMAKE_CURRENT_LIST_DIR}/../privacy_guard/CMakeLists.txt")
+        idf_component_optional_requires(PRIVATE privacy_guard)
+    endif()
 endif()
