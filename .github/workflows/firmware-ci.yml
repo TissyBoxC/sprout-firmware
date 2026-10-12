@@ -35,3 +35,46 @@ jobs:
       - name: Verify removable modules and generated-file policy
         shell: pwsh
         run: ./tools/verify_removable_modules.ps1
+
+  production:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: platformio-production-${{ runner.os }}-${{ hashFiles('platformio.ini', 'sdkconfig.defaults', 'sdkconfig.production.defaults') }}
+
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade pip platformio==6.1.18
+
+      - name: Generate throwaway Secure Boot signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CI never has the real manufacturing key; a throwaway key only lets
+          # the hardened build and signing steps run end to end.
+          openssl genrsa -out secure_boot_signing_key.pem 3072 2>/dev/null
+          grep -q 'BEGIN' secure_boot_signing_key.pem
+
+      - name: Build hardened production image
+        env:
+          SPROUT_SECURE_BOOT_SIGNING_KEY: ${{ github.workspace }}/secure_boot_signing_key.pem
+        run: platformio run -e esp32-s3-n16r8-production
+
+      - name: Assert signed production artifacts exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_dir="bgen/esp32-s3-n16r8-production"
+          for artifact in firmware-signed.bin bootloader-signed.bin partitions-signed.bin; do
+            test -s "$build_dir/$artifact"
+          done

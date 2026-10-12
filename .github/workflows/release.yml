@@ -59,15 +59,34 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.platformio
-          key: platformio-release-${{ runner.os }}-${{ hashFiles('platformio.ini', 'sdkconfig.defaults') }}
+          key: platformio-release-${{ runner.os }}-${{ hashFiles('platformio.ini', 'sdkconfig.defaults', 'sdkconfig.production.defaults') }}
 
       - name: Install PlatformIO
         if: steps.detect.outputs.should_release == 'true'
         run: python -m pip install --upgrade pip platformio==6.1.18
 
-      - name: Build firmware
+      - name: Install Secure Boot signing key
         if: steps.detect.outputs.should_release == 'true'
-        run: platformio run -e esp32-s3-n16r8
+        env:
+          SPROUT_SIGNING_KEY_BASE64: ${{ secrets.SPROUT_SECURE_BOOT_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPROUT_SIGNING_KEY_BASE64:-}" ]]; then
+            echo "Missing required secret SPROUT_SECURE_BOOT_SIGNING_KEY." >&2
+            echo "Add the base64-encoded Secure Boot RSA signing key (PEM) to release it." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$SPROUT_SIGNING_KEY_BASE64" | base64 --decode \
+            > "$RUNNER_TEMP/secure_boot_signing_key.pem"
+          head -n 1 "$RUNNER_TEMP/secure_boot_signing_key.pem" | grep -q 'BEGIN'
+
+      - name: Build production firmware
+        if: steps.detect.outputs.should_release == 'true'
+        env:
+          SPROUT_SECURE_BOOT_SIGNING_KEY: ${{ runner.temp }}/secure_boot_signing_key.pem
+        run: platformio run -e esp32-s3-n16r8-production
 
       - name: Generate Chinese release notes
         if: steps.detect.outputs.should_release == 'true'
@@ -86,11 +105,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          build_dir="bgen/esp32-s3-n16r8"
+          build_dir="bgen/esp32-s3-n16r8-production"
           mkdir -p dist
-          cp "$build_dir/firmware.bin" "dist/sprout-firmware-${{ steps.detect.outputs.tag }}.bin"
-          cp "$build_dir/bootloader.bin" dist/bootloader.bin
-          cp "$build_dir/partitions.bin" dist/partitions.bin
+          cp "$build_dir/firmware-signed.bin" "dist/sprout-firmware-${{ steps.detect.outputs.tag }}.bin"
+          cp "$build_dir/bootloader-signed.bin" dist/bootloader.bin
+          cp "$build_dir/partitions-signed.bin" dist/partitions.bin
           cp "$build_dir/firmware.elf" dist/firmware.elf
           cp "$build_dir/sprout_firmware.map" dist/firmware.map
           (

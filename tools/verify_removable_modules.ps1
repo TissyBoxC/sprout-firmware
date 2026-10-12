@@ -186,13 +186,28 @@ function Test-OptionalModuleRemoval {
 }
 
 $platformIoCommand = Resolve-PlatformIoCommand
-# The production profile needs a signing key and a burned HMAC key on real
-# hardware, so it is verified by config contract checks below rather than a
-# full build in CI. The default and minimal profiles build end to end.
+# The default and minimal profiles always build end to end. The production
+# profile also builds whenever a Secure Boot signing key is available (CI
+# generates a throwaway one), which exercises the real hardened configuration,
+# the signing steps, and the fail-closed key guard.
 $environments = @(
-    'esp32-s3-n16r8',
+    'esp32-s3-n16r8'
     'esp32-s3-n16r8-minimal'
 )
+
+# Resolve the same key the production pre-script uses so CI and local runs stay
+# consistent. Without a key the production build is skipped and covered by the
+# config contract checks below instead.
+$productionSigningKey = $env:SPROUT_SECURE_BOOT_SIGNING_KEY
+if ([string]::IsNullOrWhiteSpace($productionSigningKey)) {
+    $productionSigningKey = Join-Path $firmwareRoot 'secure_boot_signing_key.pem'
+}
+if (Test-Path -LiteralPath $productionSigningKey -PathType Leaf) {
+    $env:SPROUT_SECURE_BOOT_SIGNING_KEY = (Resolve-Path -LiteralPath $productionSigningKey).Path
+    $environments += 'esp32-s3-n16r8-production'
+} else {
+    Write-Host 'No Secure Boot signing key found; skipping the production build.'
+}
 
 Invoke-PlatformIoBuild `
     -ProjectPath $firmwareRoot `
