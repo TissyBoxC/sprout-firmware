@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_TOUCH_REPORT
+    bool "Report the live touch configuration to the platform"
+    default n
+    depends on FEATURE_TOUCH_INPUT && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's touch and haptic capability and the number of
+        enabled gesture classes so the guardian touch view matches the input
+        layer actually running. A device without a touch surface never links
+        the component.
+
+config TOUCH_REPORT_INTERVAL_SECONDS
+    int "Touch report interval in seconds"
+    depends on FEATURE_TOUCH_REPORT
+    range 300 86400
+    default 900
+
+config TOUCH_REPORT_RETRY_INTERVAL_SECONDS
+    int "Touch report retry interval while offline"
+    depends on FEATURE_TOUCH_REPORT
+    range 5 300
+    default 15
+
+endmenu

@@ -1171,6 +1171,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$touchReportRoot = Join-Path $firmwareRoot 'components/touch_report'
+Invoke-HostTest `
+    -Name 'touch_report_core' `
+    -Sources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchReportRoot 'src/touch_report_core.c')
+        (Join-Path $touchReportRoot 'test/test_touch_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $touchInputRoot 'include')
+        (Join-Path $touchInputRoot 'src')
+        (Join-Path $touchInputRoot 'test/stubs')
+        (Join-Path $touchReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'touch_input_runtime' `
     -Sources @(
