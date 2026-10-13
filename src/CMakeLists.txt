@@ -62,6 +62,10 @@ if(CONFIG_FEATURE_BLUETOOTH_AUDIO)
     list(APPEND app_requires "bluetooth_audio")
 endif()
 
+if(CONFIG_FEATURE_BLUETOOTH_AUDIO_SYNC)
+    list(APPEND app_requires "bluetooth_audio_sync")
+endif()
+
 if(CONFIG_FEATURE_LEARNING_VISUALIZATION)
     list(APPEND app_requires "learning_visualization")
 endif()

@@ -91,6 +91,23 @@ typedef enum {
     BLUETOOTH_AUDIO_ERR_STORAGE,
 } bluetooth_error_t;
 
+/**
+ * @brief One guardian policy as carried by the device endpoint.
+ *
+ * The codec is a catalog name ("auto", "sbc", "aac", "ldac") rather than the
+ * firmware enum so the network layer can populate it without knowing the
+ * firmware catalog. The strings are owned by the caller.
+ */
+typedef struct {
+    bool enabled;
+    bool speaker_mode_allowed;
+    bool pairing_allowed;
+    bool auto_reconnect;
+    const char *preferred_codec;
+    int max_volume_percent;
+    const char *display_name;
+} bluetooth_audio_remote_t;
+
 /** @brief Return the conservative default policy (Bluetooth audio off). */
 bluetooth_policy_t bluetooth_default(void);
 
@@ -143,6 +160,17 @@ bool bluetooth_audio_is_ready(void);
 
 /** @brief Store a guardian policy, clamping out-of-range values. */
 esp_err_t bluetooth_audio_set(const bluetooth_policy_t *policy);
+
+/**
+ * @brief Apply a policy fetched from the device endpoint.
+ *
+ * Maps the catalog codec name to the firmware enum and clamps every field.
+ * Returns ESP_ERR_INVALID_ARG when the codec name is not in the catalog, so a
+ * malformed response is rejected instead of silently defaulting the codec.
+ */
+esp_err_t bluetooth_audio_apply_remote(
+    const bluetooth_audio_remote_t *remote
+);
 
 /** @brief Return the currently applied policy. */
 bluetooth_policy_t bluetooth_audio_get(void);

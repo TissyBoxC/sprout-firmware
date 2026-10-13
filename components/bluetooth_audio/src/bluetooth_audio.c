@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "config_store.h"
+#include "bluetooth_audio_sync_core.h"
 
 // One bounded binary blob persists the guardian Bluetooth policy without a
 // dedicated partition; a schema change is detected and replaced with the
@@ -102,6 +103,19 @@ esp_err_t bluetooth_audio_set(const bluetooth_policy_t *policy) {
     s_policy = bluetooth_clamp(policy);
     bluetooth_reconcile_runtime();
     return bluetooth_persist();
+}
+
+esp_err_t bluetooth_audio_apply_remote(
+    const bluetooth_audio_remote_t *remote
+) {
+    if (!s_ready) {
+        return BLUETOOTH_AUDIO_ERR_INVALID_STATE;
+    }
+    bluetooth_policy_t policy = {};
+    if (!bluetooth_audio_sync_core_build_policy(remote, &policy)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return bluetooth_audio_set(&policy);
 }
 
 bluetooth_policy_t bluetooth_audio_get(void) {

@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_BLUETOOTH_AUDIO)
     list(APPEND bluetooth_audio_sources
         "src/bluetooth_audio.c"
         "src/bluetooth_core.c"
+        "src/bluetooth_audio_sync_core.c"
     )
 endif()
 
