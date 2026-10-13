@@ -405,6 +405,25 @@ Invoke-HostTest `
     -AdditionalArguments @('-DCONFIG_FEATURE_PRIVACY_GUARD=1') `
     -Compiler $compiler
 
+$visionSyncRoot = Join-Path $firmwareRoot 'components/vision_sync'
+Invoke-HostTest `
+    -Name 'vision_sync_core' `
+    -Sources @(
+        (Join-Path $visionSyncRoot 'src/vision_sync_core.c')
+        (Join-Path $visionSyncRoot 'test/test_vision_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $visionSyncRoot 'include')
+        (Join-Path $visionSyncRoot 'src')
+        (Join-Path $visionSyncRoot 'test/stubs')
+        (Join-Path $cameraVisionRoot 'include')
+        (Join-Path $firmwareRoot 'components/camera_capture/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $cameraVisionRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'content_filter' `
     -Sources @(

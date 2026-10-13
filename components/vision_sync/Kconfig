@@ -1,0 +1,31 @@
+menu "Sprout feature modules"
+
+config FEATURE_VISION_SYNC
+    bool "Enable camera vision task synchronisation"
+    default n
+    depends on FEATURE_CAMERA_VISION && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches guardian vision tasks from the platform, runs the on-device
+        inference provider and reports bounded results or failures back. A
+        build without an inference provider still drains the queue but reports
+        each task as unsupported instead of fabricating a recognition result.
+
+config VISION_SYNC_INTERVAL_SECONDS
+    int "Vision task poll interval in seconds"
+    depends on FEATURE_VISION_SYNC
+    range 15 3600
+    default 30
+
+config VISION_SYNC_RETRY_INTERVAL_SECONDS
+    int "Vision task sync retry interval while offline"
+    depends on FEATURE_VISION_SYNC
+    range 5 300
+    default 15
+
+config VISION_SYNC_MAX_TASKS_PER_CYCLE
+    int "Maximum vision tasks handled per poll"
+    depends on FEATURE_VISION_SYNC
+    range 1 16
+    default 4
+
+endmenu

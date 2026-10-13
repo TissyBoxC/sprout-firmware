@@ -210,6 +210,9 @@
 #if CONFIG_FEATURE_CAMERA_VISION
 #include "camera_vision.h"
 #endif
+#if CONFIG_FEATURE_VISION_SYNC
+#include "vision_sync.h"
+#endif
 #if CONFIG_FEATURE_DISPLAY_POLICY
 #include "display_policy.h"
 #endif
@@ -794,6 +797,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CAMERA_VISION
     ESP_ERROR_CHECK(module_registry_add(camera_vision_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_VISION_SYNC
+    ESP_ERROR_CHECK(module_registry_add(vision_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_DISPLAY_POLICY
     ESP_ERROR_CHECK(module_registry_add(display_policy_module_descriptor()));
