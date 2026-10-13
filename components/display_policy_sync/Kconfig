@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_DISPLAY_POLICY_SYNC
+    bool "Enable eye-care display policy synchronisation"
+    default y
+    depends on FEATURE_DISPLAY_POLICY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family eye-care policy and applies it, keeping a device's
+        brightness, colour temperature, viewing-distance reminder, daily
+        screen-time cap and break reminder consistent with the parent app.
+
+config DISPLAY_POLICY_SYNC_INTERVAL_SECONDS
+    int "Display policy sync interval in seconds"
+    depends on FEATURE_DISPLAY_POLICY_SYNC
+    range 60 86400
+    default 1800
+
+config DISPLAY_POLICY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Display policy sync retry interval while offline"
+    depends on FEATURE_DISPLAY_POLICY_SYNC
+    range 5 300
+    default 15
+
+endmenu

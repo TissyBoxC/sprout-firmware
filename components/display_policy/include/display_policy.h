@@ -50,6 +50,7 @@ typedef struct {
     uint8_t auto_brightness;
     uint8_t night_light;
     uint8_t distance_reminder;
+    uint32_t revision;
 } display_policy_t;
 
 /** @brief Stable error codes for diagnostics and guardian-facing copy. */

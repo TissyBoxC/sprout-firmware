@@ -40,6 +40,10 @@ if(CONFIG_FEATURE_DISPLAY_POLICY)
     list(APPEND app_requires "display_policy")
 endif()
 
+if(CONFIG_FEATURE_DISPLAY_POLICY_SYNC)
+    list(APPEND app_requires "display_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_TOUCH_INPUT)
     list(APPEND app_requires "touch_input")
 endif()

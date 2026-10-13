@@ -39,6 +39,7 @@ display_policy_t display_policy_default(void) {
         .auto_brightness = 1u,
         .night_light = 1u,
         .distance_reminder = 1u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -81,6 +82,7 @@ display_policy_t display_policy_clamp(const display_policy_t *policy) {
     clamped.auto_brightness = policy->auto_brightness != 0u ? 1u : 0u;
     clamped.night_light = policy->night_light != 0u ? 1u : 0u;
     clamped.distance_reminder = policy->distance_reminder != 0u ? 1u : 0u;
+    clamped.revision = policy->revision;
     clamped.schema_version = DISPLAY_POLICY_SCHEMA_VERSION;
     return clamped;
 }

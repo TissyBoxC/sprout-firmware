@@ -12,11 +12,13 @@ int main() {
     display_policy_t requested = defaults;
     requested.brightness_percent = 200u;
     requested.daily_limit_minutes = 9999u;
+    requested.revision = 3u;
     assert(display_policy_set(&requested) == ESP_OK);
     const display_policy_t stored = display_policy_get();
     assert(stored.brightness_percent == DISPLAY_POLICY_MAX_BRIGHTNESS);
     assert(stored.daily_limit_minutes ==
            DISPLAY_POLICY_MAX_DAILY_LIMIT_MINUTES);
+    assert(stored.revision == 3u);
 
     const uint32_t base = 1700000000u;
     display_policy_reset_usage(base);

@@ -189,7 +189,7 @@ esp_err_t display_report_now(void) {
     payload["screen_width"] = status.screen_width;
     payload["screen_height"] = status.screen_height;
     payload["touch_supported"] = status.touch_supported;
-    payload["policy_revision"] = 0;
+    payload["policy_revision"] = (int)policy.revision;
     char request_body[DISPLAY_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));
