@@ -1188,6 +1188,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$displayReportRoot = Join-Path $firmwareRoot 'components/display_report'
+Invoke-HostTest `
+    -Name 'display_report_core' `
+    -Sources @(
+        (Join-Path $displayPolicyRoot 'src/display_policy_core.c')
+        (Join-Path $displayReportRoot 'src/display_report_core.c')
+        (Join-Path $displayReportRoot 'test/test_display_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $displayPolicyRoot 'include')
+        (Join-Path $displayPolicyRoot 'src')
+        (Join-Path $displayPolicyRoot 'test/stubs')
+        (Join-Path $displayReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'touch_input_runtime' `
     -Sources @(

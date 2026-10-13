@@ -1,0 +1,36 @@
+menu "Sprout feature modules"
+
+config FEATURE_DISPLAY_REPORT
+    bool "Report the live display status to the platform"
+    default n
+    depends on FEATURE_DISPLAY_POLICY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's brightness, panel size and touch support so the
+        guardian display view matches the panel actually present. A device
+        without a display never links the component.
+
+config DISPLAY_REPORT_PANEL_WIDTH
+    int "Panel width in pixels, or 0 when the device does not declare one"
+    depends on FEATURE_DISPLAY_REPORT
+    range 0 8192
+    default 0
+
+config DISPLAY_REPORT_PANEL_HEIGHT
+    int "Panel height in pixels, or 0 when the device does not declare one"
+    depends on FEATURE_DISPLAY_REPORT
+    range 0 8192
+    default 0
+
+config DISPLAY_REPORT_INTERVAL_SECONDS
+    int "Display report interval in seconds"
+    depends on FEATURE_DISPLAY_REPORT
+    range 300 86400
+    default 900
+
+config DISPLAY_REPORT_RETRY_INTERVAL_SECONDS
+    int "Display report retry interval while offline"
+    depends on FEATURE_DISPLAY_REPORT
+    range 5 300
+    default 15
+
+endmenu

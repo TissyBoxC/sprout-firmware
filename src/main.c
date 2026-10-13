@@ -213,6 +213,9 @@
 #if CONFIG_FEATURE_DISPLAY_POLICY
 #include "display_policy.h"
 #endif
+#if CONFIG_FEATURE_DISPLAY_REPORT
+#include "display_report.h"
+#endif
 #if CONFIG_FEATURE_TOUCH_INPUT
 #include "touch_input.h"
 #endif
@@ -794,6 +797,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DISPLAY_POLICY
     ESP_ERROR_CHECK(module_registry_add(display_policy_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DISPLAY_REPORT
+    ESP_ERROR_CHECK(module_registry_add(display_report_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_TOUCH_INPUT
     ESP_ERROR_CHECK(module_registry_add(touch_input_module_descriptor()));
