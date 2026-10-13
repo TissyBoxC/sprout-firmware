@@ -195,6 +195,28 @@ video_quality_t video_quality(void) {
     return s_quality;
 }
 
+video_session_status_t video_session_status(void) {
+    video_session_status_t status = {
+        .supported = true,
+        .camera_allowed = s_policy.camera_allowed != 0u,
+        .microphone_allowed = s_policy.microphone_allowed != 0u,
+        .call_state = s_state,
+        .quality = s_quality,
+        .last_end_reason = s_end_reason,
+        .revision = s_policy.revision,
+    };
+    // A disabled policy reports an idle call with no capture permission and no
+    // media state, so a stale session never reads as a live call.
+    if (s_policy.enabled == 0u) {
+        status.camera_allowed = false;
+        status.microphone_allowed = false;
+        status.call_state = VIDEO_STATE_IDLE;
+        status.quality = VIDEO_QUALITY_UNKNOWN;
+        status.last_end_reason = VIDEO_END_NONE;
+    }
+    return status;
+}
+
 static esp_err_t video_initialize(void) {
     return video_init();
 }

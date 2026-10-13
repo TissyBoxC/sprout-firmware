@@ -26,6 +26,7 @@ int main() {
     remote.quality_floor = "fair";
     remote.ring_timeout_seconds = 5;
     remote.max_session_seconds = 999999;
+    remote.revision = 9;
     video_policy_t policy = {};
     assert(video_session_sync_core_build_policy(&remote, &policy));
     assert(policy.schema_version == VIDEO_SESSION_SCHEMA_VERSION);
@@ -36,6 +37,7 @@ int main() {
     assert(policy.quality_floor == (uint8_t)VIDEO_QUALITY_FAIR);
     assert(policy.ring_timeout_seconds == 5u);
     assert(policy.max_session_seconds == VIDEO_MAX_MAX_SESSION_SECONDS);
+    assert(policy.revision == 9u);
     assert(video_is_valid(&policy));
     assert(video_can_capture(&policy));
 

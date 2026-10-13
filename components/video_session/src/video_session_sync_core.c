@@ -48,6 +48,9 @@ bool video_session_sync_core_build_policy(
     uint32_t max_session = remote->max_session_seconds < 0
         ? 0u
         : (uint32_t)remote->max_session_seconds;
+    uint32_t revision = remote->revision < 0
+        ? 0u
+        : (uint32_t)remote->revision;
     video_policy_t policy = video_default();
     policy.enabled = remote->enabled ? 1u : 0u;
     policy.camera_allowed = remote->camera_allowed ? 1u : 0u;
@@ -56,6 +59,7 @@ bool video_session_sync_core_build_policy(
     policy.quality_floor = (uint8_t)quality;
     policy.ring_timeout_seconds = (uint16_t)ring_timeout;
     policy.max_session_seconds = (uint16_t)max_session;
+    policy.revision = revision;
     // The clamp pins every timeout into its approved bounds.
     *policy_out = video_clamp(&policy);
     return true;

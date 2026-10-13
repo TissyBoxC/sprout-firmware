@@ -39,6 +39,7 @@ video_policy_t video_default(void) {
         .reserved = 0u,
         .ring_timeout_seconds = 30u,
         .max_session_seconds = 1800u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -70,6 +71,7 @@ video_policy_t video_clamp(const video_policy_t *policy) {
         VIDEO_MIN_MAX_SESSION_SECONDS,
         VIDEO_MAX_MAX_SESSION_SECONDS
     );
+    clamped.revision = policy->revision;
     return clamped;
 }
 

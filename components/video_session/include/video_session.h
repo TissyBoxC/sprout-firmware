@@ -61,6 +61,7 @@ typedef struct {
     uint8_t reserved;
     uint16_t ring_timeout_seconds;
     uint16_t max_session_seconds;
+    uint32_t revision;
 } video_policy_t;
 
 /** @brief Stable error codes for diagnostics and guardian-facing copy. */
@@ -88,7 +89,24 @@ typedef struct {
     const char *quality_floor;
     int ring_timeout_seconds;
     int max_session_seconds;
+    int revision;
 } video_remote_t;
+
+/**
+ * @brief One bounded session status snapshot for the device endpoint report.
+ *
+ * The catalog names are stable shared contract strings; the snapshot is
+ * read-only state that the sync worker serialises into the status report.
+ */
+typedef struct {
+    bool supported;
+    bool camera_allowed;
+    bool microphone_allowed;
+    video_state_t call_state;
+    video_quality_t quality;
+    video_end_reason_t last_end_reason;
+    uint32_t revision;
+} video_session_status_t;
 
 /** @brief Return the conservative default policy (camera and mic off). */
 video_policy_t video_default(void);
@@ -164,6 +182,9 @@ video_end_reason_t video_last_end_reason(void);
 
 /** @brief Return the current bounded quality band. */
 video_quality_t video_quality(void);
+
+/** @brief Return one bounded session status snapshot for the status report. */
+video_session_status_t video_session_status(void);
 
 /** @brief Return true when the sensor may capture under the current policy. */
 bool video_can_capture(const video_policy_t *policy);
