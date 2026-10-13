@@ -867,9 +867,25 @@ Invoke-HostTest `
     -Name 'playback_request_runtime' `
     -Sources @(
         (Join-Path $playbackRequestRoot 'src/playback_request_core.c')
+        (Join-Path $playbackRequestRoot 'src/playback_request_sync_core.c')
         (Join-Path $playbackRequestRoot 'src/playback_request.c')
         (Join-Path $playbackRequestRoot 'test/stubs/config_store.c')
         (Join-Path $playbackRequestRoot 'test/test_playback_request_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackRequestRoot 'include')
+        (Join-Path $playbackRequestRoot 'src')
+        (Join-Path $playbackRequestRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'playback_request_sync_core' `
+    -Sources @(
+        (Join-Path $playbackRequestRoot 'src/playback_request_core.c')
+        (Join-Path $playbackRequestRoot 'src/playback_request_sync_core.c')
+        (Join-Path $playbackRequestRoot 'test/test_playback_request_sync_core.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $playbackRequestRoot 'include')

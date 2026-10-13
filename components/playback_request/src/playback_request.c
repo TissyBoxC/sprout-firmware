@@ -5,6 +5,9 @@
 
 #include "config_store.h"
 #include "playback_request_core.h"
+#include "playback_request_sync_core.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 // The bounded playback request cache persists as one binary blob so the device
 // keeps the guardian's on-demand requests across restarts without a dedicated
@@ -12,13 +15,24 @@
 #define PLAYBACK_REQUEST_STORE_KEY "playback_request_index"
 
 static playback_request_core_t s_core;
+static SemaphoreHandle_t s_lock;
 static bool s_ready;
 
-static esp_err_t playback_request_persist(void) {
+// Every read and write goes through the lock so the sync worker and the
+// playback loop never observe a half-updated request cache.
+#define PLAYBACK_REQUEST_LOCK() xSemaphoreTake(s_lock, portMAX_DELAY)
+#define PLAYBACK_REQUEST_UNLOCK() xSemaphoreGive(s_lock)
+
+static esp_err_t playback_request_persist_core(
+    const playback_request_core_t *core
+) {
+    if (core == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const esp_err_t stored = config_store_set_blob(
         PLAYBACK_REQUEST_STORE_KEY,
-        &s_core,
-        sizeof(s_core)
+        core,
+        sizeof(*core)
     );
     if (stored != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
@@ -46,6 +60,12 @@ static void playback_request_restore(void) {
 }
 
 esp_err_t playback_request_init(void) {
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
     playback_request_core_init(&s_core);
     playback_request_restore();
     s_ready = true;
@@ -60,46 +80,99 @@ esp_err_t playback_request_upsert(const playback_request_t *request) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
     const playback_request_error_t result = playback_request_core_upsert(
-        &s_core,
+        &updated,
         request
     );
     if (result != PLAYBACK_REQUEST_OK) {
+        PLAYBACK_REQUEST_UNLOCK();
         return ESP_ERR_INVALID_ARG;
     }
-    return playback_request_persist();
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
 }
 
 esp_err_t playback_request_remove(const char *request_id) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
     const playback_request_error_t result = playback_request_core_remove(
-        &s_core,
+        &updated,
         request_id
     );
     if (result != PLAYBACK_REQUEST_OK) {
+        PLAYBACK_REQUEST_UNLOCK();
         return ESP_ERR_INVALID_ARG;
     }
-    return playback_request_persist();
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
+}
+
+esp_err_t playback_request_merge_remote(
+    const playback_request_t *remote,
+    size_t remote_count
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
+    const playback_request_error_t result = playback_request_sync_core_merge(
+        &updated,
+        remote,
+        remote_count
+    );
+    if (result != PLAYBACK_REQUEST_OK) {
+        PLAYBACK_REQUEST_UNLOCK();
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
 }
 
 esp_err_t playback_request_acknowledge(const char *request_id) {
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
     const playback_request_error_t result =
-        playback_request_core_acknowledge(&s_core, request_id);
+        playback_request_core_acknowledge(&updated, request_id);
     switch (result) {
         case PLAYBACK_REQUEST_OK:
-            return playback_request_persist();
+            break;
         case PLAYBACK_REQUEST_ERR_NOT_FOUND:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_NOT_FOUND;
         case PLAYBACK_REQUEST_ERR_INVALID_STATE:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_STATE;
         default:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_ARG;
     }
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
 }
 
 esp_err_t playback_request_complete(
@@ -109,21 +182,32 @@ esp_err_t playback_request_complete(
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
     const playback_request_error_t result = playback_request_core_complete(
-        &s_core,
+        &updated,
         request_id,
         outcome
     );
     switch (result) {
         case PLAYBACK_REQUEST_OK:
-            return playback_request_persist();
+            break;
         case PLAYBACK_REQUEST_ERR_NOT_FOUND:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_NOT_FOUND;
         case PLAYBACK_REQUEST_ERR_INVALID_STATE:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_STATE;
         default:
+            PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_ARG;
     }
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
 }
 
 esp_err_t playback_request_list(
@@ -140,11 +224,13 @@ esp_err_t playback_request_list(
     if (requests_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    PLAYBACK_REQUEST_LOCK();
     const size_t copied = s_core.count < capacity ? s_core.count : capacity;
     for (size_t index = 0; index < copied; ++index) {
         requests_out[index] = s_core.requests[index];
     }
     *count_out = s_core.count;
+    PLAYBACK_REQUEST_UNLOCK();
     return ESP_OK;
 }
 
@@ -162,6 +248,7 @@ esp_err_t playback_request_list_pending(
     if (requests_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    PLAYBACK_REQUEST_LOCK();
     // The cache is newest-first, so walk it backwards for oldest-first order.
     size_t matched = 0;
     for (size_t offset = 0; offset < s_core.count; ++offset) {
@@ -176,6 +263,7 @@ esp_err_t playback_request_list_pending(
         matched += 1;
     }
     *count_out = matched;
+    PLAYBACK_REQUEST_UNLOCK();
     return ESP_OK;
 }
 
@@ -183,19 +271,28 @@ bool playback_request_get(
     const char *request_id,
     playback_request_t *request_out
 ) {
-    if (request_id == NULL || request_out == NULL) {
+    if (!s_ready || request_id == NULL || request_out == NULL) {
         return false;
     }
+    PLAYBACK_REQUEST_LOCK();
     const size_t index = playback_request_core_find(&s_core, request_id);
     if (index >= s_core.count) {
+        PLAYBACK_REQUEST_UNLOCK();
         return false;
     }
     *request_out = s_core.requests[index];
+    PLAYBACK_REQUEST_UNLOCK();
     return true;
 }
 
 size_t playback_request_count(void) {
-    return s_core.count;
+    if (!s_ready) {
+        return 0;
+    }
+    PLAYBACK_REQUEST_LOCK();
+    const size_t count = s_core.count;
+    PLAYBACK_REQUEST_UNLOCK();
+    return count;
 }
 
 const char *playback_request_status_name(playback_request_status_t status) {

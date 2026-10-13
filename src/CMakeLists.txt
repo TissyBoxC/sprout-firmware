@@ -286,6 +286,10 @@ if(CONFIG_FEATURE_PLAYBACK_REQUEST)
     list(APPEND app_requires "playback_request")
 endif()
 
+if(CONFIG_FEATURE_PLAYBACK_REQUEST_SYNC)
+    list(APPEND app_requires "playback_request_sync")
+endif()
+
 if(CONFIG_FEATURE_LOCAL_COMMAND)
     list(APPEND app_requires "local_command")
 endif()

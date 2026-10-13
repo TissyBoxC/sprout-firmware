@@ -80,6 +80,18 @@ esp_err_t playback_request_upsert(const playback_request_t *request);
 esp_err_t playback_request_remove(const char *request_id);
 
 /**
+ * @brief Merge one remote pending-request snapshot into the local cache.
+ *
+ * Retains local terminal history, drops local non-terminal requests the
+ * guardian cancelled, and ignores a remote entry the device already finished.
+ * Unusable or duplicate remote ids are dropped.
+ */
+esp_err_t playback_request_merge_remote(
+    const playback_request_t *remote,
+    size_t remote_count
+);
+
+/**
  * @brief Mark one request acknowledged.
  *
  * A request that is already terminal is not changed and reports

@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_PLAYBACK_REQUEST)
     list(APPEND playback_request_sources
         "src/playback_request.c"
         "src/playback_request_core.c"
+        "src/playback_request_sync_core.c"
     )
 endif()
 
@@ -12,6 +13,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         config_store
+        freertos
     REQUIRES
         module_registry
 )

@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_PLAYBACK_REQUEST_SYNC
+    bool "Enable guardian playback request synchronisation"
+    default y
+    depends on FEATURE_PLAYBACK_REQUEST && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the guardian's on-demand playback requests and merges them into
+        the local cache, so the device drains queued requests in order and
+        reports their outcomes back to the parent app.
+
+config PLAYBACK_REQUEST_SYNC_INTERVAL_SECONDS
+    int "Playback request sync interval in seconds"
+    depends on FEATURE_PLAYBACK_REQUEST_SYNC
+    range 15 86400
+    default 60
+
+config PLAYBACK_REQUEST_SYNC_RETRY_INTERVAL_SECONDS
+    int "Playback request sync retry interval while offline"
+    depends on FEATURE_PLAYBACK_REQUEST_SYNC
+    range 5 300
+    default 15
+
+endmenu
