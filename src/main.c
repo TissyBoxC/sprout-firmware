@@ -105,6 +105,10 @@
 #include "playback_request_sync.h"
 #endif
 
+#if CONFIG_FEATURE_PLAYBACK_HISTORY_SYNC
+#include "playback_history_sync.h"
+#endif
+
 #if CONFIG_FEATURE_LOCAL_COMMAND
 #include "local_command.h"
 #endif
@@ -945,6 +949,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_PLAYBACK_REQUEST_SYNC
     ESP_ERROR_CHECK(module_registry_add(playback_request_sync_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_PLAYBACK_HISTORY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        playback_history_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_LOCAL_COMMAND
     ESP_ERROR_CHECK(module_registry_add(local_command_module_descriptor()));

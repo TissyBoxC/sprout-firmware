@@ -68,6 +68,9 @@ esp_err_t playback_history_record(
     if (result != PLAYBACK_HISTORY_OK) {
         return ESP_ERR_INVALID_ARG;
     }
+    // Queue the row so the sync worker can report it to the platform. A queue
+    // rejection never blocks the local history write.
+    (void)playback_history_core_queue_pending(&s_core, record);
     if (index_out != NULL) {
         *index_out = 0;
     }
@@ -98,6 +101,53 @@ esp_err_t playback_history_list(
 
 size_t playback_history_count(void) {
     return s_core.count;
+}
+
+size_t playback_history_pending_count(void) {
+    if (!s_ready) {
+        return 0;
+    }
+    return s_core.pending_count;
+}
+
+esp_err_t playback_history_list_pending(
+    playback_record_t *records_out,
+    size_t capacity,
+    size_t *count_out
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (count_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (records_out == NULL && capacity > 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *count_out = playback_history_core_list_pending(
+        &s_core,
+        records_out,
+        capacity
+    );
+    return ESP_OK;
+}
+
+esp_err_t playback_history_ack_pending(
+    const char *package_id,
+    int64_t played_at
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (package_id == NULL || package_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const playback_history_error_t result =
+        playback_history_core_remove_pending(&s_core, package_id, played_at);
+    if (result != PLAYBACK_HISTORY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return playback_history_persist();
 }
 
 esp_err_t playback_history_forget_all(void) {

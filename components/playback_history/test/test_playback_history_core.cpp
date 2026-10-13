@@ -132,5 +132,103 @@ int main() {
     playback_record_t none = {};
     assert(!playback_history_core_latest_resumable(&ring, &none));
 
+    // Recorded plays are queued for the platform oldest-first, and a repeat of
+    // the same (package, played_at) replaces the stored row in place.
+    playback_history_core_t queued = {};
+    playback_history_core_init(&queued);
+    assert(queued.pending_count == 0);
+    playback_record_t play_one = make_record(
+        "content_story_001",
+        PLAYBACK_OUTCOME_COMPLETED,
+        60,
+        1000
+    );
+    assert(
+        playback_history_core_queue_pending(&queued, &play_one) ==
+        PLAYBACK_HISTORY_OK
+    );
+    assert(
+        playback_history_core_queue_pending(&queued, &play_one) ==
+        PLAYBACK_HISTORY_OK
+    );
+    assert(queued.pending_count == 1);
+    playback_record_t play_two = make_record(
+        "content_story_002",
+        PLAYBACK_OUTCOME_INTERRUPTED,
+        30,
+        2000
+    );
+    assert(
+        playback_history_core_queue_pending(&queued, &play_two) ==
+        PLAYBACK_HISTORY_OK
+    );
+    assert(queued.pending_count == 2);
+    // The same package played again at a different time is a distinct row.
+    playback_record_t play_one_again = make_record(
+        "content_story_001",
+        PLAYBACK_OUTCOME_COMPLETED,
+        90,
+        3000
+    );
+    assert(
+        playback_history_core_queue_pending(&queued, &play_one_again) ==
+        PLAYBACK_HISTORY_OK
+    );
+    assert(queued.pending_count == 3);
+
+    // The list helper copies oldest-first and reports the full count even when
+    // the caller provides a smaller buffer.
+    playback_record_t listed[PLAYBACK_HISTORY_OUTBOUND_CAPACITY] = {};
+    const size_t listed_count =
+        playback_history_core_list_pending(&queued, listed, 2);
+    assert(listed_count == 3);
+    assert(std::strcmp(listed[0].package_id, "content_story_001") == 0);
+    assert(listed[0].played_at == 1000);
+
+    // Removing one row drains exactly that (package, played_at) pair; a missing
+    // entry is success so a retried report never fails.
+    assert(
+        playback_history_core_remove_pending(
+            &queued,
+            "content_story_001",
+            1000
+        ) == PLAYBACK_HISTORY_OK
+    );
+    assert(queued.pending_count == 2);
+    assert(
+        playback_history_core_remove_pending(
+            &queued,
+            "content_story_001",
+            1000
+        ) == PLAYBACK_HISTORY_OK
+    );
+    assert(queued.pending_count == 2);
+
+    // The queue is bounded; filling past capacity drops the oldest row while
+    // keeping the newest.
+    playback_history_core_t filled = {};
+    playback_history_core_init(&filled);
+    for (int index = 0; index < PLAYBACK_HISTORY_OUTBOUND_CAPACITY + 4;
+         ++index) {
+        std::snprintf(id, sizeof(id), "content_story_%03d", index);
+        const playback_record_t record = make_record(
+            id,
+            PLAYBACK_OUTCOME_COMPLETED,
+            10,
+            index
+        );
+        assert(
+            playback_history_core_queue_pending(&filled, &record) ==
+            PLAYBACK_HISTORY_OK
+        );
+    }
+    assert(filled.pending_count == PLAYBACK_HISTORY_OUTBOUND_CAPACITY);
+    assert(
+        std::strcmp(
+            filled.pending[filled.pending_count - 1].package_id,
+            "content_story_035"
+        ) == 0
+    );
+
     return 0;
 }

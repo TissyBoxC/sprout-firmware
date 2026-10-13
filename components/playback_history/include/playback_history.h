@@ -15,6 +15,16 @@ extern "C" {
 /** @brief Maximum number of playback records kept on the device. */
 #define PLAYBACK_HISTORY_CAPACITY 32
 
+/**
+ * @brief Maximum number of playback records waiting to be reported.
+ *
+ * The device reports each finished play to the platform once. The queue is
+ * persisted so an offline device still delivers its recent playback history
+ * after it reconnects, and it is bounded to the same size as the ring so it
+ * cannot grow without limit.
+ */
+#define PLAYBACK_HISTORY_OUTBOUND_CAPACITY PLAYBACK_HISTORY_CAPACITY
+
 /** @brief How one playback attempt ended; mirrors the platform contract. */
 typedef enum {
     PLAYBACK_OUTCOME_COMPLETED = 0,
@@ -65,6 +75,32 @@ esp_err_t playback_history_list(
 
 /** @brief Return the current number of records. */
 size_t playback_history_count(void);
+
+/** @brief Return the number of records waiting to be reported to the platform. */
+size_t playback_history_pending_count(void);
+
+/**
+ * @brief Copy the records waiting to be reported, oldest first.
+ *
+ * Report them in order and drop each one with `playback_history_ack_pending`
+ * after the platform accepts it.
+ */
+esp_err_t playback_history_list_pending(
+    playback_record_t *records_out,
+    size_t capacity,
+    size_t *count_out
+);
+
+/**
+ * @brief Drop one reported record from the pending queue.
+ *
+ * Keyed by (package id, played_at) because a package can be played more than
+ * once. A missing entry is success so a retried report never fails.
+ */
+esp_err_t playback_history_ack_pending(
+    const char *package_id,
+    int64_t played_at
+);
 
 /**
  * @brief Remove every recorded playback row.

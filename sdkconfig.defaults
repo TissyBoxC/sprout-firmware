@@ -59,6 +59,7 @@ CONFIG_FEATURE_CONTENT_PACKAGE_MANAGER=y
 # the theme pack cache all build on the content library.
 CONFIG_FEATURE_FAVORITES=y
 CONFIG_FEATURE_PLAYBACK_HISTORY=y
+CONFIG_FEATURE_PLAYBACK_HISTORY_SYNC=y
 CONFIG_FEATURE_THEME_PACKAGE=y
 # P1-03 companionship: local encouragement plus the growth record and habit
 # reminder caches the parent app's companionship timeline mirrors.

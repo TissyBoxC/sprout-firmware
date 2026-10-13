@@ -1,0 +1,23 @@
+menu "Sprout feature modules"
+
+config FEATURE_PLAYBACK_HISTORY_SYNC
+    bool "Enable playback history reporting"
+    default y
+    depends on FEATURE_PLAYBACK_HISTORY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports locally recorded playback outcomes to the platform so the
+        guardian sees what the child played and can resume an interrupted item.
+
+config PLAYBACK_HISTORY_SYNC_INTERVAL_SECONDS
+    int "Playback history report interval in seconds"
+    depends on FEATURE_PLAYBACK_HISTORY_SYNC
+    range 15 86400
+    default 120
+
+config PLAYBACK_HISTORY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Playback history retry interval while offline"
+    depends on FEATURE_PLAYBACK_HISTORY_SYNC
+    range 5 300
+    default 15
+
+endmenu
