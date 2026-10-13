@@ -52,6 +52,7 @@ typedef struct {
     uint32_t monthly_quota_mb;
     uint8_t low_quota_warn_percent;
     uint16_t keepalive_seconds;
+    uint32_t revision;
 } cellular_policy_t;
 
 /** @brief Live eSIM and modem state reported to the platform. */

@@ -62,6 +62,7 @@ bool cellular_sync_core_parse_policy(
     uint32_t monthly_quota_mb,
     uint32_t low_quota_warn_percent,
     uint32_t keepalive_seconds,
+    uint32_t revision,
     cellular_policy_t *policy_out
 ) {
     if (policy_out == NULL || schema_version != CELLULAR_SCHEMA_VERSION) {
@@ -81,6 +82,7 @@ bool cellular_sync_core_parse_policy(
     policy.monthly_quota_mb = monthly_quota_mb;
     policy.low_quota_warn_percent = (uint8_t)low_quota_warn_percent;
     policy.keepalive_seconds = (uint16_t)keepalive_seconds;
+    policy.revision = revision;
     const cellular_policy_t clamped = cellular_clamp(&policy);
     if (!cellular_is_valid(&clamped)) {
         return false;

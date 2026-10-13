@@ -40,6 +40,7 @@ bool cellular_sync_core_parse_policy(
     uint32_t monthly_quota_mb,
     uint32_t low_quota_warn_percent,
     uint32_t keepalive_seconds,
+    uint32_t revision,
     cellular_policy_t *policy_out
 );
 

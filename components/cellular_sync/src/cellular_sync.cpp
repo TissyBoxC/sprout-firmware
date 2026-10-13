@@ -242,6 +242,7 @@ static esp_err_t cellular_sync_apply_policy(
             data["monthly_quota_mb"] | 0u,
             data["low_quota_warn_percent"] | 0u,
             data["keepalive_seconds"] | 0u,
+            data["policy_revision"] | 0u,
             &policy
         )) {
         return ESP_ERR_INVALID_ARG;
@@ -266,8 +267,10 @@ static esp_err_t cellular_sync_report_status(
         return ESP_ERR_INVALID_ARG;
     }
     cellular_sync_status_t status = {
+        .used_mb = 0,
         .signal_percent = 0,
         .registered = false,
+        .roaming = false,
         .esim_state = CELLULAR_ESIM_ABSENT,
     };
     if (s_provider.read != NULL) {
@@ -280,13 +283,17 @@ static esp_err_t cellular_sync_report_status(
         status.signal_percent = 100u;
     }
     const cellular_policy_t policy = cellular_get();
+    uint32_t used_mb = status.used_mb;
+    if (used_mb > CELLULAR_MAX_QUOTA_MB) {
+        used_mb = CELLULAR_MAX_QUOTA_MB;
+    }
     JsonDocument payload;
     payload["bearer"] = policy.enabled ? "cellular" : "wifi";
-    payload["roaming"] = false;
+    payload["roaming"] = status.roaming;
     payload["esim_state"] = cellular_sync_esim_state_name(status.esim_state);
     payload["signal_percent"] = (int)status.signal_percent;
-    payload["used_mb"] = 0;
-    payload["policy_revision"] = 0;
+    payload["used_mb"] = (int)used_mb;
+    payload["policy_revision"] = (int)policy.revision;
     char body[CELLULAR_SYNC_REQUEST_SIZE] = {0};
     const size_t body_length = serializeJson(payload, body, sizeof(body));
     if (body_length == 0 || body_length >= sizeof(body)) {

@@ -19,9 +19,11 @@ int main() {
 
     cellular_policy_t persisted = stored;
     persisted.roaming_allowed = 1u;
+    persisted.revision = 5u;
     assert(cellular_set(&persisted) == ESP_OK);
     assert(cellular_init() == ESP_OK);
     assert(cellular_get().roaming_allowed == 1u);
+    assert(cellular_get().revision == 5u);
 
     cellular_policy_t invalid;
     invalid.schema_version = 42u;

@@ -8,10 +8,13 @@ status back to the platform.
 
 - Reads `GET /api/v1/devices/{device_id}/connectivity/policy` and applies the
   schema version, enable flag, roaming, preference, monthly quota, warning
-  threshold, metered-upload limit, keepalive and remote wake.
-- Reports `POST .../connectivity/status` with the eSIM state and signal
-  percentage. Without a modem provider it reports an absent eSIM and zero
-  signal rather than a fabricated reading.
+  threshold, metered-upload limit, keepalive, remote wake and the policy
+  revision (persisted with the applied policy so the status report proves which
+  revision the device actually runs).
+- Reports `POST .../connectivity/status` with the eSIM state, signal
+  percentage, roaming flag, used megabytes and the applied policy revision.
+  Without a modem provider it reports an absent eSIM, zero signal, no roaming
+  and zero usage rather than a fabricated reading.
 
 ## Session handling
 

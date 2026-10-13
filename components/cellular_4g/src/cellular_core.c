@@ -49,6 +49,7 @@ cellular_policy_t cellular_default(void) {
         .monthly_quota_mb = 2048u,
         .low_quota_warn_percent = 20u,
         .keepalive_seconds = 300u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -84,6 +85,7 @@ cellular_policy_t cellular_clamp(const cellular_policy_t *policy) {
         CELLULAR_MIN_KEEPALIVE_SECONDS,
         CELLULAR_MAX_KEEPALIVE_SECONDS
     );
+    clamped.revision = policy->revision;
     clamped.schema_version = CELLULAR_SCHEMA_VERSION;
     return clamped;
 }

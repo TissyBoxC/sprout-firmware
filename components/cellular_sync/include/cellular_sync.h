@@ -19,8 +19,10 @@ extern "C" {
  * eSIM and zero signal rather than a fabricated reading.
  */
 typedef struct {
+    uint32_t used_mb;
     uint8_t signal_percent;
     bool registered;
+    bool roaming;
     cellular_esim_state_t esim_state;
 } cellular_sync_status_t;
 
