@@ -1271,6 +1271,25 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$cellularSyncRoot = Join-Path $firmwareRoot 'components/cellular_sync'
+Invoke-HostTest `
+    -Name 'cellular_sync_core' `
+    -Sources @(
+        (Join-Path $cellularRoot 'src/cellular_core.c')
+        (Join-Path $cellularSyncRoot 'src/cellular_sync_core.c')
+        (Join-Path $cellularSyncRoot 'test/test_cellular_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cellularSyncRoot 'include')
+        (Join-Path $cellularSyncRoot 'src')
+        (Join-Path $cellularRoot 'include')
+        (Join-Path $cellularRoot 'src')
+        (Join-Path $cellularRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $batteryRoot = Join-Path $firmwareRoot 'components/battery_power'
 Invoke-HostTest `
     -Name 'battery_core' `

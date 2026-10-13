@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_CELLULAR_SYNC
+    bool "Enable cellular policy and status synchronisation"
+    default n
+    depends on FEATURE_CELLULAR_4G && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reads the family cellular policy, applies it to the modem and reports
+        the live eSIM and signal status back to the platform. A Wi-Fi-only
+        image never links this component.
+
+config CELLULAR_SYNC_INTERVAL_SECONDS
+    int "Cellular policy sync interval in seconds"
+    depends on FEATURE_CELLULAR_SYNC
+    range 60 86400
+    default 900
+
+config CELLULAR_SYNC_RETRY_INTERVAL_SECONDS
+    int "Cellular sync retry interval while offline"
+    depends on FEATURE_CELLULAR_SYNC
+    range 5 300
+    default 15
+
+endmenu
