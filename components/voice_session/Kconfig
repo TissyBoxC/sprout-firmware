@@ -11,12 +11,17 @@ config FEATURE_VOICE_SESSION
         WebSocket is rejected unless the debug-only insecure flag is set.
 
 config VOICE_SESSION_ENDPOINT
-    string "Voice gateway WebSocket URL"
+    string "Fallback voice gateway WebSocket URL"
     depends on FEATURE_VOICE_SESSION
     default "wss://voice.clarkhub.cn/v1/voice"
     help
-        Must use wss:// so TLS certificate validation stays enabled. The device
-        token is sent in the Authorization header and never in the query string.
+        The device first asks the platform for a short-lived signed voice
+        credential (POST /api/v1/devices/{device_id}/voice-token) and connects to
+        the returned URL with the returned token; this value is only the
+        fallback used when the platform cannot issue a credential, for example a
+        build without the device binding client. It must use wss:// so TLS
+        certificate validation stays enabled. The token is sent in the
+        Authorization header and never in the query string.
 
 config VOICE_SESSION_ALLOW_INSECURE_WS
     bool "Allow cleartext ws:// for local debugging"

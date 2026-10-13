@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     list(APPEND voice_session_sources
         "src/voice_session.c"
         "src/voice_session_protocol.c"
+        "src/voice_session_token.c"
         "src/voice_duplex_core.c"
     )
 endif()
@@ -19,6 +20,8 @@ idf_component_register(
         audio_codec
         module_registry
     PRIV_REQUIRES
+        esp_http_client
+        esp-tls
         esp_timer
         freertos
         audio_input

@@ -14,6 +14,7 @@
 #include "device_binding_client.h"
 #include "device_identity.h"
 #include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -26,6 +27,7 @@
 #include "playback_queue.h"
 #include "sdkconfig.h"
 #include "voice_session_protocol.h"
+#include "voice_session_token.h"
 
 #if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
 #include "transport_security.h"
@@ -258,6 +260,152 @@ static esp_err_t voice_session_copy_token(char *output, size_t output_size) {
 #else
     (void)output;
     (void)output_size;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+// Bounded response collector for the voice-token request.
+typedef struct {
+    char *body;
+    size_t capacity;
+    size_t length;
+    bool overflowed;
+} voice_session_token_response_t;
+
+static esp_err_t voice_session_token_http_event(
+    esp_http_client_event_t *event
+) {
+    voice_session_token_response_t *response =
+        (voice_session_token_response_t *)event->user_data;
+    if (response == NULL || event->event_id != HTTP_EVENT_ON_DATA ||
+        event->data_len <= 0) {
+        return ESP_OK;
+    }
+    const size_t remaining = response->length + 1 < response->capacity
+        ? response->capacity - 1 - response->length
+        : 0;
+    const size_t copy_size = (size_t)event->data_len < remaining
+        ? (size_t)event->data_len
+        : remaining;
+    if (copy_size < (size_t)event->data_len) {
+        response->overflowed = true;
+    }
+    memcpy(response->body + response->length, event->data, copy_size);
+    response->length += copy_size;
+    response->body[response->length] = '\0';
+    return ESP_OK;
+}
+
+// Request a short-lived signed voice credential from the platform. The device
+// session token authenticates the request; the returned token is what the voice
+// gateway verifies, so the raw device session token is never sent to the
+// gateway. Returns ESP_ERR_NOT_SUPPORTED when the binding client is absent so a
+// caller can fall back to the configured endpoint.
+static esp_err_t voice_session_fetch_voice_token(
+    voice_session_token_t *token_out
+) {
+#if CONFIG_FEATURE_DEVICE_BINDING_CLIENT && CONFIG_FEATURE_DEVICE_IDENTITY
+    if (token_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    if (voice_session_copy_token(session_token, sizeof(session_token)) !=
+        ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_STATE;
+    }
+    char base_url[VOICE_SESSION_TOKEN_URL_SIZE] = {0};
+    if (device_binding_client_get_platform_base_url(
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK ||
+        strncmp(base_url, "https://", 8) != 0) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_ARG;
+    }
+    char url[VOICE_SESSION_TOKEN_URL_SIZE] = {0};
+    const int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/voice-token",
+        base_url,
+        device_id
+    );
+    if (written <= 0 || (size_t)written >= sizeof(url)) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_ARG;
+    }
+#if VOICE_SESSION_HAS_TRANSPORT_SECURITY
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
+
+    char response_body[VOICE_SESSION_TOKEN_SIZE * 4] = {0};
+    voice_session_token_response_t response = {
+        .body = response_body,
+        .capacity = sizeof(response_body),
+        .length = 0,
+        .overflowed = false,
+    };
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 15000;
+    config.event_handler = voice_session_token_http_event;
+    config.user_data = &response;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_ERR_NO_MEM;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
+    snprintf(
+        authorization,
+        sizeof(authorization),
+        "Bearer %s",
+        session_token
+    );
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, "{}", 2);
+    const esp_err_t transport_result = esp_http_client_perform(client);
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    memset(authorization, 0, sizeof(authorization));
+    memset(session_token, 0, sizeof(session_token));
+    if (transport_result != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code < 200 || status_code >= 300) {
+        return ESP_FAIL;
+    }
+    if (response.overflowed ||
+        !voice_session_token_parse(
+            response_body,
+            response.length,
+            token_out
+        )) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+#else
+    (void)token_out;
     return ESP_ERR_NOT_SUPPORTED;
 #endif
 }
@@ -1383,19 +1531,56 @@ static esp_err_t voice_session_pause_wake_locked(void) {
 }
 
 static esp_err_t voice_session_open_transport_locked(void) {
+    // Prefer a short-lived signed credential issued by the platform; the voice
+    // gateway verifies that credential, not the raw device session token. When
+    // the platform cannot issue one (for example a build without the binding
+    // client), fall back to the configured endpoint with the device session
+    // token so a local/debug environment still connects.
+    voice_session_token_t voice_token = {0};
+    const bool use_issued =
+        voice_session_fetch_voice_token(&voice_token) == ESP_OK;
+    char endpoint[VOICE_SESSION_TOKEN_URL_SIZE] = {0};
+    const char *source = use_issued
+        ? voice_token.websocket_url
+        : CONFIG_VOICE_SESSION_ENDPOINT;
+    if (strlen(source) >= sizeof(endpoint)) {
+        memset(&voice_token, 0, sizeof(voice_token));
+        return ESP_ERR_INVALID_ARG;
+    }
+    strncpy(endpoint, source, sizeof(endpoint) - 1);
+    if (!voice_session_endpoint_is_secure(endpoint)) {
+        memset(&voice_token, 0, sizeof(voice_token));
+        return ESP_ERR_INVALID_ARG;
+    }
     char token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
-    esp_err_t token_result = voice_session_copy_token(token, sizeof(token));
-    if (token_result != ESP_OK) {
-        memset(token, 0, sizeof(token));
-        return ESP_ERR_INVALID_STATE;
+    if (!use_issued) {
+        if (voice_session_copy_token(token, sizeof(token)) != ESP_OK) {
+            memset(token, 0, sizeof(token));
+            return ESP_ERR_INVALID_STATE;
+        }
     }
 
-    char headers[DEVICE_BINDING_SESSION_TOKEN_SIZE + 32] = {0};
-    snprintf(headers, sizeof(headers), "Authorization: Bearer %s\r\n", token);
+    char headers[VOICE_SESSION_TOKEN_SIZE + 32] = {0};
+    if (use_issued) {
+        snprintf(
+            headers,
+            sizeof(headers),
+            "Authorization: Bearer %s\r\n",
+            voice_token.token
+        );
+    } else {
+        snprintf(
+            headers,
+            sizeof(headers),
+            "Authorization: Bearer %s\r\n",
+            token
+        );
+    }
     memset(token, 0, sizeof(token));
+    memset(&voice_token, 0, sizeof(voice_token));
 
     const esp_websocket_client_config_t config = {
-        .uri = CONFIG_VOICE_SESSION_ENDPOINT,
+        .uri = endpoint,
         .headers = headers,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .task_prio = VOICE_SESSION_TASK_PRIORITY,
@@ -1404,6 +1589,8 @@ static esp_err_t voice_session_open_transport_locked(void) {
         .reconnect_timeout_ms = 2000,
         .network_timeout_ms = 10000,
     };
+    // esp_websocket_client_init copies the uri and headers, so the local
+    // buffers (and the credential inside them) can be cleared immediately.
     esp_websocket_client_handle_t client = esp_websocket_client_init(&config);
     memset(headers, 0, sizeof(headers));
     if (client == NULL) {

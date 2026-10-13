@@ -245,6 +245,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$voiceSessionTokenInclude = @(
+    (Join-Path $voiceSessionRoot 'include')
+    (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON')
+)
+Invoke-HostTest `
+    -Name 'voice_session_token' `
+    -Sources @(
+        (Join-Path $voiceSessionRoot 'src/voice_session_token.c')
+        (Join-Path $voiceSessionRoot 'test/test_voice_session_token.cpp')
+        (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON/cJSON.c')
+    ) `
+    -IncludeDirectories $voiceSessionTokenInclude `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'voice_duplex_core' `
     -Sources @(
