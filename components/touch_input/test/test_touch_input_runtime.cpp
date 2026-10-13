@@ -19,9 +19,11 @@ int main() {
 
     touch_input_config_t persisted = stored;
     persisted.haptic_enabled = 0u;
+    persisted.revision = 18u;
     assert(touch_input_set(&persisted) == ESP_OK);
     assert(touch_input_init() == ESP_OK);
     assert(touch_input_get().haptic_enabled == 0u);
+    assert(touch_input_get().revision == 18u);
 
     touch_input_config_t invalid;
     invalid.schema_version = 42u;

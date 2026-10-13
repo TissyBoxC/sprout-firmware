@@ -56,6 +56,7 @@ typedef struct {
     uint16_t long_press_ms;
     uint16_t double_tap_ms;
     uint16_t swipe_distance_px;
+    uint32_t revision;
 } touch_input_config_t;
 
 /** @brief Stable error codes for diagnostics and guardian-facing copy. */

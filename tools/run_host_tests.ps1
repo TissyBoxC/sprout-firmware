@@ -1257,6 +1257,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$touchInputSyncRoot = Join-Path $firmwareRoot 'components/touch_input_sync'
+Invoke-HostTest `
+    -Name 'touch_input_sync_core' `
+    -Sources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchInputSyncRoot 'src/touch_input_sync_core.c')
+        (Join-Path $touchInputSyncRoot 'test/test_touch_input_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $touchInputRoot 'include')
+        (Join-Path $touchInputRoot 'src')
+        (Join-Path $touchInputRoot 'test/stubs')
+        (Join-Path $touchInputSyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $cellularRoot = Join-Path $firmwareRoot 'components/cellular_4g'
 Invoke-HostTest `
     -Name 'cellular_core' `

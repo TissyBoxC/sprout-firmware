@@ -48,6 +48,10 @@ if(CONFIG_FEATURE_TOUCH_INPUT)
     list(APPEND app_requires "touch_input")
 endif()
 
+if(CONFIG_FEATURE_TOUCH_INPUT_SYNC)
+    list(APPEND app_requires "touch_input_sync")
+endif()
+
 if(CONFIG_FEATURE_CELLULAR_4G)
     list(APPEND app_requires "cellular_4g")
 endif()

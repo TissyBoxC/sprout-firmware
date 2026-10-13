@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_TOUCH_INPUT_SYNC
+    bool "Enable touch input synchronisation"
+    default y
+    depends on FEATURE_TOUCH_INPUT && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family touch configuration and applies it, keeping a
+        device's tap, swipe, haptic and sensitivity settings consistent with
+        the parent app.
+
+config TOUCH_INPUT_SYNC_INTERVAL_SECONDS
+    int "Touch input sync interval in seconds"
+    depends on FEATURE_TOUCH_INPUT_SYNC
+    range 60 86400
+    default 1800
+
+config TOUCH_INPUT_SYNC_RETRY_INTERVAL_SECONDS
+    int "Touch input sync retry interval while offline"
+    depends on FEATURE_TOUCH_INPUT_SYNC
+    range 5 300
+    default 15
+
+endmenu

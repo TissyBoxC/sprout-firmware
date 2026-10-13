@@ -52,6 +52,7 @@ touch_input_config_t touch_input_default(void) {
         .long_press_ms = 700u,
         .double_tap_ms = 300u,
         .swipe_distance_px = 60u,
+        .revision = 0u,
     };
     return config;
 }
@@ -89,6 +90,7 @@ touch_input_config_t touch_input_clamp(const touch_input_config_t *config) {
         TOUCH_INPUT_MIN_SWIPE_DISTANCE_PX,
         TOUCH_INPUT_MAX_SWIPE_DISTANCE_PX
     );
+    clamped.revision = config->revision;
     clamped.schema_version = TOUCH_INPUT_SCHEMA_VERSION;
     return clamped;
 }

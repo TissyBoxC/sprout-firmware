@@ -228,6 +228,9 @@
 #if CONFIG_FEATURE_TOUCH_INPUT
 #include "touch_input.h"
 #endif
+#if CONFIG_FEATURE_TOUCH_INPUT_SYNC
+#include "touch_input_sync.h"
+#endif
 #if CONFIG_FEATURE_TOUCH_REPORT
 #include "touch_report.h"
 #endif
@@ -835,6 +838,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_TOUCH_INPUT
     ESP_ERROR_CHECK(module_registry_add(touch_input_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_TOUCH_INPUT_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        touch_input_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_TOUCH_REPORT
     ESP_ERROR_CHECK(module_registry_add(touch_report_module_descriptor()));

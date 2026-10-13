@@ -168,7 +168,7 @@ esp_err_t touch_report_now(void) {
     payload["touch_supported"] = status.touch_supported;
     payload["haptic_supported"] = status.haptic_supported;
     payload["gesture_count"] = status.gesture_count;
-    payload["policy_revision"] = 0;
+    payload["policy_revision"] = config.revision;
     char request_body[TOUCH_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));
