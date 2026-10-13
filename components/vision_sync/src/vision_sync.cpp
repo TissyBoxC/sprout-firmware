@@ -449,9 +449,13 @@ static esp_err_t vision_sync_run_task(
         task->task_type
     );
     if (accept_result != CAMERA_VISION_OK) {
+        const char *failure_code =
+            accept_result == CAMERA_VISION_ERR_PRIVACY_CONSENT_REQUIRED
+                ? "consent_revoked"
+                : "invalid_frame";
         return vision_sync_report_failure(
             task,
-            vision_sync_failure_code_for_error(ESP_ERR_INVALID_STATE),
+            failure_code,
             session_token,
             device_id,
             base_url
