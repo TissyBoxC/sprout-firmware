@@ -128,7 +128,7 @@ bool motion_queued_for(uint8_t actuator) {
 
 esp_err_t motion_submit(const motion_command_t *command) {
     if (!s_ready) {
-        return ESP_ERR_NOT_READY;
+        return ESP_ERR_INVALID_STATE;
     }
     if (command == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -246,6 +246,10 @@ esp_err_t motion_fault(void) {
 
 motion_state_t motion_state(void) {
     return s_state;
+}
+
+motion_action_t motion_current_action(void) {
+    return s_action;
 }
 
 bool motion_should_stop_on_disconnect(const motion_policy_t *policy) {

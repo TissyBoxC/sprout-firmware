@@ -151,6 +151,14 @@ esp_err_t motion_fault(void);
 motion_state_t motion_state(void);
 
 /**
+ * @brief Return the action the controller is currently running.
+ *
+ * The controller drops the action back to idle on stop, timeout or fault, so
+ * the reported action always matches the running lifecycle state.
+ */
+motion_action_t motion_current_action(void);
+
+/**
  * @brief Return true when communication loss must force a safe stop.
  *
  * A lost link always stops locomotion so a disconnected device never keeps
