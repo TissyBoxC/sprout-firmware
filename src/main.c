@@ -276,6 +276,9 @@
 #if CONFIG_FEATURE_VIDEO_SESSION_SYNC
 #include "video_session_sync.h"
 #endif
+#if CONFIG_FEATURE_VIDEO_COMPANION_REPORT
+#include "video_companion_report.h"
+#endif
 #if CONFIG_FEATURE_BLUETOOTH_AUDIO
 #include "bluetooth_audio.h"
 #endif
@@ -898,6 +901,11 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_VIDEO_SESSION_SYNC
     ESP_ERROR_CHECK(module_registry_add(
         video_session_sync_module_descriptor()
+    ));
+#endif
+#if CONFIG_FEATURE_VIDEO_COMPANION_REPORT
+    ESP_ERROR_CHECK(module_registry_add(
+        video_companion_report_module_descriptor()
     ));
 #endif
 #if CONFIG_FEATURE_BLUETOOTH_AUDIO

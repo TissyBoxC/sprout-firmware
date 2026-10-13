@@ -1578,6 +1578,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$videoCompanionReportRoot = Join-Path $firmwareRoot 'components/video_companion_report'
+Invoke-HostTest `
+    -Name 'video_companion_report_core' `
+    -Sources @(
+        (Join-Path $videoSessionRoot 'src/video_core.c')
+        (Join-Path $videoCompanionReportRoot 'src/video_companion_report_core.c')
+        (Join-Path $videoCompanionReportRoot 'test/test_video_companion_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $videoSessionRoot 'include')
+        (Join-Path $videoSessionRoot 'src')
+        (Join-Path $videoSessionRoot 'test/stubs')
+        (Join-Path $videoCompanionReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $wearableRoot = Join-Path $firmwareRoot 'components/wearable_location'
 Invoke-HostTest `
     -Name 'wearable_core' `

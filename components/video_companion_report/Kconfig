@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_VIDEO_COMPANION_REPORT
+    bool "Report the live video-companionship status to the platform"
+    default y
+    depends on FEATURE_VIDEO_SESSION && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's live call state and media permissions so the
+        guardian video-companion capability view converges. Without a producer
+        the platform never receives a device status and every device reads as
+        unsupported.
+
+config VIDEO_COMPANION_REPORT_INTERVAL_SECONDS
+    int "Video-companion status report interval in seconds"
+    depends on FEATURE_VIDEO_COMPANION_REPORT
+    range 300 86400
+    default 3600
+
+config VIDEO_COMPANION_REPORT_RETRY_INTERVAL_SECONDS
+    int "Video-companion status report retry interval while offline"
+    depends on FEATURE_VIDEO_COMPANION_REPORT
+    range 5 300
+    default 15
+
+endmenu
