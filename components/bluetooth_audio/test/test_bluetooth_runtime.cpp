@@ -51,12 +51,51 @@ int main() {
     assert(bluetooth_audio_last_disconnect_reason() ==
            BLUETOOTH_DISCONNECT_USER);
 
+    // Link counts are clamped and a connected count never exceeds the paired
+    // count, so a status report is always accepted by the platform.
+    assert(bluetooth_audio_report_link_counts(3u, 2u) == ESP_OK);
+    assert(bluetooth_audio_report_link_counts(2u, 5u) == ESP_OK);
+    assert(bluetooth_audio_report_link_counts(99u, 99u) == ESP_OK);
+    bluetooth_audio_status_t saturated = bluetooth_audio_status();
+    assert(saturated.paired_device_count ==
+           BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES);
+    assert(saturated.connected_device_count ==
+           BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES);
+
+    // The status snapshot mirrors the live adapter state and policy revision.
+    bluetooth_policy_t revisioned = bluetooth_audio_get();
+    revisioned.enabled = 1u;
+    revisioned.pairing_allowed = 1u;
+    revisioned.revision = 12u;
+    assert(bluetooth_audio_set(&revisioned) == ESP_OK);
+    assert(bluetooth_audio_report_link_counts(4u, 1u) == ESP_OK);
+    assert(bluetooth_audio_connect(BLUETOOTH_ACTIVE_CODEC_LDAC) == ESP_OK);
+    assert(bluetooth_audio_set_speaker_mode(true) == ESP_OK);
+    assert(bluetooth_audio_report_volume(30u) == ESP_OK);
+    bluetooth_audio_status_t status = bluetooth_audio_status();
+    assert(status.supported);
+    assert(status.adapter_state == BLUETOOTH_ADAPTER_CONNECTED);
+    assert(status.active_codec == BLUETOOTH_ACTIVE_CODEC_LDAC);
+    assert(status.speaker_mode);
+    assert(status.paired_device_count == 4u);
+    assert(status.connected_device_count == 1u);
+    assert(status.volume_percent == 30u);
+    assert(status.revision == 12u);
+
     // Disabling the feature revokes speaker mode and pairing in one step.
     assert(bluetooth_audio_set_enabled(false) == ESP_OK);
     assert(bluetooth_audio_adapter_state() == BLUETOOTH_ADAPTER_OFF);
     assert(bluetooth_audio_get().enabled == 0u);
     assert(bluetooth_audio_get().speaker_mode_allowed == 0u);
     assert(bluetooth_audio_get().pairing_allowed == 0u);
+    // A disabled policy reports a fully off status with no live link.
+    bluetooth_audio_status_t disabled = bluetooth_audio_status();
+    assert(!disabled.speaker_mode);
+    assert(disabled.adapter_state == BLUETOOTH_ADAPTER_OFF);
+    assert(disabled.active_codec == BLUETOOTH_ACTIVE_CODEC_UNKNOWN);
+    assert(disabled.paired_device_count == 0u);
+    assert(disabled.connected_device_count == 0u);
+    assert(disabled.volume_percent == 0u);
     assert(bluetooth_audio_start_pairing() ==
            BLUETOOTH_AUDIO_ERR_PERMISSION_DENIED);
     assert(bluetooth_audio_connect(BLUETOOTH_ACTIVE_CODEC_AAC) ==

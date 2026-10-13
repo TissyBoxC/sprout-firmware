@@ -15,6 +15,8 @@ static bluetooth_adapter_state_t s_adapter_state;
 static bluetooth_active_codec_t s_active_codec;
 static bluetooth_disconnect_reason_t s_disconnect_reason;
 static uint8_t s_volume_percent;
+static uint8_t s_paired_device_count;
+static uint8_t s_connected_device_count;
 static bool s_speaker_mode;
 static bool s_ready;
 
@@ -72,6 +74,8 @@ esp_err_t bluetooth_audio_init(void) {
     s_active_codec = BLUETOOTH_ACTIVE_CODEC_UNKNOWN;
     s_disconnect_reason = BLUETOOTH_DISCONNECT_NONE;
     s_volume_percent = 0u;
+    s_paired_device_count = 0u;
+    s_connected_device_count = 0u;
     s_speaker_mode = false;
     s_ready = true;
     return ESP_OK;
@@ -259,6 +263,31 @@ bluetooth_adapter_state_t bluetooth_audio_adapter_state(void) {
     return s_adapter_state;
 }
 
+esp_err_t bluetooth_audio_report_link_counts(
+    uint8_t paired_device_count,
+    uint8_t connected_device_count
+) {
+    if (!s_ready) {
+        return BLUETOOTH_AUDIO_ERR_INVALID_STATE;
+    }
+    uint32_t paired = paired_device_count;
+    if (paired > BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES) {
+        paired = BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES;
+    }
+    uint32_t connected = connected_device_count;
+    if (connected > BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES) {
+        connected = BLUETOOTH_AUDIO_MAX_PAIRED_DEVICES;
+    }
+    // The platform rejects a connected count above the paired count, so the
+    // pair is reconciled here before it can reach a status report.
+    if (connected > paired) {
+        connected = paired;
+    }
+    s_paired_device_count = (uint8_t)paired;
+    s_connected_device_count = (uint8_t)connected;
+    return ESP_OK;
+}
+
 bluetooth_active_codec_t bluetooth_audio_active_codec(void) {
     return s_active_codec;
 }
@@ -273,6 +302,31 @@ uint8_t bluetooth_audio_volume_percent(void) {
 
 bool bluetooth_audio_speaker_mode(void) {
     return s_speaker_mode;
+}
+
+bluetooth_audio_status_t bluetooth_audio_status(void) {
+    bluetooth_audio_status_t status = {
+        .supported = true,
+        .speaker_mode = s_speaker_mode,
+        .adapter_state = s_adapter_state,
+        .paired_device_count = s_paired_device_count,
+        .connected_device_count = s_connected_device_count,
+        .active_codec = s_active_codec,
+        .volume_percent = s_volume_percent,
+        .last_disconnect_reason = s_disconnect_reason,
+        .revision = s_policy.revision,
+    };
+    // A disabled policy reports an off adapter with no live link, so a stale
+    // state never reads as an active speaker on the platform.
+    if (s_policy.enabled == 0u) {
+        status.adapter_state = BLUETOOTH_ADAPTER_OFF;
+        status.active_codec = BLUETOOTH_ACTIVE_CODEC_UNKNOWN;
+        status.speaker_mode = false;
+        status.paired_device_count = 0u;
+        status.connected_device_count = 0u;
+        status.volume_percent = 0u;
+    }
+    return status;
 }
 
 static esp_err_t bluetooth_audio_initialize(void) {

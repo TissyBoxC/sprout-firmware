@@ -44,6 +44,7 @@ bluetooth_policy_t bluetooth_default(void) {
         .preferred_codec = (uint8_t)BLUETOOTH_CODEC_AUTO,
         .max_volume_percent = 70u,
         .reserved = 0u,
+        .revision = 0u,
         .display_name = "",
     };
     return policy;
@@ -71,6 +72,7 @@ bluetooth_policy_t bluetooth_clamp(const bluetooth_policy_t *policy) {
         BLUETOOTH_AUDIO_MAX_VOLUME_PERCENT
     );
     clamped.reserved = 0u;
+    clamped.revision = policy->revision;
     copy_display_name(clamped.display_name, policy->display_name);
     // A device cannot advertise as a speaker while the feature is off; keeping
     // the derived flags false here prevents a stale speaker control.

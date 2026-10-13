@@ -26,6 +26,7 @@ int main() {
     remote.preferred_codec = "aac";
     remote.max_volume_percent = 250;
     remote.display_name = "客厅音箱";
+    remote.revision = 7;
     bluetooth_policy_t policy = {};
     assert(bluetooth_audio_sync_core_build_policy(&remote, &policy));
     assert(policy.schema_version == BLUETOOTH_AUDIO_SCHEMA_VERSION);
@@ -37,6 +38,7 @@ int main() {
     // The volume ceiling is clamped to the platform maximum.
     assert(policy.max_volume_percent == BLUETOOTH_AUDIO_MAX_VOLUME_PERCENT);
     assert(std::strcmp(policy.display_name, "客厅音箱") == 0);
+    assert(policy.revision == 7u);
     assert(bluetooth_is_valid(&policy));
 
     // A disabled policy clears the derived speaker and pairing flags.

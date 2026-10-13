@@ -45,6 +45,9 @@ bool bluetooth_audio_sync_core_build_policy(
     uint32_t volume = remote->max_volume_percent < 0
         ? 0u
         : (uint32_t)remote->max_volume_percent;
+    uint32_t revision = remote->revision < 0
+        ? 0u
+        : (uint32_t)remote->revision;
     bluetooth_policy_t policy = bluetooth_default();
     policy.enabled = remote->enabled ? 1u : 0u;
     policy.speaker_mode_allowed = remote->speaker_mode_allowed ? 1u : 0u;
@@ -52,6 +55,7 @@ bool bluetooth_audio_sync_core_build_policy(
     policy.auto_reconnect = remote->auto_reconnect ? 1u : 0u;
     policy.preferred_codec = (uint8_t)codec;
     policy.max_volume_percent = (uint8_t)volume;
+    policy.revision = revision;
     if (remote->display_name != NULL) {
         size_t length = strlen(remote->display_name);
         if (length >= BLUETOOTH_AUDIO_DISPLAY_NAME_SIZE) {

@@ -78,6 +78,7 @@ typedef struct {
     uint8_t preferred_codec;
     uint8_t max_volume_percent;
     uint8_t reserved;
+    uint32_t revision;
     char display_name[BLUETOOTH_AUDIO_DISPLAY_NAME_SIZE];
 } bluetooth_policy_t;
 
@@ -106,7 +107,26 @@ typedef struct {
     const char *preferred_codec;
     int max_volume_percent;
     const char *display_name;
+    int revision;
 } bluetooth_audio_remote_t;
+
+/**
+ * @brief One bounded adapter status snapshot for the device endpoint report.
+ *
+ * The catalog strings are stable shared contract names; the snapshot is
+ * read-only state that the sync worker serialises into the status report.
+ */
+typedef struct {
+    bool supported;
+    bool speaker_mode;
+    bluetooth_adapter_state_t adapter_state;
+    uint8_t paired_device_count;
+    uint8_t connected_device_count;
+    bluetooth_active_codec_t active_codec;
+    uint8_t volume_percent;
+    bluetooth_disconnect_reason_t last_disconnect_reason;
+    uint32_t revision;
+} bluetooth_audio_status_t;
 
 /** @brief Return the conservative default policy (Bluetooth audio off). */
 bluetooth_policy_t bluetooth_default(void);
@@ -223,6 +243,17 @@ esp_err_t bluetooth_audio_report_adapter_state(
 /** @brief Report the current output volume, clamped to the policy ceiling. */
 esp_err_t bluetooth_audio_report_volume(uint8_t volume_percent);
 
+/**
+ * @brief Report the current paired and connected link counts.
+ *
+ * The counts are clamped to the platform bound and a connected count can never
+ * exceed the paired count, so a status report is always accepted.
+ */
+esp_err_t bluetooth_audio_report_link_counts(
+    uint8_t paired_device_count,
+    uint8_t connected_device_count
+);
+
 /** @brief Return the current adapter state. */
 bluetooth_adapter_state_t bluetooth_audio_adapter_state(void);
 
@@ -237,6 +268,9 @@ uint8_t bluetooth_audio_volume_percent(void);
 
 /** @brief Return true when speaker mode is currently active. */
 bool bluetooth_audio_speaker_mode(void);
+
+/** @brief Return one bounded status snapshot for the device endpoint report. */
+bluetooth_audio_status_t bluetooth_audio_status(void);
 
 /** @brief Return the removable-module descriptor for bluetooth_audio. */
 const module_descriptor_t *bluetooth_audio_module_descriptor(void);
