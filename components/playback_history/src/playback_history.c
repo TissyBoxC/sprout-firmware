@@ -8,7 +8,8 @@
 
 // The bounded history ring persists as one binary blob so "继续播放" survives a
 // restart without a dedicated partition.
-#define PLAYBACK_HISTORY_STORE_KEY "playback_history_index"
+#define PLAYBACK_HISTORY_STORE_KEY "pbhist_index"
+CONFIG_STORE_KEY_ASSERT(PLAYBACK_HISTORY_STORE_KEY);
 
 static playback_history_core_t s_core;
 static bool s_ready;

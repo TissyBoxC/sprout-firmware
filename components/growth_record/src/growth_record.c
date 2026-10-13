@@ -9,7 +9,8 @@
 // The bounded growth record store persists as one binary blob so the device
 // keeps the guardian's recent timeline across restarts without a dedicated
 // partition.
-#define GROWTH_RECORD_STORE_KEY "growth_record_index"
+#define GROWTH_RECORD_STORE_KEY "growth_index"
+CONFIG_STORE_KEY_ASSERT(GROWTH_RECORD_STORE_KEY);
 
 static growth_record_core_t s_core;
 static bool s_ready;

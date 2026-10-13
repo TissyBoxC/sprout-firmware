@@ -14,7 +14,8 @@
 // The bounded lesson cache and the practice attempt log persist as one binary
 // blob so the device keeps the English catalog and the child's pronunciation
 // scores across restarts without a dedicated partition.
-#define ENGLISH_COURSE_STORE_KEY "english_course_index"
+#define ENGLISH_COURSE_STORE_KEY "english_index"
+CONFIG_STORE_KEY_ASSERT(ENGLISH_COURSE_STORE_KEY);
 
 // The lesson catalog is large enough that a static copy exhausts internal
 // DRAM, so the cache is allocated once from PSRAM (internal RAM as a fallback)

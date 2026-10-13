@@ -11,7 +11,8 @@
 
 // The bounded theme cache persists as one binary blob so a device keeps its
 // theme menu across restarts without a dedicated partition.
-#define THEME_PACKAGE_STORE_KEY "theme_package_index"
+#define THEME_PACKAGE_STORE_KEY "theme_index"
+CONFIG_STORE_KEY_ASSERT(THEME_PACKAGE_STORE_KEY);
 
 static theme_package_core_t s_core;
 static SemaphoreHandle_t s_lock;

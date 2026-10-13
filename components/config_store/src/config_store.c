@@ -23,7 +23,7 @@ static esp_err_t config_store_validate_key(const char *key) {
     if (key == NULL || key[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (strlen(key) > NVS_KEY_NAME_MAX_SIZE - 1) {
+    if (strlen(key) > CONFIG_STORE_KEY_MAX_SIZE) {
         return ESP_ERR_INVALID_ARG;
     }
     return ESP_OK;

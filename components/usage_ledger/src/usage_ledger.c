@@ -9,7 +9,8 @@
 #include "time_sync.h"
 #include "usage_ledger_core.h"
 
-#define USAGE_LEDGER_KEY_STATE "usage_ledger_state"
+#define USAGE_LEDGER_KEY_STATE "usage_state"
+CONFIG_STORE_KEY_ASSERT(USAGE_LEDGER_KEY_STATE);
 
 static const char *const TAG = "usage_ledger";
 

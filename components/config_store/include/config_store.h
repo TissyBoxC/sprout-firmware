@@ -21,6 +21,30 @@ extern "C" {
 #define CONFIG_STORE_PASSWORD_SIZE 64
 
 /**
+ * @brief Maximum key length accepted by config_store.
+ *
+ * ESP-IDF NVS supports at most 15 characters plus the terminating null byte.
+ * Keeping the limit here lets feature components fail at build time instead of
+ * discovering the limit only when a runtime write fails.
+ */
+#define CONFIG_STORE_KEY_MAX_SIZE 15
+
+/** @brief Fail compilation when a key cannot fit in the NVS key field. */
+#ifdef __cplusplus
+#define CONFIG_STORE_KEY_ASSERT(key)                                       \
+    static_assert(                                                         \
+        sizeof(key) <= CONFIG_STORE_KEY_MAX_SIZE + 1,                      \
+        "config_store key must fit NVS_KEY_NAME_MAX_SIZE"                  \
+    )
+#else
+#define CONFIG_STORE_KEY_ASSERT(key)                                       \
+    _Static_assert(                                                        \
+        sizeof(key) <= CONFIG_STORE_KEY_MAX_SIZE + 1,                      \
+        "config_store key must fit NVS_KEY_NAME_MAX_SIZE"                  \
+    )
+#endif
+
+/**
  * @brief Result returned when a requested key has never been written.
  *
  * The value deliberately does not expose an NVS error code so removing

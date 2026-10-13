@@ -8,7 +8,8 @@
 
 // The bounded reminder store persists as one binary blob so the device keeps
 // the guardian's schedule across restarts without a dedicated partition.
-#define HABIT_REMINDER_STORE_KEY "habit_reminder_index"
+#define HABIT_REMINDER_STORE_KEY "habit_index"
+CONFIG_STORE_KEY_ASSERT(HABIT_REMINDER_STORE_KEY);
 
 static habit_reminder_core_t s_core;
 static bool s_ready;

@@ -9,7 +9,8 @@
 // The bounded offline content index persists as one binary blob so the device
 // remembers which packages were pinned across restarts without a dedicated
 // partition. Content bytes live in the content partition; only metadata here.
-#define OFFLINE_CONTENT_STORE_KEY "offline_content_index"
+#define OFFLINE_CONTENT_STORE_KEY "offcontent_idx"
+CONFIG_STORE_KEY_ASSERT(OFFLINE_CONTENT_STORE_KEY);
 
 static offline_content_core_t s_core;
 static bool s_ready;

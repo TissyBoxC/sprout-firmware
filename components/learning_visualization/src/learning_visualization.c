@@ -9,7 +9,8 @@
 // One bounded binary blob persists the guardian visualization policy without a
 // dedicated partition; a schema change is detected and replaced with the
 // conservative default instead of applied.
-#define LEARNING_STORE_KEY "learning_visualization_policy"
+#define LEARNING_STORE_KEY "lv_policy"
+CONFIG_STORE_KEY_ASSERT(LEARNING_STORE_KEY);
 
 static learning_policy_t s_policy;
 static learning_visual_state_t s_state;

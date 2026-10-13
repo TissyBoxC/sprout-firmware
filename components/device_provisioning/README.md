@@ -7,9 +7,9 @@ Espressif BLE provisioning service, writes accepted Wi-Fi credentials through
 
 On first boot, or when the locally stored credential set is incomplete, the
 module generates a per-device proof of possession and an SRP verifier. The
-verifier is persisted as `provisioning_srp_verifier`, the proof is persisted as
-`provisioning_pop`, and a fixed 16-byte salt is persisted as
-`provisioning_srp_salt`. The advertised setup URI contains the service name and
+verifier is persisted as `prov_verifier`, the proof is persisted as
+`prov_pop`, and a fixed 16-byte salt is persisted as
+`prov_srp_salt`. The advertised setup URI contains the service name and
 proof so a display-equipped device can show it directly; it never contains a
 shared secret or a platform token.
 

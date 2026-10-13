@@ -8,7 +8,8 @@
 // One bounded binary blob persists the guardian Bluetooth policy without a
 // dedicated partition; a schema change is detected and replaced with the
 // conservative default instead of applied.
-#define BLUETOOTH_AUDIO_STORE_KEY "bluetooth_policy"
+#define BLUETOOTH_AUDIO_STORE_KEY "bt_policy"
+CONFIG_STORE_KEY_ASSERT(BLUETOOTH_AUDIO_STORE_KEY);
 
 static bluetooth_policy_t s_policy;
 static bluetooth_adapter_state_t s_adapter_state;

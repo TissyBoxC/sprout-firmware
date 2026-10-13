@@ -11,7 +11,8 @@
 
 // The bounded local command cache persists as one binary blob so a device can
 // keep answering the same trigger phrases across restarts while offline.
-#define LOCAL_COMMAND_STORE_KEY "local_command_index"
+#define LOCAL_COMMAND_STORE_KEY "localcmd_index"
+CONFIG_STORE_KEY_ASSERT(LOCAL_COMMAND_STORE_KEY);
 
 static local_command_core_t s_core;
 static SemaphoreHandle_t s_lock;

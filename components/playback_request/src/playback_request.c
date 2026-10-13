@@ -12,7 +12,8 @@
 // The bounded playback request cache persists as one binary blob so the device
 // keeps the guardian's on-demand requests across restarts without a dedicated
 // partition.
-#define PLAYBACK_REQUEST_STORE_KEY "playback_request_index"
+#define PLAYBACK_REQUEST_STORE_KEY "pbreq_index"
+CONFIG_STORE_KEY_ASSERT(PLAYBACK_REQUEST_STORE_KEY);
 
 static playback_request_core_t s_core;
 static SemaphoreHandle_t s_lock;

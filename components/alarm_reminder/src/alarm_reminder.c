@@ -12,7 +12,8 @@
 // The bounded alarm store persists as one binary blob so the device keeps the
 // guardian's schedule and local firing state across restarts without a
 // dedicated partition.
-#define ALARM_REMINDER_STORE_KEY "alarm_reminder_index"
+#define ALARM_REMINDER_STORE_KEY "alarm_index"
+CONFIG_STORE_KEY_ASSERT(ALARM_REMINDER_STORE_KEY);
 
 static alarm_reminder_core_t s_core;
 static SemaphoreHandle_t s_lock;

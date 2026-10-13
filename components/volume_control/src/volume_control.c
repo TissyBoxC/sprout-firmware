@@ -15,9 +15,12 @@
 static const char *const TAG = "volume_control";
 
 #define VOLUME_CONTROL_VOLUME_KEY "audio_volume"
-#define VOLUME_CONTROL_MAX_KEY "audio_volume_max"
+#define VOLUME_CONTROL_MAX_KEY "audio_max_vol"
 #define VOLUME_CONTROL_MUTED_KEY "audio_muted"
 #define VOLUME_CONTROL_VALUE_SIZE 8
+CONFIG_STORE_KEY_ASSERT(VOLUME_CONTROL_VOLUME_KEY);
+CONFIG_STORE_KEY_ASSERT(VOLUME_CONTROL_MAX_KEY);
+CONFIG_STORE_KEY_ASSERT(VOLUME_CONTROL_MUTED_KEY);
 
 // The effective and stored values are read by the playback task and written by
 // the policy path, so every access goes through one mutex. The gain helper runs

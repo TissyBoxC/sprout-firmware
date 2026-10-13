@@ -8,7 +8,8 @@
 
 // Long-term memory persists as one binary blob so a device keeps the
 // guardian-authorized facts across restarts without a dedicated partition.
-#define LONG_TERM_MEMORY_STORE_KEY "long_term_memory_index"
+#define LONG_TERM_MEMORY_STORE_KEY "ltm_index"
+CONFIG_STORE_KEY_ASSERT(LONG_TERM_MEMORY_STORE_KEY);
 
 /** @brief Persisted envelope: the authorization flag plus the bounded store. */
 typedef struct {

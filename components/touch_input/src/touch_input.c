@@ -8,7 +8,8 @@
 // One bounded binary blob persists the guardian touch configuration without a
 // dedicated partition; a schema change is detected and replaced with the
 // conservative default instead of applied.
-#define TOUCH_INPUT_STORE_KEY "touch_input_config"
+#define TOUCH_INPUT_STORE_KEY "touch_config"
+CONFIG_STORE_KEY_ASSERT(TOUCH_INPUT_STORE_KEY);
 
 static touch_input_config_t s_config;
 static bool s_ready;

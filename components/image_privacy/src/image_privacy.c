@@ -8,7 +8,8 @@
 // One bounded binary blob persists the guardian image-privacy policy without a
 // dedicated partition; a schema change is detected and replaced with the
 // conservative default instead of applied.
-#define IMAGE_PRIVACY_STORE_KEY "image_privacy_policy"
+#define IMAGE_PRIVACY_STORE_KEY "img_privacy_pol"
+CONFIG_STORE_KEY_ASSERT(IMAGE_PRIVACY_STORE_KEY);
 
 static image_privacy_policy_t s_policy;
 static uint32_t s_processed_count;
