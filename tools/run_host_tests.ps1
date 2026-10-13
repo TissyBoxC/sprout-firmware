@@ -1467,6 +1467,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$powerPolicySyncRoot = Join-Path $firmwareRoot 'components/power_policy_sync'
+Invoke-HostTest `
+    -Name 'power_policy_sync_core' `
+    -Sources @(
+        (Join-Path $batteryPowerRoot 'src/battery_core.c')
+        (Join-Path $powerPolicySyncRoot 'src/power_policy_sync_core.c')
+        (Join-Path $powerPolicySyncRoot 'test/test_power_policy_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $batteryPowerRoot 'include')
+        (Join-Path $batteryPowerRoot 'src')
+        (Join-Path $batteryPowerRoot 'test/stubs')
+        (Join-Path $powerPolicySyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $videoSessionRoot = Join-Path $firmwareRoot 'components/video_session'
 Invoke-HostTest `
     -Name 'video_core' `

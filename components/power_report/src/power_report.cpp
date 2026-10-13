@@ -176,7 +176,7 @@ esp_err_t power_report_now(void) {
     payload["battery_percent"] = status.battery_percent;
     payload["millivolts"] = status.millivolts;
     payload["charging"] = status.charging;
-    payload["policy_revision"] = 0;
+    payload["policy_revision"] = policy.revision;
     char request_body[POWER_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));

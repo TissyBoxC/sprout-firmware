@@ -37,6 +37,7 @@ battery_policy_t battery_default(void) {
         .low_battery_warn_percent = 20u,
         .low_power_enter_percent = 15u,
         .sleep_after_seconds = 1800u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -65,6 +66,7 @@ battery_policy_t battery_clamp(const battery_policy_t *policy) {
         BATTERY_MIN_SLEEP_AFTER_SECONDS,
         BATTERY_MAX_SLEEP_AFTER_SECONDS
     );
+    clamped.revision = policy->revision;
     clamped.schema_version = BATTERY_SCHEMA_VERSION;
     return clamped;
 }

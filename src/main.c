@@ -240,6 +240,9 @@
 #if CONFIG_FEATURE_BATTERY_POWER
 #include "battery_power.h"
 #endif
+#if CONFIG_FEATURE_POWER_POLICY_SYNC
+#include "power_policy_sync.h"
+#endif
 #if CONFIG_FEATURE_POWER_REPORT
 #include "power_report.h"
 #endif
@@ -841,6 +844,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_BATTERY_POWER
     ESP_ERROR_CHECK(module_registry_add(battery_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_POWER_POLICY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        power_policy_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_POWER_REPORT
     ESP_ERROR_CHECK(module_registry_add(power_report_module_descriptor()));

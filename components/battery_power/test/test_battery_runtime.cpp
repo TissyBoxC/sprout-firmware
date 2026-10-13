@@ -31,9 +31,11 @@ int main() {
 
     battery_policy_t persisted = stored;
     persisted.deep_sleep_enabled = 0u;
+    persisted.revision = 12u;
     assert(battery_set(&persisted) == ESP_OK);
     assert(battery_init() == ESP_OK);
     assert(battery_get().deep_sleep_enabled == 0u);
+    assert(battery_get().revision == 12u);
 
     battery_policy_t invalid;
     invalid.schema_version = 42u;

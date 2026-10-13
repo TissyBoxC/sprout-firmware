@@ -59,6 +59,10 @@ if(CONFIG_FEATURE_BATTERY_POWER)
     list(APPEND app_requires "battery_power")
 endif()
 
+if(CONFIG_FEATURE_POWER_POLICY_SYNC)
+    list(APPEND app_requires "power_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_MOTION_CONTROL)
     list(APPEND app_requires "motion_control")
 endif()

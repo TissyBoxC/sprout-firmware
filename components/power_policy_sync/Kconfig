@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_POWER_POLICY_SYNC
+    bool "Enable power policy synchronisation"
+    default y
+    depends on FEATURE_BATTERY_POWER && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family power policy and applies it, keeping a device's
+        low-power, deep-sleep and charge-priority policy consistent with the
+        parent app.
+
+config POWER_POLICY_SYNC_INTERVAL_SECONDS
+    int "Power policy sync interval in seconds"
+    depends on FEATURE_POWER_POLICY_SYNC
+    range 60 86400
+    default 1800
+
+config POWER_POLICY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Power policy sync retry interval while offline"
+    depends on FEATURE_POWER_POLICY_SYNC
+    range 5 300
+    default 15
+
+endmenu

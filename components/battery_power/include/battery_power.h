@@ -51,6 +51,7 @@ typedef struct {
     uint8_t low_battery_warn_percent;
     uint8_t low_power_enter_percent;
     uint32_t sleep_after_seconds;
+    uint32_t revision;
 } battery_policy_t;
 
 /** @brief One bounded battery snapshot suitable for a heartbeat payload. */
