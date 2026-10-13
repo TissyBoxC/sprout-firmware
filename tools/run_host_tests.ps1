@@ -1483,6 +1483,19 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$connectivityPolicySyncRoot = Join-Path $firmwareRoot 'components/connectivity_policy_sync'
+Invoke-HostTest `
+    -Name 'connectivity_policy_sync_core' `
+    -Sources @(
+        (Join-Path $connectivityPolicySyncRoot 'src/connectivity_policy_sync_core.c')
+        (Join-Path $connectivityPolicySyncRoot 'test/test_connectivity_policy_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $connectivityPolicySyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $powerReportRoot = Join-Path $firmwareRoot 'components/power_report'
 $batteryPowerRoot = Join-Path $firmwareRoot 'components/battery_power'
 Invoke-HostTest `

@@ -1,0 +1,26 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONNECTIVITY_POLICY_SYNC
+    bool "Enable Wi-Fi-path connectivity policy synchronisation"
+    default y
+    depends on FEATURE_CONNECTIVITY_REPORT && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC && !FEATURE_CELLULAR_SYNC
+    help
+        Fetches the family connectivity policy on a Wi-Fi-only image and
+        persists the applied revision, so connectivity_report can report the
+        revision the device actually runs instead of a hardcoded zero. A build
+        with the modem stack uses cellular_sync as the single policy source and
+        leaves this component out.
+
+config CONNECTIVITY_POLICY_SYNC_INTERVAL_SECONDS
+    int "Connectivity policy sync interval in seconds"
+    depends on FEATURE_CONNECTIVITY_POLICY_SYNC
+    range 300 86400
+    default 900
+
+config CONNECTIVITY_POLICY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Connectivity policy sync retry interval while offline"
+    depends on FEATURE_CONNECTIVITY_POLICY_SYNC
+    range 5 300
+    default 15
+
+endmenu

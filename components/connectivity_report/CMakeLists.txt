@@ -32,3 +32,20 @@ if(CONFIG_FEATURE_CONNECTIVITY_REPORT AND CONFIG_FEATURE_TRANSPORT_SECURITY AND
         EXISTS "${CMAKE_CURRENT_LIST_DIR}/../transport_security/CMakeLists.txt")
     idf_component_optional_requires(PRIVATE transport_security)
 endif()
+
+# When the cellular policy store is linked, the reporter reports the revision
+# the connectivity layer actually applied instead of a hardcoded zero. A
+# Wi-Fi-only image never links cellular_4g and reports revision zero, which is
+# the truthful "no cellular policy applied" value for that build.
+if(CONFIG_FEATURE_CONNECTIVITY_REPORT AND CONFIG_FEATURE_CELLULAR_4G AND
+        EXISTS "${CMAKE_CURRENT_LIST_DIR}/../cellular_4g/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE cellular_4g)
+endif()
+
+# On a Wi-Fi-only image the reporter reads the revision persisted by
+# connectivity_policy_sync so the platform's up-to-date check converges instead
+# of always seeing zero.
+if(CONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC AND
+        EXISTS "${CMAKE_CURRENT_LIST_DIR}/../connectivity_policy_sync/CMakeLists.txt")
+    idf_component_optional_requires(PRIVATE connectivity_policy_sync)
+endif()

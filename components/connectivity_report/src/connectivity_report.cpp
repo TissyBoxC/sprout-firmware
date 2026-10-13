@@ -20,6 +20,21 @@
 #include "sdkconfig.h"
 #include "time_sync.h"
 
+#if CONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC && \
+    __has_include("connectivity_policy_sync.h")
+#include "connectivity_policy_sync.h"
+#define CONNECTIVITY_REPORT_HAS_WIFI_POLICY 1
+#else
+#define CONNECTIVITY_REPORT_HAS_WIFI_POLICY 0
+#endif
+
+#if CONFIG_FEATURE_CELLULAR_4G && __has_include("cellular_4g.h")
+#include "cellular_4g.h"
+#define CONNECTIVITY_REPORT_HAS_CELLULAR_POLICY 1
+#else
+#define CONNECTIVITY_REPORT_HAS_CELLULAR_POLICY 0
+#endif
+
 #if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
 #include "transport_security.h"
 #define CONNECTIVITY_REPORT_HAS_TRANSPORT_SECURITY 1
@@ -178,7 +193,18 @@ esp_err_t connectivity_report_now(void) {
     payload["esim_state"] = "absent";
     payload["signal_percent"] = status.signal_percent;
     payload["used_mb"] = 0;
+    // Report the revision the connectivity layer actually applied. The Wi-Fi
+    // path persists it through connectivity_policy_sync; a modem build reports
+    // the cellular policy revision. Neither store linked means revision zero,
+    // which is the truthful "no connectivity policy applied" value.
+#if CONNECTIVITY_REPORT_HAS_WIFI_POLICY
+    payload["policy_revision"] =
+        (int)connectivity_policy_applied_revision();
+#elif CONNECTIVITY_REPORT_HAS_CELLULAR_POLICY
+    payload["policy_revision"] = (int)cellular_get().revision;
+#else
     payload["policy_revision"] = 0;
+#endif
     char request_body[CONNECTIVITY_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));

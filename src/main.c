@@ -267,6 +267,9 @@
 #if CONFIG_FEATURE_CONNECTIVITY_REPORT
 #include "connectivity_report.h"
 #endif
+#if CONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC
+#include "connectivity_policy_sync.h"
+#endif
 #if CONFIG_FEATURE_VIDEO_SESSION
 #include "video_session.h"
 #endif
@@ -883,6 +886,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_CONNECTIVITY_REPORT
     ESP_ERROR_CHECK(module_registry_add(connectivity_report_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        connectivity_policy_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_VIDEO_SESSION
     ESP_ERROR_CHECK(module_registry_add(video_session_module_descriptor()));

@@ -59,6 +59,14 @@ if(CONFIG_FEATURE_CELLULAR_SYNC)
     list(APPEND app_requires "cellular_sync")
 endif()
 
+if(CONFIG_FEATURE_CONNECTIVITY_REPORT)
+    list(APPEND app_requires "connectivity_report")
+endif()
+
+if(CONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC)
+    list(APPEND app_requires "connectivity_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_BATTERY_POWER)
     list(APPEND app_requires "battery_power")
 endif()
