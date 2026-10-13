@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_POWER_REPORT
+    bool "Report the live battery status to the platform"
+    default n
+    depends on FEATURE_BATTERY_POWER && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's bounded battery charge state, percentage, voltage
+        and current power mode so the guardian power overview matches the
+        hardware actually present. A device without a battery gauge never links
+        the component.
+
+config POWER_REPORT_INTERVAL_SECONDS
+    int "Power report interval in seconds"
+    depends on FEATURE_POWER_REPORT
+    range 300 86400
+    default 900
+
+config POWER_REPORT_RETRY_INTERVAL_SECONDS
+    int "Power report retry interval while offline"
+    depends on FEATURE_POWER_REPORT
+    range 5 300
+    default 15
+
+endmenu

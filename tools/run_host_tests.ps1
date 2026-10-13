@@ -1343,6 +1343,24 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$powerReportRoot = Join-Path $firmwareRoot 'components/power_report'
+$batteryPowerRoot = Join-Path $firmwareRoot 'components/battery_power'
+Invoke-HostTest `
+    -Name 'power_report_core' `
+    -Sources @(
+        (Join-Path $batteryPowerRoot 'src/battery_core.c')
+        (Join-Path $powerReportRoot 'src/power_report_core.c')
+        (Join-Path $powerReportRoot 'test/test_power_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $batteryPowerRoot 'include')
+        (Join-Path $batteryPowerRoot 'src')
+        (Join-Path $batteryPowerRoot 'test/stubs')
+        (Join-Path $powerReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $videoSessionRoot = Join-Path $firmwareRoot 'components/video_session'
 Invoke-HostTest `
     -Name 'video_core' `
