@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_VIDEO_SESSION)
     list(APPEND video_session_sources
         "src/video_session.c"
         "src/video_core.c"
+        "src/video_session_sync_core.c"
     )
 endif()
 

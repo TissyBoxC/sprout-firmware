@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "config_store.h"
+#include "video_session_sync_core.h"
 
 // One bounded binary blob persists the guardian video policy without a
 // dedicated partition; a schema change is detected and replaced with the
@@ -76,6 +77,17 @@ esp_err_t video_set(const video_policy_t *policy) {
     }
     s_policy = video_clamp(policy);
     return video_persist();
+}
+
+esp_err_t video_apply_remote(const video_remote_t *remote) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    video_policy_t policy = {};
+    if (!video_session_sync_core_build_policy(remote, &policy)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return video_set(&policy);
 }
 
 video_policy_t video_get(void) {

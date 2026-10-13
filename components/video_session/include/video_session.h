@@ -73,6 +73,23 @@ typedef enum {
     VIDEO_ERR_STORAGE,
 } video_error_t;
 
+/**
+ * @brief One guardian policy as carried by the device endpoint.
+ *
+ * The quality floor is a catalog name ("unknown", "good", "fair", "poor")
+ * rather than the firmware enum so the network layer can populate it without
+ * knowing the firmware catalog. The string is owned by the caller.
+ */
+typedef struct {
+    bool enabled;
+    bool camera_allowed;
+    bool microphone_allowed;
+    bool require_child_consent;
+    const char *quality_floor;
+    int ring_timeout_seconds;
+    int max_session_seconds;
+} video_remote_t;
+
 /** @brief Return the conservative default policy (camera and mic off). */
 video_policy_t video_default(void);
 
@@ -108,6 +125,15 @@ video_policy_t video_get(void);
 
 /** @brief Apply a policy that is already version-compatible and bounded. */
 esp_err_t video_apply(const video_policy_t *policy);
+
+/**
+ * @brief Apply a policy fetched from the device endpoint.
+ *
+ * Maps the catalog quality-floor name to the firmware enum and clamps every
+ * field. Returns ESP_ERR_INVALID_ARG when the quality floor is not in its
+ * catalog, so a malformed response is rejected instead of silently defaulting.
+ */
+esp_err_t video_apply_remote(const video_remote_t *remote);
 
 // Begin an incoming call. A call only rings when the policy is enabled and at
 // least the microphone is permitted. When the policy requires child consent the

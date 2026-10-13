@@ -1300,9 +1300,25 @@ Invoke-HostTest `
     -Name 'video_session_runtime' `
     -Sources @(
         (Join-Path $videoSessionRoot 'src/video_core.c')
+        (Join-Path $videoSessionRoot 'src/video_session_sync_core.c')
         (Join-Path $videoSessionRoot 'src/video_session.c')
         (Join-Path $videoSessionRoot 'test/stubs/config_store.c')
         (Join-Path $videoSessionRoot 'test/test_video_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $videoSessionRoot 'include')
+        (Join-Path $videoSessionRoot 'src')
+        (Join-Path $videoSessionRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'video_session_sync_core' `
+    -Sources @(
+        (Join-Path $videoSessionRoot 'src/video_core.c')
+        (Join-Path $videoSessionRoot 'src/video_session_sync_core.c')
+        (Join-Path $videoSessionRoot 'test/test_video_session_sync_core.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $videoSessionRoot 'include')

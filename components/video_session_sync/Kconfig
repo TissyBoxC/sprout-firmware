@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_VIDEO_SESSION_SYNC
+    bool "Enable video-session policy synchronisation"
+    default y
+    depends on FEATURE_VIDEO_SESSION && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family video-session policy and applies it, keeping a
+        device's camera and microphone permissions, child consent gate, quality
+        floor, ring timeout and session ceiling consistent with the parent app.
+
+config VIDEO_SESSION_SYNC_INTERVAL_SECONDS
+    int "Video-session policy sync interval in seconds"
+    depends on FEATURE_VIDEO_SESSION_SYNC
+    range 60 86400
+    default 3600
+
+config VIDEO_SESSION_SYNC_RETRY_INTERVAL_SECONDS
+    int "Video-session policy sync retry interval while offline"
+    depends on FEATURE_VIDEO_SESSION_SYNC
+    range 5 300
+    default 15
+
+endmenu
