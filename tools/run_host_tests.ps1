@@ -728,9 +728,25 @@ Invoke-HostTest `
     -Name 'learning_visualization_runtime' `
     -Sources @(
         (Join-Path $learningVisualizationRoot 'src/learning_core.c')
+        (Join-Path $learningVisualizationRoot 'src/learning_visualization_sync_core.c')
         (Join-Path $learningVisualizationRoot 'src/learning_visualization.c')
         (Join-Path $learningVisualizationRoot 'test/stubs/config_store.c')
         (Join-Path $learningVisualizationRoot 'test/test_learning_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $learningVisualizationRoot 'include')
+        (Join-Path $learningVisualizationRoot 'src')
+        (Join-Path $learningVisualizationRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'learning_visualization_sync_core' `
+    -Sources @(
+        (Join-Path $learningVisualizationRoot 'src/learning_core.c')
+        (Join-Path $learningVisualizationRoot 'src/learning_visualization_sync_core.c')
+        (Join-Path $learningVisualizationRoot 'test/test_learning_visualization_sync_core.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $learningVisualizationRoot 'include')

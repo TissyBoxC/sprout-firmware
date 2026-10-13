@@ -70,6 +70,10 @@ if(CONFIG_FEATURE_LEARNING_VISUALIZATION)
     list(APPEND app_requires "learning_visualization")
 endif()
 
+if(CONFIG_FEATURE_LEARNING_VISUALIZATION_SYNC)
+    list(APPEND app_requires "learning_visualization_sync")
+endif()
+
 if(CONFIG_FEATURE_IMAGE_PRIVACY)
     list(APPEND app_requires "image_privacy")
 endif()

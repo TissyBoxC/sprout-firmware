@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "learning_visualization_sync_core.h"
 
 // One bounded binary blob persists the guardian visualization policy without a
 // dedicated partition; a schema change is detected and replaced with the
@@ -93,6 +94,19 @@ esp_err_t learning_visualization_set(const learning_policy_t *policy) {
         learning_clear_lesson();
     }
     return learning_persist();
+}
+
+esp_err_t learning_visualization_apply_remote(
+    const learning_visualization_remote_t *remote
+) {
+    if (!s_ready) {
+        return LEARNING_VISUALIZATION_ERR_INVALID_STATE;
+    }
+    learning_policy_t policy = {};
+    if (!learning_visualization_sync_core_build_policy(remote, &policy)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return learning_visualization_set(&policy);
 }
 
 learning_policy_t learning_visualization_get(void) {

@@ -237,6 +237,10 @@
 #if CONFIG_FEATURE_LEARNING_VISUALIZATION
 #include "learning_visualization.h"
 #endif
+
+#if CONFIG_FEATURE_LEARNING_VISUALIZATION_SYNC
+#include "learning_visualization_sync.h"
+#endif
 #if CONFIG_FEATURE_IMAGE_PRIVACY
 #include "image_privacy.h"
 #endif
@@ -788,6 +792,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_LEARNING_VISUALIZATION
     ESP_ERROR_CHECK(module_registry_add(learning_visualization_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_LEARNING_VISUALIZATION_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        learning_visualization_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_IMAGE_PRIVACY
     ESP_ERROR_CHECK(module_registry_add(image_privacy_module_descriptor()));

@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_LEARNING_VISUALIZATION_SYNC
+    bool "Enable learning-visualization policy synchronisation"
+    default y
+    depends on FEATURE_LEARNING_VISUALIZATION && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family learning-visualization policy and applies it,
+        keeping a device's feedback style, animation level, toggles and session
+        ceiling consistent with the parent app.
+
+config LEARNING_VISUALIZATION_SYNC_INTERVAL_SECONDS
+    int "Learning-visualization policy sync interval in seconds"
+    depends on FEATURE_LEARNING_VISUALIZATION_SYNC
+    range 60 86400
+    default 3600
+
+config LEARNING_VISUALIZATION_SYNC_RETRY_INTERVAL_SECONDS
+    int "Learning-visualization policy sync retry interval while offline"
+    depends on FEATURE_LEARNING_VISUALIZATION_SYNC
+    range 5 300
+    default 15
+
+endmenu

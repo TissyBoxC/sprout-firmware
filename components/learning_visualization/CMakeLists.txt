@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_LEARNING_VISUALIZATION)
     list(APPEND learning_visualization_sources
         "src/learning_visualization.c"
         "src/learning_core.c"
+        "src/learning_visualization_sync_core.c"
     )
 endif()
 

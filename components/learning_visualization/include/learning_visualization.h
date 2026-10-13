@@ -76,6 +76,24 @@ typedef enum {
     LEARNING_VISUALIZATION_ERR_STORAGE,
 } learning_error_t;
 
+/**
+ * @brief One guardian policy as carried by the device endpoint.
+ *
+ * The style and animation level are catalog names ("neutral", "encouraging",
+ * "playful", "celebration" and "off", "subtle", "full") rather than the
+ * firmware enum so the network layer can populate them without knowing the
+ * firmware catalog. The strings are owned by the caller.
+ */
+typedef struct {
+    bool enabled;
+    const char *feedback_style;
+    const char *animation_level;
+    bool touch_feedback_enabled;
+    bool reward_effects_enabled;
+    bool lesson_linkage_enabled;
+    int max_session_minutes;
+} learning_visualization_remote_t;
+
 /** @brief Return the conservative default policy (feature and animation off). */
 learning_policy_t learning_default(void);
 
@@ -138,6 +156,17 @@ bool learning_visualization_is_ready(void);
 
 /** @brief Store a guardian policy, clamping out-of-range values. */
 esp_err_t learning_visualization_set(const learning_policy_t *policy);
+
+/**
+ * @brief Apply a policy fetched from the device endpoint.
+ *
+ * Maps the catalog style and animation names to the firmware enums and clamps
+ * every field. Returns ESP_ERR_INVALID_ARG when a name is not in its catalog,
+ * so a malformed response is rejected instead of silently defaulting.
+ */
+esp_err_t learning_visualization_apply_remote(
+    const learning_visualization_remote_t *remote
+);
 
 /** @brief Return the currently applied policy. */
 learning_policy_t learning_visualization_get(void);
