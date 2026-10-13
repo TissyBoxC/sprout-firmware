@@ -24,6 +24,18 @@ extern "C" {
 #define PLAYBACK_REQUEST_NOTE_SIZE 200
 
 /**
+ * @brief Maximum number of unacknowledged outbound actions kept for the
+ * platform.
+ *
+ * A request can contribute at most one acknowledgement and one completion, so
+ * the queue holds at most twice the local request capacity. Keeping the queue
+ * persisted lets the device survive a reboot or an offline window and still
+ * deliver every lifecycle change once it reconnects.
+ */
+#define PLAYBACK_REQUEST_OUTBOUND_CAPACITY \
+    (PLAYBACK_REQUEST_CAPACITY * 2)
+
+/**
  * @brief Playback request lifecycle.
  *
  * The numeric values are stable because they cross the persisted blob; keep
@@ -45,6 +57,20 @@ typedef enum {
     PLAYBACK_REQUEST_OUTCOME_SKIPPED = 2,
     PLAYBACK_REQUEST_OUTCOME_ERROR = 3,
 } playback_request_outcome_t;
+
+/** @brief The kind of local lifecycle change to report to the platform. */
+typedef enum {
+    PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE = 0,
+    PLAYBACK_REQUEST_OUTBOUND_COMPLETE,
+} playback_request_outbound_kind_t;
+
+/** @brief One queued outbound action for the platform. */
+typedef struct {
+    char request_id[PLAYBACK_REQUEST_ID_SIZE];
+    playback_request_outbound_kind_t kind;
+    /** Terminal outcome, meaningful only for a COMPLETE action. */
+    playback_request_outcome_t outcome;
+} playback_request_outbound_t;
 
 /** @brief One cached guardian playback request. */
 typedef struct {
@@ -126,6 +152,34 @@ esp_err_t playback_request_list_pending(
     playback_request_t *requests_out,
     size_t capacity,
     size_t *count_out
+);
+
+/** @brief Return the number of local lifecycle changes waiting to be reported. */
+size_t playback_request_pending_outbound_count(void);
+
+/**
+ * @brief Copy the queued outbound actions, oldest first.
+ *
+ * The platform sees each action once: an acknowledgement reports that the
+ * device accepted a request, and a completion reports its terminal outcome.
+ * Report them in order and drop each one with `playback_request_ack_outbound`
+ * after the platform accepts it.
+ */
+esp_err_t playback_request_list_pending_outbound(
+    playback_request_outbound_t *actions_out,
+    size_t capacity,
+    size_t *count_out
+);
+
+/**
+ * @brief Drop one reported outbound action from the queue.
+ *
+ * Called after the platform accepts the action. A missing entry is success so a
+ * retried report never fails on an already-drained queue.
+ */
+esp_err_t playback_request_ack_outbound(
+    const char *request_id,
+    playback_request_outbound_kind_t kind
 );
 
 /** @brief Return one cached request by id. */

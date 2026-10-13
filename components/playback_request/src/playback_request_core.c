@@ -180,3 +180,135 @@ playback_request_error_t playback_request_core_complete(
         : PLAYBACK_REQUEST_COMPLETED;
     return PLAYBACK_REQUEST_OK;
 }
+
+// Find the queued outbound entry for one (request id, kind), or the count when
+// there is none.
+static size_t playback_request_core_find_outbound(
+    const playback_request_core_t *core,
+    const char *request_id,
+    playback_request_outbound_kind_t kind
+) {
+    if (core == NULL || request_id == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < core->outbound_count; ++index) {
+        if (core->outbound[index].kind == kind &&
+            strcmp(core->outbound[index].request_id, request_id) == 0) {
+            return index;
+        }
+    }
+    return core->outbound_count;
+}
+
+static bool playback_request_outbound_kind_is_valid(
+    playback_request_outbound_kind_t kind
+) {
+    return kind == PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE ||
+        kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE;
+}
+
+playback_request_error_t playback_request_core_queue_outbound(
+    playback_request_core_t *core,
+    const char *request_id,
+    playback_request_outbound_kind_t kind,
+    playback_request_outcome_t outcome
+) {
+    if (core == NULL) {
+        return PLAYBACK_REQUEST_ERR_NOT_INITIALIZED;
+    }
+    if (request_id == NULL || request_id[0] == '\0' ||
+        !playback_request_outbound_kind_is_valid(kind)) {
+        return PLAYBACK_REQUEST_ERR_INVALID_ARGUMENT;
+    }
+    if (kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE &&
+        (outcome == PLAYBACK_REQUEST_OUTCOME_NONE ||
+         !playback_request_outcome_is_valid(outcome))) {
+        return PLAYBACK_REQUEST_ERR_INVALID_ARGUMENT;
+    }
+    if (kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE) {
+        // A completion supersedes a still-queued acknowledgement: the platform
+        // accepts a completion from either the pending or acknowledged state,
+        // and it already stores the acknowledged timestamp.
+        (void)playback_request_core_remove_outbound(
+            core,
+            request_id,
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE
+        );
+    }
+    const size_t existing =
+        playback_request_core_find_outbound(core, request_id, kind);
+    if (existing < core->outbound_count) {
+        // Replace in place so a repeated transition reports once, with the
+        // latest outcome, and keeps its position in the queue.
+        core->outbound[existing].outcome = outcome;
+        return PLAYBACK_REQUEST_OK;
+    }
+    if (core->outbound_count >= PLAYBACK_REQUEST_OUTBOUND_CAPACITY) {
+        // Drop the oldest so the newest change still fits; the most recent
+        // lifecycle changes are the ones a guardian still needs to see.
+        for (size_t index = 1; index < core->outbound_count; ++index) {
+            core->outbound[index - 1] = core->outbound[index];
+        }
+        core->outbound_count -= 1;
+    }
+    playback_request_outbound_t *action =
+        &core->outbound[core->outbound_count];
+    memset(action, 0, sizeof(*action));
+    size_t id_length = strlen(request_id);
+    if (id_length >= PLAYBACK_REQUEST_ID_SIZE) {
+        id_length = PLAYBACK_REQUEST_ID_SIZE - 1;
+    }
+    memcpy(action->request_id, request_id, id_length);
+    action->kind = kind;
+    action->outcome = outcome;
+    core->outbound_count += 1;
+    return PLAYBACK_REQUEST_OK;
+}
+
+size_t playback_request_core_pending_outbound(
+    const playback_request_core_t *core,
+    playback_request_outbound_t *actions_out,
+    size_t capacity
+) {
+    if (core == NULL) {
+        return 0;
+    }
+    const size_t copied = core->outbound_count < capacity
+        ? core->outbound_count
+        : capacity;
+    if (actions_out != NULL) {
+        for (size_t index = 0; index < copied; ++index) {
+            actions_out[index] = core->outbound[index];
+        }
+    }
+    return core->outbound_count;
+}
+
+playback_request_error_t playback_request_core_remove_outbound(
+    playback_request_core_t *core,
+    const char *request_id,
+    playback_request_outbound_kind_t kind
+) {
+    if (core == NULL) {
+        return PLAYBACK_REQUEST_ERR_NOT_INITIALIZED;
+    }
+    if (request_id == NULL || request_id[0] == '\0' ||
+        !playback_request_outbound_kind_is_valid(kind)) {
+        return PLAYBACK_REQUEST_ERR_INVALID_ARGUMENT;
+    }
+    const size_t index =
+        playback_request_core_find_outbound(core, request_id, kind);
+    if (index >= core->outbound_count) {
+        return PLAYBACK_REQUEST_OK;
+    }
+    for (size_t cursor = index; cursor + 1 < core->outbound_count; ++cursor) {
+        core->outbound[cursor] = core->outbound[cursor + 1];
+    }
+    core->outbound_count -= 1;
+    memset(
+        &core->outbound[core->outbound_count],
+        0,
+        sizeof(playback_request_outbound_t)
+    );
+    return PLAYBACK_REQUEST_OK;
+}

@@ -36,6 +36,7 @@
 
 #define PLAYBACK_REQUEST_SYNC_URL_SIZE 384
 #define PLAYBACK_REQUEST_SYNC_RESPONSE_SIZE 32768
+#define PLAYBACK_REQUEST_SYNC_REQUEST_SIZE 256
 
 static const char *const TAG = "playback_sync";
 static bool s_ready;
@@ -94,36 +95,55 @@ static esp_err_t playback_request_sync_http_event(
     return ESP_OK;
 }
 
-static esp_err_t playback_request_sync_fetch(JsonDocument *document) {
-    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
+// Resolve the session token, device id and platform base url shared by the
+// pending-request fetch and the lifecycle reports. The caller owns the token.
+static esp_err_t playback_request_sync_prepare(
+    char *session_token,
+    size_t session_token_size,
+    char *device_id,
+    size_t device_id_size,
+    char *base_url,
+    size_t base_url_size
+) {
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
+        !time_sync_is_synchronized() ||
+        !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!time_sync_is_synchronized()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!device_binding_client_is_registered()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     if (device_binding_client_copy_session_token(
             session_token,
-            sizeof(session_token)
+            session_token_size
         ) != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
     }
-    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
-    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK) {
-        memset(session_token, 0, sizeof(session_token));
+    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_STATE;
     }
-    char base_url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
     if (device_binding_client_get_platform_base_url(
             base_url,
-            sizeof(base_url)
+            base_url_size
         ) != ESP_OK ||
         strncmp(base_url, "https://", 8) != 0) {
-        memset(session_token, 0, sizeof(session_token));
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t playback_request_sync_fetch(JsonDocument *document) {
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
+    if (playback_request_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
     }
     char url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -264,6 +284,158 @@ static esp_err_t playback_request_sync_apply_document(JsonDocument &document) {
     return playback_request_merge_remote(parsed, request_count);
 }
 
+// Report one queued lifecycle change to the platform. Returns ESP_OK once the
+// platform accepts it so the caller can drop the action from the queue. A 404
+// means the request no longer exists and is reported as ESP_ERR_NOT_FOUND so
+// the caller can discard the stale action instead of retrying it forever; any
+// other result keeps the action queued for the next cycle.
+static esp_err_t playback_request_sync_report_action(
+    const playback_request_outbound_t *action,
+    const char *session_token,
+    const char *device_id,
+    const char *base_url
+) {
+    const bool completing =
+        action->kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE;
+    char url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
+    const int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/playback/requests/%s/%s",
+        base_url,
+        device_id,
+        action->request_id,
+        completing ? "complete" : "acknowledge"
+    );
+    if (written <= 0 || (size_t)written >= sizeof(url)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if PLAYBACK_REQUEST_SYNC_HAS_TRANSPORT_SECURITY
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
+
+    JsonDocument payload;
+    char request_body[PLAYBACK_REQUEST_SYNC_REQUEST_SIZE] = {0};
+    const char *body = nullptr;
+    size_t body_length = 0;
+    if (completing) {
+        payload["outcome"] = playback_request_outcome_name(action->outcome);
+        body_length = serializeJson(payload, request_body, sizeof(request_body));
+        if (body_length == 0 || body_length >= sizeof(request_body)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        body = request_body;
+    }
+
+    playback_request_sync_response_t response = {};
+    if (playback_request_sync_response_init(&response) != ESP_OK) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 15000;
+    config.event_handler = playback_request_sync_http_event;
+    config.user_data = &response;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        playback_request_sync_response_destroy(&response);
+        return ESP_ERR_NO_MEM;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
+    snprintf(
+        authorization,
+        sizeof(authorization),
+        "Bearer %s",
+        session_token
+    );
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    if (body != nullptr) {
+        esp_http_client_set_header(client, "Content-Type", "application/json");
+        esp_http_client_set_post_field(client, body, (int)body_length);
+    }
+    const esp_err_t transport_result = esp_http_client_perform(client);
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    memset(authorization, 0, sizeof(authorization));
+    playback_request_sync_response_destroy(&response);
+    if (transport_result != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 404) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (status_code < 200 || status_code >= 300) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+// Drain the queued lifecycle changes, stopping at the first transient failure
+// so the rest of the queue survives for the next cycle.
+static void playback_request_sync_report_actions(void) {
+    if (playback_request_pending_outbound_count() == 0) {
+        return;
+    }
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
+    if (playback_request_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return;
+    }
+    playback_request_outbound_t actions[PLAYBACK_REQUEST_OUTBOUND_CAPACITY] = {};
+    size_t action_count = 0;
+    if (playback_request_list_pending_outbound(
+            actions,
+            PLAYBACK_REQUEST_OUTBOUND_CAPACITY,
+            &action_count
+        ) != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+    for (size_t index = 0; index < action_count; ++index) {
+        const esp_err_t report_result = playback_request_sync_report_action(
+            &actions[index],
+            session_token,
+            device_id,
+            base_url
+        );
+        if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
+            // A stale action for a removed request is dropped rather than
+            // retried forever.
+            (void)playback_request_ack_outbound(
+                actions[index].request_id,
+                actions[index].kind
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "playback action report failed for %s: %s",
+                actions[index].request_id,
+                esp_err_to_name(report_result)
+            );
+            break;
+        }
+    }
+    memset(session_token, 0, sizeof(session_token));
+}
+
 esp_err_t playback_request_sync_now(void) {
     if (!playback_request_is_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -278,8 +450,10 @@ esp_err_t playback_request_sync_now(void) {
     if (apply_result != ESP_OK) {
         ESP_LOGW(TAG, "playback request response rejected: %s",
                  esp_err_to_name(apply_result));
+        return apply_result;
     }
-    return apply_result;
+    playback_request_sync_report_actions();
+    return ESP_OK;
 }
 
 static void playback_request_sync_worker(void *argument) {

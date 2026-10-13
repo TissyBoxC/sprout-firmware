@@ -54,6 +54,10 @@ playback_request_error_t playback_request_sync_core_merge(
 
     playback_request_core_t rebuilt;
     playback_request_core_init(&rebuilt);
+    // The outbound queue is local bookkeeping that must survive a schedule
+    // merge; only the request cache is rebuilt from the remote snapshot.
+    rebuilt.outbound_count = core->outbound_count;
+    memcpy(rebuilt.outbound, core->outbound, sizeof(rebuilt.outbound));
 
     // Retain local terminal history the remote snapshot no longer carries.
     for (size_t index = 0; index < core->count; ++index) {

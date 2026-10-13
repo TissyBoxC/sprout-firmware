@@ -200,5 +200,138 @@ int main() {
         PLAYBACK_REQUEST_ERR_FULL
     );
 
+    // Outbound lifecycle changes are queued oldest-first and reported once.
+    playback_request_core_t outbound;
+    playback_request_core_init(&outbound);
+    assert(outbound.outbound_count == 0);
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_002",
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+    assert(std::strcmp(outbound.outbound[0].request_id, "req_001") == 0);
+    assert(std::strcmp(outbound.outbound[1].request_id, "req_002") == 0);
+    // Re-queuing the same (request, kind) replaces in place, keeping order.
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+    assert(std::strcmp(outbound.outbound[0].request_id, "req_001") == 0);
+    // A completion supersedes a still-queued acknowledgement for the request:
+    // the acknowledgement is dropped and the completion is appended.
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE,
+            PLAYBACK_REQUEST_OUTCOME_PLAYED
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+    assert(std::strcmp(outbound.outbound[0].request_id, "req_002") == 0);
+    assert(outbound.outbound[0].kind == PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE);
+    assert(std::strcmp(outbound.outbound[1].request_id, "req_001") == 0);
+    assert(outbound.outbound[1].kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE);
+    assert(outbound.outbound[1].outcome == PLAYBACK_REQUEST_OUTCOME_PLAYED);
+    // Re-queuing the completion replaces the outcome without moving it.
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE,
+            PLAYBACK_REQUEST_OUTCOME_SKIPPED
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+    assert(std::strcmp(outbound.outbound[1].request_id, "req_001") == 0);
+    assert(outbound.outbound[1].outcome == PLAYBACK_REQUEST_OUTCOME_SKIPPED);
+    // A completion without a terminal outcome is rejected.
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_003",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_ERR_INVALID_ARGUMENT
+    );
+    assert(
+        playback_request_core_queue_outbound(
+            &outbound,
+            "req_003",
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 3);
+
+    // The list helper copies oldest-first and reports the full count even when
+    // the caller provides a smaller buffer.
+    playback_request_outbound_t listed[PLAYBACK_REQUEST_OUTBOUND_CAPACITY] = {};
+    const size_t listed_count =
+        playback_request_core_pending_outbound(&outbound, listed, 2);
+    assert(listed_count == 3);
+    assert(std::strcmp(listed[0].request_id, "req_002") == 0);
+    assert(listed[1].kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE);
+
+    // Removing one action drains exactly that (request, kind) pair; a missing
+    // entry is success so a retried report never fails.
+    assert(
+        playback_request_core_remove_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+    assert(
+        playback_request_core_remove_outbound(
+            &outbound,
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    assert(outbound.outbound_count == 2);
+
+    // The queue is bounded; filling past capacity drops the oldest entry while
+    // keeping the newest.
+    playback_request_core_t bounded;
+    playback_request_core_init(&bounded);
+    for (int index = 0; index < PLAYBACK_REQUEST_OUTBOUND_CAPACITY + 4;
+         ++index) {
+        std::snprintf(id, sizeof(id), "req_%03d", index);
+        assert(
+            playback_request_core_queue_outbound(
+                &bounded,
+                id,
+                PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+                PLAYBACK_REQUEST_OUTCOME_NONE
+            ) == PLAYBACK_REQUEST_OK
+        );
+    }
+    assert(bounded.outbound_count == PLAYBACK_REQUEST_OUTBOUND_CAPACITY);
+    assert(
+        std::strcmp(
+            bounded.outbound[bounded.outbound_count - 1].request_id,
+            "req_035"
+        ) == 0
+    );
+
     return 0;
 }

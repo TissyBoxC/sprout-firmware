@@ -167,6 +167,15 @@ esp_err_t playback_request_acknowledge(const char *request_id) {
             PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_ARG;
     }
+    // Queue the acknowledgement so the sync worker can tell the guardian the
+    // device accepted the request. A queue rejection never blocks the local
+    // state change.
+    (void)playback_request_core_queue_outbound(
+        &updated,
+        request_id,
+        PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+        PLAYBACK_REQUEST_OUTCOME_NONE
+    );
     const esp_err_t persisted = playback_request_persist_core(&updated);
     if (persisted == ESP_OK) {
         s_core = updated;
@@ -202,6 +211,12 @@ esp_err_t playback_request_complete(
             PLAYBACK_REQUEST_UNLOCK();
             return ESP_ERR_INVALID_ARG;
     }
+    (void)playback_request_core_queue_outbound(
+        &updated,
+        request_id,
+        PLAYBACK_REQUEST_OUTBOUND_COMPLETE,
+        outcome
+    );
     const esp_err_t persisted = playback_request_persist_core(&updated);
     if (persisted == ESP_OK) {
         s_core = updated;
@@ -293,6 +308,66 @@ size_t playback_request_count(void) {
     const size_t count = s_core.count;
     PLAYBACK_REQUEST_UNLOCK();
     return count;
+}
+
+size_t playback_request_pending_outbound_count(void) {
+    if (!s_ready) {
+        return 0;
+    }
+    PLAYBACK_REQUEST_LOCK();
+    const size_t count = s_core.outbound_count;
+    PLAYBACK_REQUEST_UNLOCK();
+    return count;
+}
+
+esp_err_t playback_request_list_pending_outbound(
+    playback_request_outbound_t *actions_out,
+    size_t capacity,
+    size_t *count_out
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (count_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (actions_out == NULL && capacity > 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    PLAYBACK_REQUEST_LOCK();
+    *count_out = playback_request_core_pending_outbound(
+        &s_core,
+        actions_out,
+        capacity
+    );
+    PLAYBACK_REQUEST_UNLOCK();
+    return ESP_OK;
+}
+
+esp_err_t playback_request_ack_outbound(
+    const char *request_id,
+    playback_request_outbound_kind_t kind
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (request_id == NULL || request_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    PLAYBACK_REQUEST_LOCK();
+    playback_request_core_t updated = s_core;
+    const playback_request_error_t result =
+        playback_request_core_remove_outbound(&updated, request_id, kind);
+    if (result != PLAYBACK_REQUEST_OK) {
+        PLAYBACK_REQUEST_UNLOCK();
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = playback_request_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    PLAYBACK_REQUEST_UNLOCK();
+    return persisted;
 }
 
 const char *playback_request_status_name(playback_request_status_t status) {

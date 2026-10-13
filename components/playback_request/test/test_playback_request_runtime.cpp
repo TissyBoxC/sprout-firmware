@@ -74,6 +74,37 @@ int main() {
     // An unknown request reports not found.
     assert(playback_request_acknowledge("req_missing") == ESP_ERR_NOT_FOUND);
 
+    // Acknowledging and completing queue outbound actions for the platform, and
+    // the completion supersedes the acknowledgement for the same request.
+    assert(playback_request_pending_outbound_count() == 1u);
+    playback_request_outbound_t outbound[PLAYBACK_REQUEST_OUTBOUND_CAPACITY];
+    size_t outbound_count = 0;
+    assert(
+        playback_request_list_pending_outbound(
+            outbound,
+            PLAYBACK_REQUEST_OUTBOUND_CAPACITY,
+            &outbound_count
+        ) == ESP_OK
+    );
+    assert(outbound_count == 1u);
+    assert(std::strcmp(outbound[0].request_id, "req_001") == 0);
+    assert(outbound[0].kind == PLAYBACK_REQUEST_OUTBOUND_COMPLETE);
+    assert(outbound[0].outcome == PLAYBACK_REQUEST_OUTCOME_PLAYED);
+    // Dropping the reported action drains the queue; a repeat ack is success.
+    assert(
+        playback_request_ack_outbound(
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE
+        ) == ESP_OK
+    );
+    assert(
+        playback_request_ack_outbound(
+            "req_001",
+            PLAYBACK_REQUEST_OUTBOUND_COMPLETE
+        ) == ESP_OK
+    );
+    assert(playback_request_pending_outbound_count() == 0u);
+
     assert(
         playback_request_list_pending(
             pending,
@@ -87,6 +118,9 @@ int main() {
     // The blob survives a re-init, standing in for a device restart.
     assert(playback_request_init() == ESP_OK);
     assert(playback_request_count() == 2);
+    // The queue is persisted too, so a drained action stays drained across a
+    // restart.
+    assert(playback_request_pending_outbound_count() == 0u);
     assert(playback_request_get("req_001", &recalled));
     assert(recalled.status == PLAYBACK_REQUEST_COMPLETED);
     assert(recalled.outcome == PLAYBACK_REQUEST_OUTCOME_PLAYED);

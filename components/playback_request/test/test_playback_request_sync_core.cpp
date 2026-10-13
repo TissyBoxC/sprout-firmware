@@ -85,10 +85,24 @@ int main() {
         PLAYBACK_REQUEST_ACKNOWLEDGED
     );
 
+    // The outbound queue is local bookkeeping and must survive a merge.
+    assert(
+        playback_request_core_queue_outbound(
+            &core,
+            "req_keep",
+            PLAYBACK_REQUEST_OUTBOUND_ACKNOWLEDGE,
+            PLAYBACK_REQUEST_OUTCOME_NONE
+        ) == PLAYBACK_REQUEST_OK
+    );
+    const size_t outbound_before = core.outbound_count;
+    assert(outbound_before == 1);
+
     // An empty remote view drops every local pending request but keeps history.
     assert(playback_request_sync_core_merge(&core, nullptr, 0) == PLAYBACK_REQUEST_OK);
     assert(playback_request_core_find(&core, "req_new") == core.count);
     assert(playback_request_core_find(&core, "req_played") < core.count);
+    assert(core.outbound_count == outbound_before);
+    assert(std::strcmp(core.outbound[0].request_id, "req_keep") == 0);
 
     // Invalid remote ids are dropped without aborting the merge.
     playback_request_t invalid[] = {
