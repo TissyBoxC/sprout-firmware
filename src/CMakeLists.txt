@@ -67,6 +67,10 @@ if(CONFIG_FEATURE_MOTION_CONTROL)
     list(APPEND app_requires "motion_control")
 endif()
 
+if(CONFIG_FEATURE_MOTION_POLICY_SYNC)
+    list(APPEND app_requires "motion_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_FORM_FACTOR_PROFILE)
     list(APPEND app_requires "form_factor_profile")
 endif()

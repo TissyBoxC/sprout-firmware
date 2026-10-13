@@ -76,9 +76,11 @@ int main() {
     // Persistence round trip keeps the edited policy.
     motion_policy_t persisted = no_ack;
     persisted.allow_locomotion = 0u;
+    persisted.revision = 21u;
     assert(motion_set(&persisted) == ESP_OK);
     assert(motion_init() == ESP_OK);
     assert(motion_get().allow_locomotion == 0u);
+    assert(motion_get().revision == 21u);
 
     // A policy that is not version-compatible is refused by apply.
     motion_policy_t invalid;

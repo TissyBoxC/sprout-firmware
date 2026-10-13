@@ -176,7 +176,7 @@ esp_err_t motion_report_now(void) {
     payload["action"] = motion_action_name(status.action);
     payload["actuator_count"] = status.actuator_count;
     payload["faulted"] = status.faulted;
-    payload["policy_revision"] = 0;
+    payload["policy_revision"] = policy.revision;
     char request_body[MOTION_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));

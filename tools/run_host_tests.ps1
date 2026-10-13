@@ -1369,6 +1369,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$motionPolicySyncRoot = Join-Path $firmwareRoot 'components/motion_policy_sync'
+Invoke-HostTest `
+    -Name 'motion_policy_sync_core' `
+    -Sources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionPolicySyncRoot 'src/motion_policy_sync_core.c')
+        (Join-Path $motionPolicySyncRoot 'test/test_motion_policy_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $motionRoot 'include')
+        (Join-Path $motionRoot 'src')
+        (Join-Path $motionRoot 'test/stubs')
+        (Join-Path $motionPolicySyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $motionReportRoot = Join-Path $firmwareRoot 'components/motion_report'
 Invoke-HostTest `
     -Name 'motion_report_core' `

@@ -57,6 +57,7 @@ typedef struct {
     uint8_t max_speed_percent;
     uint16_t max_runtime_ms;
     uint16_t stop_grace_ms;
+    uint32_t revision;
 } motion_policy_t;
 
 /** @brief One bounded actuator command in a walking or dancing action. */

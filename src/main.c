@@ -249,6 +249,9 @@
 #if CONFIG_FEATURE_MOTION_CONTROL
 #include "motion_control.h"
 #endif
+#if CONFIG_FEATURE_MOTION_POLICY_SYNC
+#include "motion_policy_sync.h"
+#endif
 #if CONFIG_FEATURE_MOTION_REPORT
 #include "motion_report.h"
 #endif
@@ -855,6 +858,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_MOTION_CONTROL
     ESP_ERROR_CHECK(module_registry_add(motion_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_MOTION_POLICY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        motion_policy_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_MOTION_REPORT
     ESP_ERROR_CHECK(module_registry_add(motion_report_module_descriptor()));

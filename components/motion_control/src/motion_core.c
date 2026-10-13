@@ -91,6 +91,7 @@ motion_policy_t motion_default(void) {
         .max_speed_percent = 60u,
         .max_runtime_ms = 5000u,
         .stop_grace_ms = 300u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -119,6 +120,7 @@ motion_policy_t motion_clamp(const motion_policy_t *policy) {
         0u,
         MOTION_MAX_MAX_RUNTIME_MS
     );
+    clamped.revision = policy->revision;
     clamped.schema_version = MOTION_SCHEMA_VERSION;
     return clamped;
 }
