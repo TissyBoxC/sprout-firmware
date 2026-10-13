@@ -29,6 +29,13 @@ if(CONFIG_FEATURE_PARENT_CONTROL_RUNTIME)
     idf_component_optional_requires(PRIVATE parent_control_runtime)
 endif()
 
+# The playback engine records one bounded history row per finished title so the
+# parent app mirrors what the child played. The dependency drops out of a
+# minimal build that does not ship playback_history.
+if(CONFIG_FEATURE_PLAYBACK_HISTORY)
+    idf_component_optional_requires(PRIVATE playback_history)
+endif()
+
 # Every content download URL must pass the shared transport policy. The check
 # disappears together with the component in a minimal build.
 if(CONFIG_FEATURE_TRANSPORT_SECURITY AND EXISTS

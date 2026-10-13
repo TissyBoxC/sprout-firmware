@@ -22,6 +22,13 @@
 #define CONTENT_PLAYBACK_HAS_PARENT_CONTROL_RUNTIME 0
 #endif
 
+#if CONFIG_FEATURE_PLAYBACK_HISTORY && __has_include("playback_history.h")
+#include "playback_history.h"
+#define CONTENT_PLAYBACK_HAS_HISTORY 1
+#else
+#define CONTENT_PLAYBACK_HAS_HISTORY 0
+#endif
+
 #ifndef CONFIG_CONTENT_PLAYBACK_CHUNK_FRAMES
 #define CONFIG_CONTENT_PLAYBACK_CHUNK_FRAMES 32
 #endif
@@ -199,6 +206,31 @@ static void content_playback_worker(void *argument) {
                 entry.category,
                 content_seconds
             );
+        }
+#endif
+#if CONTENT_PLAYBACK_HAS_HISTORY
+        // Record one bounded history row so the parent app mirrors what the
+        // child played and can offer to resume an interrupted title. The row is
+        // also queued for the platform by the history sync worker.
+        {
+            const uint32_t frame_bytes = sizeof(audio_codec_pcm_frame_t);
+            const uint32_t total_frames = frame_bytes == 0
+                ? 0
+                : (uint32_t)(entry.size_bytes / frame_bytes);
+            playback_record_t history = {};
+            snprintf(
+                history.package_id,
+                sizeof(history.package_id),
+                "%s",
+                entry.package_id
+            );
+            history.package_version = entry.package_version;
+            history.outcome = canceled
+                ? PLAYBACK_OUTCOME_INTERRUPTED
+                : PLAYBACK_OUTCOME_COMPLETED;
+            history.played_seconds =
+                (total_frames * AUDIO_CODEC_FRAME_DURATION_MS) / 1000u;
+            (void)playback_history_record(&history, NULL);
         }
 #endif
         xSemaphoreTake(content_playback_lock, portMAX_DELAY);
