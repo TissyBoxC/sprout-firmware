@@ -13,6 +13,13 @@ extern "C" {
 typedef struct {
     alarm_reminder_t alarms[ALARM_REMINDER_CAPACITY];
     size_t count;
+    // Bounded queue of firing outcomes the platform has not acknowledged yet,
+    // keyed by (alarm id, local date) so a state change replaces the entry
+    // rather than appending a second one for the same alarm and day.
+    alarm_reminder_pending_event_t pending_events[
+        ALARM_REMINDER_PENDING_EVENT_CAPACITY
+    ];
+    size_t pending_event_count;
 } alarm_reminder_core_t;
 
 /** @brief Reset the store to empty. */
@@ -77,6 +84,40 @@ alarm_reminder_error_t alarm_reminder_core_set_snooze(
 
 /** @brief Convert a YYYYMMDD local date and minute of day to an absolute tick. */
 int64_t alarm_reminder_core_tick(int32_t local_date, uint16_t minute_of_day);
+
+/**
+ * @brief Record one firing outcome for later reporting.
+ *
+ * The queue keeps at most one entry per (alarm id, local date): a repeat
+ * outcome for the same day replaces the stored state in place so the oldest
+ * event keeps its position and a retried transition never duplicates. When the
+ * bounded queue is full the oldest entry is dropped to make room, because the
+ * most recent firing outcomes are the ones a guardian still needs to see.
+ */
+alarm_reminder_error_t alarm_reminder_core_record_event(
+    alarm_reminder_core_t *core,
+    const char *alarm_id,
+    int32_t alarm_date,
+    alarm_reminder_state_t state
+);
+
+/** @brief Copy the unacknowledged firing events, oldest first. */
+size_t alarm_reminder_core_pending_events(
+    const alarm_reminder_core_t *core,
+    alarm_reminder_pending_event_t *events_out,
+    size_t capacity
+);
+
+/**
+ * @brief Remove one firing event, keyed by (alarm id, local date).
+ *
+ * A missing entry is success so a retried acknowledgement never fails.
+ */
+alarm_reminder_error_t alarm_reminder_core_remove_event(
+    alarm_reminder_core_t *core,
+    const char *alarm_id,
+    int32_t alarm_date
+);
 
 #ifdef __cplusplus
 }

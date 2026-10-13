@@ -287,3 +287,119 @@ alarm_reminder_error_t alarm_reminder_core_set_snooze(
     core->alarms[index].snooze_deadline_tick = deadline_tick;
     return ALARM_REMINDER_OK;
 }
+
+// Find the pending firing event for one (alarm id, local date), or
+// pending_event_count when there is none.
+static size_t alarm_reminder_core_find_event(
+    const alarm_reminder_core_t *core,
+    const char *alarm_id,
+    int32_t alarm_date
+) {
+    if (core == NULL || alarm_id == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < core->pending_event_count; ++index) {
+        if (core->pending_events[index].alarm_date == alarm_date &&
+            strcmp(core->pending_events[index].alarm_id, alarm_id) == 0) {
+            return index;
+        }
+    }
+    return core->pending_event_count;
+}
+
+alarm_reminder_error_t alarm_reminder_core_record_event(
+    alarm_reminder_core_t *core,
+    const char *alarm_id,
+    int32_t alarm_date,
+    alarm_reminder_state_t state
+) {
+    if (core == NULL) {
+        return ALARM_REMINDER_ERR_NOT_INITIALIZED;
+    }
+    // Only the four reportable firing outcomes are queued; an idle alarm has
+    // nothing to tell the guardian. A malformed date is rejected the same way
+    // the tick helper rejects it.
+    if (alarm_id == NULL || alarm_id[0] == '\0' ||
+        state <= ALARM_REMINDER_STATE_IDLE ||
+        state > ALARM_REMINDER_STATE_MISSED ||
+        alarm_reminder_core_tick(alarm_date, 0) == 0) {
+        return ALARM_REMINDER_ERR_INVALID_ARGUMENT;
+    }
+    const size_t existing =
+        alarm_reminder_core_find_event(core, alarm_id, alarm_date);
+    if (existing < core->pending_event_count) {
+        // Replace the stored state in place so a snooze followed by a dismiss
+        // reports once, with the latest outcome.
+        core->pending_events[existing].state = state;
+        return ALARM_REMINDER_OK;
+    }
+    if (core->pending_event_count >= ALARM_REMINDER_PENDING_EVENT_CAPACITY) {
+        // Drop the oldest so the newest outcome still fits; the most recent
+        // firings are the ones a guardian still needs to see.
+        for (size_t index = 1; index < core->pending_event_count; ++index) {
+            core->pending_events[index - 1] = core->pending_events[index];
+        }
+        core->pending_event_count -= 1;
+    }
+    alarm_reminder_pending_event_t *event =
+        &core->pending_events[core->pending_event_count];
+    memset(event, 0, sizeof(*event));
+    size_t id_length = strlen(alarm_id);
+    if (id_length >= ALARM_REMINDER_ID_SIZE) {
+        id_length = ALARM_REMINDER_ID_SIZE - 1;
+    }
+    memcpy(event->alarm_id, alarm_id, id_length);
+    event->alarm_date = alarm_date;
+    event->state = state;
+    core->pending_event_count += 1;
+    return ALARM_REMINDER_OK;
+}
+
+size_t alarm_reminder_core_pending_events(
+    const alarm_reminder_core_t *core,
+    alarm_reminder_pending_event_t *events_out,
+    size_t capacity
+) {
+    if (core == NULL) {
+        return 0;
+    }
+    const size_t copied = core->pending_event_count < capacity
+        ? core->pending_event_count
+        : capacity;
+    if (events_out != NULL) {
+        for (size_t index = 0; index < copied; ++index) {
+            events_out[index] = core->pending_events[index];
+        }
+    }
+    return core->pending_event_count;
+}
+
+alarm_reminder_error_t alarm_reminder_core_remove_event(
+    alarm_reminder_core_t *core,
+    const char *alarm_id,
+    int32_t alarm_date
+) {
+    if (core == NULL) {
+        return ALARM_REMINDER_ERR_NOT_INITIALIZED;
+    }
+    if (alarm_id == NULL || alarm_id[0] == '\0') {
+        return ALARM_REMINDER_ERR_INVALID_ARGUMENT;
+    }
+    const size_t index =
+        alarm_reminder_core_find_event(core, alarm_id, alarm_date);
+    if (index >= core->pending_event_count) {
+        return ALARM_REMINDER_OK;
+    }
+    for (size_t cursor = index;
+         cursor + 1 < core->pending_event_count;
+         ++cursor) {
+        core->pending_events[cursor] = core->pending_events[cursor + 1];
+    }
+    core->pending_event_count -= 1;
+    memset(
+        &core->pending_events[core->pending_event_count],
+        0,
+        sizeof(alarm_reminder_pending_event_t)
+    );
+    return ALARM_REMINDER_OK;
+}

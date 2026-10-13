@@ -288,6 +288,14 @@ static esp_err_t alarm_reminder_apply_state(
     if (result != ALARM_REMINDER_OK) {
         return ESP_ERR_INVALID_ARG;
     }
+    // Queue the outcome so the sync worker can tell the guardian. A queue that
+    // rejects the event never blocks the local state change.
+    (void)alarm_reminder_core_record_event(
+        &updated,
+        alarm_id,
+        local_date,
+        state
+    );
     const esp_err_t persisted = alarm_reminder_persist_core(&updated);
     if (persisted == ESP_OK) {
         s_core = updated;
@@ -343,6 +351,12 @@ esp_err_t alarm_reminder_snooze(
         ALARM_REMINDER_UNLOCK();
         return ESP_ERR_INVALID_ARG;
     }
+    (void)alarm_reminder_core_record_event(
+        &updated,
+        alarm_id,
+        local_date,
+        ALARM_REMINDER_STATE_SNOOZED
+    );
     const esp_err_t persisted = alarm_reminder_persist_core(&updated);
     if (persisted == ESP_OK) {
         s_core = updated;
@@ -380,6 +394,66 @@ esp_err_t alarm_reminder_mark_missed(
     );
     ALARM_REMINDER_UNLOCK();
     return result;
+}
+
+size_t alarm_reminder_pending_event_count(void) {
+    if (!s_ready) {
+        return 0;
+    }
+    ALARM_REMINDER_LOCK();
+    const size_t count = s_core.pending_event_count;
+    ALARM_REMINDER_UNLOCK();
+    return count;
+}
+
+esp_err_t alarm_reminder_list_pending_events(
+    alarm_reminder_pending_event_t *events_out,
+    size_t capacity,
+    size_t *count_out
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (count_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (events_out == NULL && capacity > 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ALARM_REMINDER_LOCK();
+    *count_out = alarm_reminder_core_pending_events(
+        &s_core,
+        events_out,
+        capacity
+    );
+    ALARM_REMINDER_UNLOCK();
+    return ESP_OK;
+}
+
+esp_err_t alarm_reminder_ack_event(const char *alarm_id, int32_t alarm_date) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (alarm_id == NULL || alarm_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ALARM_REMINDER_LOCK();
+    alarm_reminder_core_t updated = s_core;
+    const alarm_reminder_error_t result = alarm_reminder_core_remove_event(
+        &updated,
+        alarm_id,
+        alarm_date
+    );
+    if (result != ALARM_REMINDER_OK) {
+        ALARM_REMINDER_UNLOCK();
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = alarm_reminder_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    ALARM_REMINDER_UNLOCK();
+    return persisted;
 }
 
 const char *alarm_reminder_state_name(alarm_reminder_state_t state) {

@@ -317,5 +317,133 @@ int main() {
     assert(alarm_reminder_core_tick(20261340, 0) == 0);
     assert(alarm_reminder_core_tick(20260304, 24 * 60) == 0);
 
+    // Firing outcomes are queued for the platform, oldest first, and a repeat
+    // outcome for the same alarm and day replaces the stored state in place.
+    alarm_reminder_core_t events = {};
+    alarm_reminder_core_init(&events);
+    assert(events.pending_event_count == 0);
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_001",
+            20260304,
+            ALARM_REMINDER_STATE_RINGING
+        ) == ALARM_REMINDER_OK
+    );
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_001",
+            20260304,
+            ALARM_REMINDER_STATE_DISMISSED
+        ) == ALARM_REMINDER_OK
+    );
+    assert(events.pending_event_count == 1);
+    assert(events.pending_events[0].state == ALARM_REMINDER_STATE_DISMISSED);
+    // A different day and a different alarm each queue their own entry.
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_001",
+            20260305,
+            ALARM_REMINDER_STATE_MISSED
+        ) == ALARM_REMINDER_OK
+    );
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_002",
+            20260304,
+            ALARM_REMINDER_STATE_SNOOZED
+        ) == ALARM_REMINDER_OK
+    );
+    assert(events.pending_event_count == 3);
+    // The queue is bounded. Filling it past capacity drops the oldest entry.
+    for (int index = 0; index < ALARM_REMINDER_PENDING_EVENT_CAPACITY + 4;
+         ++index) {
+        char event_id[ALARM_REMINDER_ID_SIZE];
+        std::snprintf(event_id, sizeof(event_id), "alarm_%03d", index);
+        assert(
+            alarm_reminder_core_record_event(
+                &events,
+                event_id,
+                20260310,
+                ALARM_REMINDER_STATE_DISMISSED
+            ) == ALARM_REMINDER_OK
+        );
+    }
+    assert(
+        events.pending_event_count == ALARM_REMINDER_PENDING_EVENT_CAPACITY
+    );
+    // The most recent entry survived the eviction.
+    assert(
+        std::strcmp(
+            events.pending_events[events.pending_event_count - 1].alarm_id,
+            "alarm_019"
+        ) == 0
+    );
+    // An idle state or a malformed date is rejected and never queued.
+    const size_t queued_before = events.pending_event_count;
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_001",
+            20260304,
+            ALARM_REMINDER_STATE_IDLE
+        ) == ALARM_REMINDER_ERR_INVALID_ARGUMENT
+    );
+    assert(
+        alarm_reminder_core_record_event(
+            &events,
+            "alarm_001",
+            20261340,
+            ALARM_REMINDER_STATE_RINGING
+        ) == ALARM_REMINDER_ERR_INVALID_ARGUMENT
+    );
+    assert(events.pending_event_count == queued_before);
+
+    // The list helper copies oldest-first and reports the full count even when
+    // the caller provides a smaller buffer.
+    alarm_reminder_pending_event_t listed[ALARM_REMINDER_PENDING_EVENT_CAPACITY] =
+        {};
+    const size_t listed_count = alarm_reminder_core_pending_events(
+        &events,
+        listed,
+        2
+    );
+    assert(listed_count == ALARM_REMINDER_PENDING_EVENT_CAPACITY);
+    assert(
+        std::strcmp(listed[0].alarm_id, events.pending_events[0].alarm_id) == 0
+    );
+    assert(listed[0].alarm_date == events.pending_events[0].alarm_date);
+    assert(listed[0].state == events.pending_events[0].state);
+
+    // Removing an event drains exactly that (alarm id, date) pair. A missing
+    // entry is success so a retried report never fails.
+    const char *removed_id = listed[0].alarm_id;
+    const int32_t removed_date = listed[0].alarm_date;
+    assert(
+        alarm_reminder_core_remove_event(
+            &events,
+            removed_id,
+            removed_date
+        ) == ALARM_REMINDER_OK
+    );
+    assert(
+        events.pending_event_count ==
+        ALARM_REMINDER_PENDING_EVENT_CAPACITY - 1
+    );
+    assert(
+        alarm_reminder_core_remove_event(
+            &events,
+            removed_id,
+            removed_date
+        ) == ALARM_REMINDER_OK
+    );
+    assert(
+        events.pending_event_count ==
+        ALARM_REMINDER_PENDING_EVENT_CAPACITY - 1
+    );
+
     return 0;
 }

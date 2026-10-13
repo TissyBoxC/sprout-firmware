@@ -34,6 +34,16 @@ extern "C" {
 #define ALARM_REMINDER_MAX_SNOOZE_MINUTES 30
 
 /**
+ * @brief Maximum number of unacknowledged firing events kept for the platform.
+ *
+ * A firing event is one alarm's latest state on one local date, so the queue is
+ * keyed by (alarm id, local date) and never grows past one entry per alarm per
+ * day. The bound keeps the persisted blob small while still letting a device
+ * survive a reboot before it reconnects and drains the queue.
+ */
+#define ALARM_REMINDER_PENDING_EVENT_CAPACITY 16
+
+/**
  * @brief One cached alarm: the daily schedule plus its local firing state.
  *
  * The schedule mirrors the platform's device alarm payload. The firing state
@@ -71,6 +81,14 @@ typedef enum {
     ALARM_REMINDER_STATE_DISMISSED,
     ALARM_REMINDER_STATE_MISSED,
 } alarm_reminder_state_t;
+
+/** @brief One firing outcome waiting to be reported to the platform. */
+typedef struct {
+    char alarm_id[ALARM_REMINDER_ID_SIZE];
+    /** Local date (YYYYMMDD) the event happened on. */
+    int32_t alarm_date;
+    alarm_reminder_state_t state;
+} alarm_reminder_pending_event_t;
 
 /** @brief Stable alarm-reminder error codes for diagnostics and UI copy. */
 typedef enum {
@@ -187,6 +205,30 @@ esp_err_t alarm_reminder_mark_missed(
     const char *alarm_id,
     int32_t local_date
 );
+
+/** @brief Return the number of firing events waiting to be reported. */
+size_t alarm_reminder_pending_event_count(void);
+
+/**
+ * @brief Copy the firing events waiting to be reported, oldest first.
+ *
+ * The platform stores the latest firing state per alarm and local date, so the
+ * queue keeps at most one entry per (alarm id, date) and reports the most
+ * recent state.
+ */
+esp_err_t alarm_reminder_list_pending_events(
+    alarm_reminder_pending_event_t *events_out,
+    size_t capacity,
+    size_t *count_out
+);
+
+/**
+ * @brief Drop one reported firing event from the queue.
+ *
+ * Called after the platform accepts the event. A missing entry is success so a
+ * retried report never fails on an already-drained queue.
+ */
+esp_err_t alarm_reminder_ack_event(const char *alarm_id, int32_t alarm_date);
 
 /** @brief Return the stable string for one local firing state. */
 const char *alarm_reminder_state_name(alarm_reminder_state_t state);

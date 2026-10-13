@@ -36,6 +36,7 @@
 
 #define ALARM_REMINDER_SYNC_URL_SIZE 384
 #define ALARM_REMINDER_SYNC_RESPONSE_SIZE 32768
+#define ALARM_REMINDER_SYNC_REQUEST_SIZE 256
 
 static const char *const TAG = "alarm_sync";
 static bool s_ready;
@@ -94,36 +95,55 @@ static esp_err_t alarm_reminder_sync_http_event(
     return ESP_OK;
 }
 
-static esp_err_t alarm_reminder_sync_fetch(JsonDocument *document) {
-    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
+// Resolve the session token, device id and platform base url shared by the
+// schedule fetch and the firing-event reports. The caller owns the token.
+static esp_err_t alarm_reminder_sync_prepare(
+    char *session_token,
+    size_t session_token_size,
+    char *device_id,
+    size_t device_id_size,
+    char *base_url,
+    size_t base_url_size
+) {
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
+        !time_sync_is_synchronized() ||
+        !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!time_sync_is_synchronized()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!device_binding_client_is_registered()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     if (device_binding_client_copy_session_token(
             session_token,
-            sizeof(session_token)
+            session_token_size
         ) != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
     }
-    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
-    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK) {
-        memset(session_token, 0, sizeof(session_token));
+    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_STATE;
     }
-    char base_url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
     if (device_binding_client_get_platform_base_url(
             base_url,
-            sizeof(base_url)
+            base_url_size
         ) != ESP_OK ||
         strncmp(base_url, "https://", 8) != 0) {
-        memset(session_token, 0, sizeof(session_token));
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t alarm_reminder_sync_fetch(JsonDocument *document) {
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
+    if (alarm_reminder_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
     }
     char url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -318,6 +338,184 @@ static esp_err_t alarm_reminder_sync_apply_document(JsonDocument &document) {
     return alarm_reminder_replace_schedule(parsed, alarm_count);
 }
 
+// Format one YYYYMMDD local date as the platform's YYYY-MM-DD. Returns false
+// for a malformed date so the event is left queued for a later retry.
+static bool alarm_reminder_sync_format_date(
+    int32_t alarm_date,
+    char *destination,
+    size_t destination_size
+) {
+    if (destination_size < 11 || alarm_date < 10000101) {
+        return false;
+    }
+    const int year = (int)(alarm_date / 10000);
+    const int month = (int)((alarm_date / 100) % 100);
+    const int day = (int)(alarm_date % 100);
+    const int written = snprintf(
+        destination,
+        destination_size,
+        "%04d-%02d-%02d",
+        year,
+        month,
+        day
+    );
+    return written == 10;
+}
+
+// Report one firing event to the platform. Returns ESP_OK once the platform
+// accepts it so the caller can drain the event from the queue. A 404 means the
+// alarm no longer exists (the guardian removed it) and is reported as
+// ESP_ERR_NOT_FOUND so the caller can discard the stale event instead of
+// retrying it forever; any other result keeps the event queued.
+static esp_err_t alarm_reminder_sync_report_event(
+    const alarm_reminder_pending_event_t *event,
+    const char *session_token,
+    const char *device_id,
+    const char *base_url
+) {
+    char alarm_date[11] = {0};
+    if (!alarm_reminder_sync_format_date(
+            event->alarm_date,
+            alarm_date,
+            sizeof(alarm_date)
+        )) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
+    const int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/alarm-reminders/%s/events",
+        base_url,
+        device_id,
+        event->alarm_id
+    );
+    if (written <= 0 || (size_t)written >= sizeof(url)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if ALARM_REMINDER_SYNC_HAS_TRANSPORT_SECURITY
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
+
+    JsonDocument payload;
+    payload["alarm_date"] = alarm_date;
+    payload["state"] = alarm_reminder_state_name(event->state);
+    char request_body[ALARM_REMINDER_SYNC_REQUEST_SIZE] = {0};
+    const size_t body_length =
+        serializeJson(payload, request_body, sizeof(request_body));
+    if (body_length == 0 || body_length >= sizeof(request_body)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    alarm_reminder_sync_response_t response = {};
+    if (alarm_reminder_sync_response_init(&response) != ESP_OK) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 15000;
+    config.event_handler = alarm_reminder_sync_http_event;
+    config.user_data = &response;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        alarm_reminder_sync_response_destroy(&response);
+        return ESP_ERR_NO_MEM;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
+    snprintf(
+        authorization,
+        sizeof(authorization),
+        "Bearer %s",
+        session_token
+    );
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, request_body, (int)body_length);
+    const esp_err_t transport_result = esp_http_client_perform(client);
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    memset(authorization, 0, sizeof(authorization));
+    alarm_reminder_sync_response_destroy(&response);
+    if (transport_result != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 404) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (status_code < 200 || status_code >= 300) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+// Drain the queued firing events, stopping at the first failure so a transient
+// error leaves the rest of the queue intact for the next cycle.
+static void alarm_reminder_sync_report_events(void) {
+    if (alarm_reminder_pending_event_count() == 0) {
+        return;
+    }
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
+    if (alarm_reminder_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return;
+    }
+    alarm_reminder_pending_event_t events[
+        ALARM_REMINDER_PENDING_EVENT_CAPACITY
+    ] = {};
+    size_t event_count = 0;
+    if (alarm_reminder_list_pending_events(
+            events,
+            ALARM_REMINDER_PENDING_EVENT_CAPACITY,
+            &event_count
+        ) != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+    for (size_t index = 0; index < event_count; ++index) {
+        const esp_err_t report_result = alarm_reminder_sync_report_event(
+            &events[index],
+            session_token,
+            device_id,
+            base_url
+        );
+        if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
+            // A stale event for a removed alarm is dropped rather than retried
+            // forever.
+            (void)alarm_reminder_ack_event(
+                events[index].alarm_id,
+                events[index].alarm_date
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "alarm event report failed for %s: %s",
+                events[index].alarm_id,
+                esp_err_to_name(report_result)
+            );
+            break;
+        }
+    }
+    memset(session_token, 0, sizeof(session_token));
+}
+
 esp_err_t alarm_reminder_sync_now(void) {
     if (!alarm_reminder_is_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -332,8 +530,10 @@ esp_err_t alarm_reminder_sync_now(void) {
     if (apply_result != ESP_OK) {
         ESP_LOGW(TAG, "alarm schedule response rejected: %s",
                  esp_err_to_name(apply_result));
+        return apply_result;
     }
-    return apply_result;
+    alarm_reminder_sync_report_events();
+    return ESP_OK;
 }
 
 static void alarm_reminder_sync_worker(void *argument) {
