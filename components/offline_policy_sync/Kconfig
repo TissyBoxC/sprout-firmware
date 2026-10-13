@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_OFFLINE_POLICY_SYNC
+    bool "Enable fleet offline download policy synchronisation"
+    default y
+    depends on FEATURE_OFFLINE_POLICY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the platform-wide offline download policy and applies it, then
+        reports the applied revision back so the console can see which devices
+        are current. Keeps every device's cache budget consistent with the
+        operator's published policy.
+
+config OFFLINE_POLICY_SYNC_INTERVAL_SECONDS
+    int "Offline policy sync interval in seconds"
+    depends on FEATURE_OFFLINE_POLICY_SYNC
+    range 60 86400
+    default 1800
+
+config OFFLINE_POLICY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Offline policy sync retry interval while offline"
+    depends on FEATURE_OFFLINE_POLICY_SYNC
+    range 5 300
+    default 15
+
+endmenu

@@ -82,6 +82,10 @@ CONFIG_FEATURE_LOCAL_COMMAND=y
 # P1-06 offline content: the pinned, verified content index the device plays
 # with no network.
 CONFIG_FEATURE_OFFLINE_CONTENT=y
+# P1-06 offline policy: the fleet-wide cache budget the downloader and the
+# pinned content index consult before caching a package.
+CONFIG_FEATURE_OFFLINE_POLICY=y
+CONFIG_FEATURE_OFFLINE_POLICY_SYNC=y
 CONFIG_FEATURE_OTA_VALIDATE=y
 CONFIG_FEATURE_OTA_DOWNLOAD=y
 CONFIG_FEATURE_OTA_ROLLBACK=y
@@ -93,7 +97,7 @@ CONFIG_FEATURE_WAKE_FEEDBACK=y
 CONFIG_FEATURE_LED_INDICATOR=y
 CONFIG_FEATURE_BUTTON_INPUT=y
 CONFIG_FEATURE_FACTORY_RESET=y
-# The full feature profile currently registers 64 modules, so keep a little
+# The full feature profile currently registers 69 modules, so keep a little
 # headroom above the live count to avoid a hard boot failure when one more
 # module is enabled.
 CONFIG_MODULE_REGISTRY_CAPACITY=80

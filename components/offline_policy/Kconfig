@@ -1,0 +1,14 @@
+menu "Sprout feature modules"
+
+config FEATURE_OFFLINE_POLICY
+    bool "Enable fleet offline download policy"
+    default y
+    depends on FEATURE_CONFIG_STORE
+    help
+        Applies the platform-wide offline download policy: whether offline
+        playback is allowed, how many packages and how many bytes the device
+        may cache, how long a cached package stays valid, and whether large
+        downloads stay on Wi-Fi. The policy is published once for the whole
+        fleet, so every bound device shares one cache budget.
+
+endmenu

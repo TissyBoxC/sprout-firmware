@@ -302,6 +302,14 @@ if(CONFIG_FEATURE_OFFLINE_CONTENT)
     list(APPEND app_requires "offline_content")
 endif()
 
+if(CONFIG_FEATURE_OFFLINE_POLICY)
+    list(APPEND app_requires "offline_policy")
+endif()
+
+if(CONFIG_FEATURE_OFFLINE_POLICY_SYNC)
+    list(APPEND app_requires "offline_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()

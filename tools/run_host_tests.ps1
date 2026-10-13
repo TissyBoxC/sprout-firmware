@@ -973,6 +973,37 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$offlinePolicyRoot = Join-Path $firmwareRoot 'components/offline_policy'
+Invoke-HostTest `
+    -Name 'offline_policy_core' `
+    -Sources @(
+        (Join-Path $offlinePolicyRoot 'src/offline_policy_core.c')
+        (Join-Path $offlinePolicyRoot 'test/test_offline_policy_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlinePolicyRoot 'include')
+        (Join-Path $offlinePolicyRoot 'src')
+        (Join-Path $offlinePolicyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'offline_policy_runtime' `
+    -Sources @(
+        (Join-Path $offlinePolicyRoot 'src/offline_policy_core.c')
+        (Join-Path $offlinePolicyRoot 'src/offline_policy.c')
+        (Join-Path $offlinePolicyRoot 'test/stubs/config_store.c')
+        (Join-Path $offlinePolicyRoot 'test/test_offline_policy_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlinePolicyRoot 'include')
+        (Join-Path $offlinePolicyRoot 'src')
+        (Join-Path $offlinePolicyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `
