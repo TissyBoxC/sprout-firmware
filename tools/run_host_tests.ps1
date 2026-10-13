@@ -1330,6 +1330,19 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$connectivityReportRoot = Join-Path $firmwareRoot 'components/connectivity_report'
+Invoke-HostTest `
+    -Name 'connectivity_report_core' `
+    -Sources @(
+        (Join-Path $connectivityReportRoot 'src/connectivity_report_core.c')
+        (Join-Path $connectivityReportRoot 'test/test_connectivity_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $connectivityReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $videoSessionRoot = Join-Path $firmwareRoot 'components/video_session'
 Invoke-HostTest `
     -Name 'video_core' `

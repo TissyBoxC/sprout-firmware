@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_CONNECTIVITY_REPORT
+    bool "Report the live network bearer and signal to the platform"
+    default n
+    depends on FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_NETWORK_QUALITY && FEATURE_TIME_SYNC
+    help
+        Reports the device's active network bearer and measured signal
+        percentage so the guardian overview shows whether the device is on
+        Wi-Fi or offline. The device has no cellular modem in this image, so it
+        reports the Wi-Fi bearer and a bounded signal percentage.
+
+config CONNECTIVITY_REPORT_INTERVAL_SECONDS
+    int "Connectivity report interval in seconds"
+    depends on FEATURE_CONNECTIVITY_REPORT
+    range 300 86400
+    default 900
+
+config CONNECTIVITY_REPORT_RETRY_INTERVAL_SECONDS
+    int "Connectivity report retry interval while offline"
+    depends on FEATURE_CONNECTIVITY_REPORT
+    range 5 300
+    default 15
+
+endmenu

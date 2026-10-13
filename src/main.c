@@ -231,6 +231,9 @@
 #if CONFIG_FEATURE_FORM_FACTOR_REPORT
 #include "form_factor_report.h"
 #endif
+#if CONFIG_FEATURE_CONNECTIVITY_REPORT
+#include "connectivity_report.h"
+#endif
 #if CONFIG_FEATURE_VIDEO_SESSION
 #include "video_session.h"
 #endif
@@ -797,6 +800,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_FORM_FACTOR_REPORT
     ESP_ERROR_CHECK(module_registry_add(form_factor_report_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_CONNECTIVITY_REPORT
+    ESP_ERROR_CHECK(module_registry_add(connectivity_report_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_VIDEO_SESSION
     ESP_ERROR_CHECK(module_registry_add(video_session_module_descriptor()));
