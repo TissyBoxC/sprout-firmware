@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_IMAGE_PRIVACY_SYNC
+    bool "Enable image-privacy policy synchronisation"
+    default y
+    depends on FEATURE_IMAGE_PRIVACY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family image-privacy policy and applies it, keeping a
+        device's processing mode, upload scope, retention window, redaction
+        level and consent gate consistent with the parent app.
+
+config IMAGE_PRIVACY_SYNC_INTERVAL_SECONDS
+    int "Image-privacy policy sync interval in seconds"
+    depends on FEATURE_IMAGE_PRIVACY_SYNC
+    range 60 86400
+    default 3600
+
+config IMAGE_PRIVACY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Image-privacy policy sync retry interval while offline"
+    depends on FEATURE_IMAGE_PRIVACY_SYNC
+    range 5 300
+    default 15
+
+endmenu

@@ -775,9 +775,25 @@ Invoke-HostTest `
     -Name 'image_privacy_runtime' `
     -Sources @(
         (Join-Path $imagePrivacyRoot 'src/image_core.c')
+        (Join-Path $imagePrivacyRoot 'src/image_privacy_sync_core.c')
         (Join-Path $imagePrivacyRoot 'src/image_privacy.c')
         (Join-Path $imagePrivacyRoot 'test/stubs/config_store.c')
         (Join-Path $imagePrivacyRoot 'test/test_image_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $imagePrivacyRoot 'include')
+        (Join-Path $imagePrivacyRoot 'src')
+        (Join-Path $imagePrivacyRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'image_privacy_sync_core' `
+    -Sources @(
+        (Join-Path $imagePrivacyRoot 'src/image_core.c')
+        (Join-Path $imagePrivacyRoot 'src/image_privacy_sync_core.c')
+        (Join-Path $imagePrivacyRoot 'test/test_image_privacy_sync_core.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $imagePrivacyRoot 'include')

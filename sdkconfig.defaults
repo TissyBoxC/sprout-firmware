@@ -71,6 +71,7 @@ CONFIG_FEATURE_BLUETOOTH_AUDIO_SYNC=y
 CONFIG_FEATURE_LEARNING_VISUALIZATION=y
 CONFIG_FEATURE_LEARNING_VISUALIZATION_SYNC=y
 CONFIG_FEATURE_IMAGE_PRIVACY=y
+CONFIG_FEATURE_IMAGE_PRIVACY_SYNC=y
 CONFIG_FEATURE_LONG_TERM_MEMORY=y
 # P1-04 English learning: the cached lesson catalog plus the local practice log
 # the parent app's English learning view mirrors.
@@ -99,7 +100,7 @@ CONFIG_FEATURE_WAKE_FEEDBACK=y
 CONFIG_FEATURE_LED_INDICATOR=y
 CONFIG_FEATURE_BUTTON_INPUT=y
 CONFIG_FEATURE_FACTORY_RESET=y
-# The full feature profile currently registers 69 modules, so keep a little
+# The full feature profile currently registers 71 modules, so keep a little
 # headroom above the live count to avoid a hard boot failure when one more
 # module is enabled.
 CONFIG_MODULE_REGISTRY_CAPACITY=80

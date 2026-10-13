@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_IMAGE_PRIVACY)
     list(APPEND image_privacy_sources
         "src/image_privacy.c"
         "src/image_core.c"
+        "src/image_privacy_sync_core.c"
     )
 endif()
 

@@ -244,6 +244,9 @@
 #if CONFIG_FEATURE_IMAGE_PRIVACY
 #include "image_privacy.h"
 #endif
+#if CONFIG_FEATURE_IMAGE_PRIVACY_SYNC
+#include "image_privacy_sync.h"
+#endif
 #if CONFIG_FEATURE_WEARABLE_LOCATION
 #include "wearable_location.h"
 #endif
@@ -800,6 +803,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_IMAGE_PRIVACY
     ESP_ERROR_CHECK(module_registry_add(image_privacy_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_IMAGE_PRIVACY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        image_privacy_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_WEARABLE_LOCATION
     ESP_ERROR_CHECK(module_registry_add(wearable_location_module_descriptor()));

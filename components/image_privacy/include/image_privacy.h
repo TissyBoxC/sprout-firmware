@@ -80,6 +80,26 @@ typedef enum {
     IMAGE_PRIVACY_ERR_STORAGE,
 } image_privacy_error_t;
 
+/**
+ * @brief One guardian policy as carried by the device endpoint.
+ *
+ * The processing mode, upload scope and redaction level are catalog names
+ * ("off", "metadata", "local_full", "none", "thumbnails", "analysis" and
+ * "none", "standard", "strict") rather than the firmware enum so the network
+ * layer can populate them without knowing the firmware catalog. The strings
+ * are owned by the caller.
+ */
+typedef struct {
+    bool enabled;
+    bool upload_allowed;
+    bool local_processing_only;
+    const char *processing_mode;
+    const char *upload_scope;
+    int retention_days;
+    const char *redaction_level;
+    bool require_child_consent;
+} image_privacy_remote_t;
+
 /** @brief Return the conservative default policy (processing and upload off). */
 image_privacy_policy_t image_privacy_default(void);
 
@@ -138,6 +158,18 @@ image_privacy_policy_t image_privacy_get(void);
 
 /** @brief Apply a policy that is already version-compatible and bounded. */
 esp_err_t image_privacy_apply(const image_privacy_policy_t *policy);
+
+/**
+ * @brief Apply a policy fetched from the device endpoint.
+ *
+ * Maps the catalog processing-mode, upload-scope and redaction-level names to
+ * the firmware enums and clamps every field. Returns ESP_ERR_INVALID_ARG when
+ * a name is not in its catalog, so a malformed response is rejected instead of
+ * silently defaulting.
+ */
+esp_err_t image_privacy_apply_remote(
+    const image_privacy_remote_t *remote
+);
 
 /** @brief Return true when the current policy permits local processing. */
 bool image_privacy_processing_allowed(void);

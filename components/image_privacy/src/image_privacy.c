@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "config_store.h"
+#include "image_privacy_sync_core.h"
 
 // One bounded binary blob persists the guardian image-privacy policy without a
 // dedicated partition; a schema change is detected and replaced with the
@@ -90,6 +91,19 @@ esp_err_t image_privacy_set(const image_privacy_policy_t *policy) {
     s_policy = image_privacy_clamp(policy);
     image_privacy_reconcile_runtime();
     return image_privacy_persist();
+}
+
+esp_err_t image_privacy_apply_remote(
+    const image_privacy_remote_t *remote
+) {
+    if (!s_ready) {
+        return IMAGE_PRIVACY_ERR_INVALID_STATE;
+    }
+    image_privacy_policy_t policy = {};
+    if (!image_privacy_sync_core_build_policy(remote, &policy)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return image_privacy_set(&policy);
 }
 
 image_privacy_policy_t image_privacy_get(void) {
