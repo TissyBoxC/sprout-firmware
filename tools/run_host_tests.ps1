@@ -1643,6 +1643,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$screenPolicySyncRoot = Join-Path $firmwareRoot 'components/screen_policy_sync'
+Invoke-HostTest `
+    -Name 'screen_policy_sync_core' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenPolicySyncRoot 'src/screen_policy_sync_core.c')
+        (Join-Path $screenPolicySyncRoot 'test/test_screen_policy_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+        (Join-Path $screenPolicySyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'screen_surface_moderation' `
     -Sources @(

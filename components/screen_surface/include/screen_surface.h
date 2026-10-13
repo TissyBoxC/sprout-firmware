@@ -71,6 +71,7 @@ typedef struct {
     uint8_t video_max_fps;
     uint16_t video_max_bitrate_kbps;
     uint16_t animation_frame_ms;
+    uint32_t revision;
 } screen_policy_t;
 
 // One point-to-read dictionary entry. `text` is what the surface speaks or

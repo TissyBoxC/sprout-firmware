@@ -68,6 +68,7 @@ screen_policy_t screen_default(void) {
         // outright; the guardian can raise it within the documented bounds.
         .video_max_bitrate_kbps = 1500u,
         .animation_frame_ms = 200u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -102,6 +103,7 @@ screen_policy_t screen_clamp(const screen_policy_t *policy) {
         SCREEN_MIN_ANIMATION_FRAME_MS,
         SCREEN_MAX_ANIMATION_FRAME_MS
     );
+    clamped.revision = policy->revision;
     return clamped;
 }
 

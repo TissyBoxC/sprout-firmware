@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_SCREEN_POLICY_SYNC
+    bool "Enable screen policy synchronisation"
+    default y
+    depends on FEATURE_SCREEN_SURFACE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family screen policy and applies it, keeping a device's
+        default expression, animation, point-to-read and video profile
+        consistent with the parent app.
+
+config SCREEN_POLICY_SYNC_INTERVAL_SECONDS
+    int "Screen policy sync interval in seconds"
+    depends on FEATURE_SCREEN_POLICY_SYNC
+    range 60 86400
+    default 1800
+
+config SCREEN_POLICY_SYNC_RETRY_INTERVAL_SECONDS
+    int "Screen policy sync retry interval while offline"
+    depends on FEATURE_SCREEN_POLICY_SYNC
+    range 5 300
+    default 15
+
+endmenu

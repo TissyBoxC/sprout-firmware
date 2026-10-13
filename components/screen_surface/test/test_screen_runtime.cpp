@@ -21,7 +21,9 @@ int main() {
     // Animation clips advance a frame clock only while playing.
     screen_policy_t animated = defaults;
     animated.animation_frame_ms = 100u;
+    animated.revision = 4u;
     assert(screen_surface_set(&animated) == ESP_OK);
+    assert(screen_surface_get().revision == 4u);
     assert(screen_surface_play_animation(SCREEN_ANIMATION_WAVE) == ESP_OK);
     assert(screen_surface_current_animation() == SCREEN_ANIMATION_WAVE);
     assert(screen_surface_advance_animation(50u) == 0u);

@@ -103,6 +103,10 @@ if(CONFIG_FEATURE_SCREEN_SURFACE)
     list(APPEND app_requires "screen_surface")
 endif()
 
+if(CONFIG_FEATURE_SCREEN_POLICY_SYNC)
+    list(APPEND app_requires "screen_policy_sync")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_FILTER)
     list(APPEND app_requires "content_filter")
 endif()

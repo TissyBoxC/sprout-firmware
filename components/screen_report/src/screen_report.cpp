@@ -180,7 +180,7 @@ esp_err_t screen_report_now(void) {
     payload["expression"] = screen_expression_name(status.expression);
     payload["animation"] = screen_animation_name(status.animation);
     payload["video_state"] = screen_video_state_name(status.video_state);
-    payload["policy_revision"] = 0;
+    payload["policy_revision"] = (int)policy.revision;
     char request_body[SCREEN_REPORT_REQUEST_SIZE] = {0};
     const size_t body_length =
         serializeJson(payload, request_body, sizeof(request_body));

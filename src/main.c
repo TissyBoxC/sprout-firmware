@@ -293,6 +293,9 @@
 #if CONFIG_FEATURE_SCREEN_SURFACE
 #include "screen_surface.h"
 #endif
+#if CONFIG_FEATURE_SCREEN_POLICY_SYNC
+#include "screen_policy_sync.h"
+#endif
 #if CONFIG_FEATURE_SCREEN_REPORT
 #include "screen_report.h"
 #endif
@@ -897,6 +900,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_SCREEN_SURFACE
     ESP_ERROR_CHECK(module_registry_add(screen_surface_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_SCREEN_POLICY_SYNC
+    ESP_ERROR_CHECK(module_registry_add(
+        screen_policy_sync_module_descriptor()
+    ));
 #endif
 #if CONFIG_FEATURE_SCREEN_REPORT
     ESP_ERROR_CHECK(module_registry_add(screen_report_module_descriptor()));
