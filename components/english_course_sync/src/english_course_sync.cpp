@@ -36,6 +36,7 @@
 
 #define ENGLISH_COURSE_SYNC_URL_SIZE 384
 #define ENGLISH_COURSE_SYNC_RESPONSE_SIZE 65536
+#define ENGLISH_COURSE_SYNC_REQUEST_SIZE 512
 
 static const char *const TAG = "english_sync";
 static bool s_ready;
@@ -94,36 +95,55 @@ static esp_err_t english_course_sync_http_event(
     return ESP_OK;
 }
 
-static esp_err_t english_course_sync_fetch(JsonDocument *document) {
-    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
+// Resolve the session token, device id and platform base url shared by the
+// lesson fetch and the practice-attempt reports. The caller owns the token.
+static esp_err_t english_course_sync_prepare(
+    char *session_token,
+    size_t session_token_size,
+    char *device_id,
+    size_t device_id_size,
+    char *base_url,
+    size_t base_url_size
+) {
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
+        !time_sync_is_synchronized() ||
+        !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!time_sync_is_synchronized()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!device_binding_client_is_registered()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     if (device_binding_client_copy_session_token(
             session_token,
-            sizeof(session_token)
+            session_token_size
         ) != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
     }
-    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
-    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK) {
-        memset(session_token, 0, sizeof(session_token));
+    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_STATE;
     }
-    char base_url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
     if (device_binding_client_get_platform_base_url(
             base_url,
-            sizeof(base_url)
+            base_url_size
         ) != ESP_OK ||
         strncmp(base_url, "https://", 8) != 0) {
-        memset(session_token, 0, sizeof(session_token));
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t english_course_sync_fetch(JsonDocument *document) {
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
+    if (english_course_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
     }
     char url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -361,21 +381,180 @@ static esp_err_t english_course_sync_apply_document(JsonDocument &document) {
     return result;
 }
 
+// Report one practice attempt to the platform. Returns ESP_OK once the platform
+// accepts it so the caller can drop it from the queue. The platform rejects an
+// attempt whose lesson id is unknown, untrusted text is unusable, or whose
+// target text is empty; those are permanent failures, so a 404/422 is reported
+// as ESP_ERR_NOT_FOUND to let the caller discard the stale attempt instead of
+// retrying it forever. Any other result keeps the attempt queued.
+static esp_err_t english_course_sync_report_attempt(
+    const english_course_attempt_t *attempt,
+    const char *session_token,
+    const char *device_id,
+    const char *base_url
+) {
+    if (attempt->target_text[0] == '\0') {
+        // A reportable attempt always carries the target text; drop a row that
+        // somehow lacks it rather than sending a request the platform rejects.
+        return ESP_ERR_NOT_FOUND;
+    }
+    char url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
+    const int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/english/attempts",
+        base_url,
+        device_id
+    );
+    if (written <= 0 || (size_t)written >= sizeof(url)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if ENGLISH_COURSE_SYNC_HAS_TRANSPORT_SECURITY
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#endif
+
+    JsonDocument payload;
+    payload["child_id"] = attempt->child_id;
+    payload["lesson_id"] = attempt->lesson_id;
+    payload["item_id"] = attempt->item_id;
+    payload["item_type"] = english_course_item_type_name(attempt->item_type);
+    payload["target_text"] = attempt->target_text;
+    payload["recognized_text"] = attempt->recognized_text;
+    payload["score"] = attempt->score;
+    char request_body[ENGLISH_COURSE_SYNC_REQUEST_SIZE] = {0};
+    const size_t body_length =
+        serializeJson(payload, request_body, sizeof(request_body));
+    if (body_length == 0 || body_length >= sizeof(request_body)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    english_course_sync_response_t response = {};
+    if (english_course_sync_response_init(&response) != ESP_OK) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 15000;
+    config.event_handler = english_course_sync_http_event;
+    config.user_data = &response;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        english_course_sync_response_destroy(&response);
+        return ESP_ERR_NO_MEM;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
+    snprintf(
+        authorization,
+        sizeof(authorization),
+        "Bearer %s",
+        session_token
+    );
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, request_body, (int)body_length);
+    const esp_err_t transport_result = esp_http_client_perform(client);
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    memset(authorization, 0, sizeof(authorization));
+    english_course_sync_response_destroy(&response);
+    if (transport_result != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+        return ESP_ERR_INVALID_STATE;
+    }
+    // 404 (unknown lesson) and 422 (an attempt the platform cannot accept) are
+    // permanent, so drop the row instead of retrying it forever.
+    if (status_code == 404 || status_code == 422) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (status_code < 200 || status_code >= 300) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+// Drain the queued practice attempts, stopping at the first transient failure
+// so the rest of the queue survives for the next cycle.
+static void english_course_sync_report_attempts(void) {
+    if (english_course_pending_attempt_count() == 0) {
+        return;
+    }
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
+    if (english_course_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return;
+    }
+    english_course_attempt_t attempts[ENGLISH_COURSE_OUTBOUND_CAPACITY] = {};
+    size_t attempt_count = 0;
+    if (english_course_list_pending_attempts(
+            attempts,
+            ENGLISH_COURSE_OUTBOUND_CAPACITY,
+            &attempt_count
+        ) != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+    for (size_t index = 0; index < attempt_count; ++index) {
+        const esp_err_t report_result = english_course_sync_report_attempt(
+            &attempts[index],
+            session_token,
+            device_id,
+            base_url
+        );
+        if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
+            // A permanently rejected attempt is dropped rather than retried
+            // forever.
+            (void)english_course_ack_attempt(
+                attempts[index].lesson_id,
+                attempts[index].item_id,
+                attempts[index].practiced_at_epoch_seconds
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "english attempt report failed for %s: %s",
+                attempts[index].item_id,
+                esp_err_to_name(report_result)
+            );
+            break;
+        }
+    }
+    memset(session_token, 0, sizeof(session_token));
+}
+
 esp_err_t english_course_sync_now(void) {
     if (!english_course_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
     JsonDocument document;
     const esp_err_t fetch_result = english_course_sync_fetch(&document);
-    if (fetch_result != ESP_OK) {
-        return fetch_result;
+    esp_err_t apply_result = fetch_result;
+    if (fetch_result == ESP_OK) {
+        apply_result = english_course_sync_apply_document(document);
+        if (apply_result != ESP_OK) {
+            ESP_LOGW(TAG, "english lesson response rejected: %s",
+                     esp_err_to_name(apply_result));
+        }
     }
-    const esp_err_t apply_result =
-        english_course_sync_apply_document(document);
-    if (apply_result != ESP_OK) {
-        ESP_LOGW(TAG, "english lesson response rejected: %s",
-                 esp_err_to_name(apply_result));
-    }
+    // Reporting queued practice is independent of the catalog refresh, so a
+    // transient lesson-fetch failure never blocks a child's progress upload.
+    english_course_sync_report_attempts();
     return apply_result;
 }
 

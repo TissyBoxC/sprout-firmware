@@ -49,6 +49,16 @@ static english_course_attempt_t make_attempt(
         ENGLISH_COURSE_ITEM_ID_SIZE - 1
     );
     attempt.item_type = ENGLISH_ITEM_WORD;
+    std::strncpy(
+        attempt.target_text,
+        "apple",
+        ENGLISH_COURSE_LONG_TEXT_SIZE - 1
+    );
+    std::strncpy(
+        attempt.recognized_text,
+        "apple",
+        ENGLISH_COURSE_RECOGNIZED_TEXT_SIZE - 1
+    );
     attempt.score = score;
     attempt.practiced_at_epoch_seconds = 1700000000;
     return attempt;
@@ -92,10 +102,29 @@ int main() {
     const english_course_attempt_t pass = make_attempt("lesson_fruit", 82);
     assert(english_course_record_attempt(&pass) == ESP_OK);
     assert(english_course_attempt_count() == 1);
+    // Recording an attempt also queues it for the platform.
+    assert(english_course_pending_attempt_count() == 1);
 
-    const english_course_attempt_t low = make_attempt("lesson_fruit", 40);
+    // A later timestamp keeps this a distinct queued report rather than a
+    // replacement of the first (same lesson, item, and practiced-at).
+    english_course_attempt_t low = make_attempt("lesson_fruit", 40);
+    low.practiced_at_epoch_seconds = 1700000100;
     assert(english_course_record_attempt(&low) == ESP_OK);
     assert(english_course_attempt_count() == 2);
+    assert(english_course_pending_attempt_count() == 2);
+
+    english_course_attempt_t pending[ENGLISH_COURSE_OUTBOUND_CAPACITY];
+    size_t pending_count = 0;
+    assert(
+        english_course_list_pending_attempts(
+            pending,
+            ENGLISH_COURSE_OUTBOUND_CAPACITY,
+            &pending_count
+        ) == ESP_OK
+    );
+    assert(pending_count == 2);
+    // Oldest first, and the reported row carries the target text.
+    assert(std::strcmp(pending[0].target_text, "apple") == 0);
 
     english_course_attempt_t attempts[ENGLISH_COURSE_ATTEMPT_CAPACITY];
     size_t attempt_count = 0;
@@ -131,13 +160,28 @@ int main() {
     assert(english_course_init() == ESP_OK);
     assert(english_course_lesson_count() == 1);
     assert(english_course_attempt_count() == 2);
+    assert(english_course_pending_attempt_count() == 2);
     assert(english_course_get_lesson("lesson_fruit", &recalled));
+
+    // Acknowledging a reported attempt drops it from the queue and persists.
+    assert(
+        english_course_ack_attempt(
+            "lesson_fruit",
+            "word-apple",
+            1700000000
+        ) == ESP_OK
+    );
+    assert(english_course_pending_attempt_count() == 1);
+    assert(english_course_init() == ESP_OK);
+    assert(english_course_pending_attempt_count() == 1);
 
     // Clearing attempts persists across a restart too.
     assert(english_course_clear_attempts() == ESP_OK);
     assert(english_course_attempt_count() == 0);
+    assert(english_course_pending_attempt_count() == 0);
     assert(english_course_init() == ESP_OK);
     assert(english_course_attempt_count() == 0);
+    assert(english_course_pending_attempt_count() == 0);
     assert(english_course_lesson_count() == 1);
 
     // Removing the lesson persists.

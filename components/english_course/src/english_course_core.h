@@ -15,6 +15,11 @@ typedef struct {
     size_t lesson_count;
     english_course_attempt_t attempts[ENGLISH_COURSE_ATTEMPT_CAPACITY];
     size_t attempt_count;
+    // Bounded FIFO of attempts the platform has not accepted yet, oldest
+    // first, keyed by (lesson id, item id, practiced-at) so a repeated report
+    // never duplicates.
+    english_course_attempt_t pending[ENGLISH_COURSE_OUTBOUND_CAPACITY];
+    size_t pending_count;
 } english_course_core_t;
 
 /** @brief Reset the cache to empty. */
@@ -51,6 +56,39 @@ english_course_error_t english_course_core_record_attempt(
 /** @brief Remove every attempt. */
 english_course_error_t english_course_core_clear_attempts(
     english_course_core_t *core
+);
+
+/**
+ * @brief Queue one recorded attempt for later reporting.
+ *
+ * The queue keeps at most one entry per (lesson id, item id, practiced-at): a
+ * repeat of the same attempt replaces the stored row in place so the oldest
+ * entry keeps its position and a retried report never duplicates. When the
+ * bounded queue is full the oldest entry is dropped to make room, because the
+ * most recent practice is what a guardian still needs to see.
+ */
+english_course_error_t english_course_core_queue_pending(
+    english_course_core_t *core,
+    const english_course_attempt_t *attempt
+);
+
+/** @brief Copy the unreported attempts, oldest first. */
+size_t english_course_core_list_pending(
+    const english_course_core_t *core,
+    english_course_attempt_t *attempts_out,
+    size_t capacity
+);
+
+/**
+ * @brief Remove one pending attempt, keyed by (lesson id, item id, practiced-at).
+ *
+ * A missing entry is success so a retried acknowledgement never fails.
+ */
+english_course_error_t english_course_core_remove_pending(
+    english_course_core_t *core,
+    const char *lesson_id,
+    const char *item_id,
+    int64_t practiced_at_epoch_seconds
 );
 
 /**

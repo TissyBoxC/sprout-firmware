@@ -51,7 +51,8 @@ static void english_course_restore(void) {
     );
     if (read == ESP_OK && size == sizeof(*s_core) &&
         s_core->lesson_count <= ENGLISH_COURSE_LESSON_CAPACITY &&
-        s_core->attempt_count <= ENGLISH_COURSE_ATTEMPT_CAPACITY) {
+        s_core->attempt_count <= ENGLISH_COURSE_ATTEMPT_CAPACITY &&
+        s_core->pending_count <= ENGLISH_COURSE_OUTBOUND_CAPACITY) {
         return;
     }
     // A missing or malformed blob starts from an empty, valid cache so a
@@ -248,6 +249,9 @@ esp_err_t english_course_record_attempt(
         ENGLISH_COURSE_UNLOCK();
         return ESP_ERR_INVALID_ARG;
     }
+    // Queue the attempt so the sync worker can report it to the platform. A
+    // queue rejection never blocks the local practice write.
+    (void)english_course_core_queue_pending(s_core, attempt);
     const esp_err_t persisted = english_course_persist();
     ENGLISH_COURSE_UNLOCK();
     return persisted;
@@ -322,6 +326,69 @@ esp_err_t english_course_clear_attempts(void) {
     ENGLISH_COURSE_LOCK();
     const english_course_error_t result =
         english_course_core_clear_attempts(s_core);
+    if (result != ENGLISH_COURSE_OK) {
+        ENGLISH_COURSE_UNLOCK();
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = english_course_persist();
+    ENGLISH_COURSE_UNLOCK();
+    return persisted;
+}
+
+size_t english_course_pending_attempt_count(void) {
+    if (!s_ready || s_core == NULL) {
+        return 0;
+    }
+    ENGLISH_COURSE_LOCK();
+    const size_t count = s_core->pending_count;
+    ENGLISH_COURSE_UNLOCK();
+    return count;
+}
+
+esp_err_t english_course_list_pending_attempts(
+    english_course_attempt_t *attempts_out,
+    size_t capacity,
+    size_t *count_out
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (count_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (attempts_out == NULL && capacity > 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ENGLISH_COURSE_LOCK();
+    *count_out = english_course_core_list_pending(
+        s_core,
+        attempts_out,
+        capacity
+    );
+    ENGLISH_COURSE_UNLOCK();
+    return ESP_OK;
+}
+
+esp_err_t english_course_ack_attempt(
+    const char *lesson_id,
+    const char *item_id,
+    int64_t practiced_at_epoch_seconds
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (lesson_id == NULL || lesson_id[0] == '\0' || item_id == NULL ||
+        item_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ENGLISH_COURSE_LOCK();
+    const english_course_error_t result =
+        english_course_core_remove_pending(
+            s_core,
+            lesson_id,
+            item_id,
+            practiced_at_epoch_seconds
+        );
     if (result != ENGLISH_COURSE_OK) {
         ENGLISH_COURSE_UNLOCK();
         return ESP_ERR_INVALID_ARG;

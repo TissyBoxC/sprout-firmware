@@ -76,8 +76,34 @@ static english_course_attempt_t make_attempt(
         ENGLISH_COURSE_ITEM_ID_SIZE - 1
     );
     attempt.item_type = item_type;
+    std::strncpy(
+        attempt.target_text,
+        "apple",
+        ENGLISH_COURSE_LONG_TEXT_SIZE - 1
+    );
+    std::strncpy(
+        attempt.recognized_text,
+        "apple",
+        ENGLISH_COURSE_RECOGNIZED_TEXT_SIZE - 1
+    );
     attempt.score = score;
     attempt.practiced_at_epoch_seconds = 1700000000;
+    return attempt;
+}
+
+static english_course_attempt_t make_attempt_at(
+    const char *lesson_id,
+    const char *item_id,
+    int score,
+    int64_t practiced_at
+) {
+    english_course_attempt_t attempt = make_attempt(
+        lesson_id,
+        item_id,
+        ENGLISH_ITEM_WORD,
+        score
+    );
+    attempt.practiced_at_epoch_seconds = practiced_at;
     return attempt;
 }
 
@@ -337,6 +363,107 @@ int main() {
         );
     }
     assert(log.attempt_count == ENGLISH_COURSE_ATTEMPT_CAPACITY);
+
+    // The pending queue dedupes by (lesson, item, practiced-at), keeps oldest
+    // first, and drops the oldest when full.
+    english_course_core_t queue;
+    english_course_core_init(&queue);
+    assert(queue.pending_count == 0);
+    const english_course_attempt_t first = make_attempt_at(
+        "lesson_fruit",
+        "word-apple",
+        70,
+        1700000000
+    );
+    assert(
+        english_course_core_queue_pending(&queue, &first) ==
+        ENGLISH_COURSE_OK
+    );
+    assert(queue.pending_count == 1);
+    const english_course_attempt_t second = make_attempt_at(
+        "lesson_fruit",
+        "word-apple",
+        40,
+        1700000100
+    );
+    assert(
+        english_course_core_queue_pending(&queue, &second) ==
+        ENGLISH_COURSE_OK
+    );
+    assert(queue.pending_count == 2);
+    // A repeat of the same (lesson, item, practiced-at) replaces in place.
+    const english_course_attempt_t retry = make_attempt_at(
+        "lesson_fruit",
+        "word-apple",
+        95,
+        1700000000
+    );
+    assert(
+        english_course_core_queue_pending(&queue, &retry) ==
+        ENGLISH_COURSE_OK
+    );
+    assert(queue.pending_count == 2);
+    assert(queue.pending[0].practiced_at_epoch_seconds == 1700000000);
+    assert(queue.pending[0].score == 95);
+    assert(queue.pending[0].passed);
+    assert(queue.pending[1].practiced_at_epoch_seconds == 1700000100);
+
+    english_course_attempt_t listed[8];
+    std::memset(listed, 0, sizeof(listed));
+    assert(english_course_core_list_pending(&queue, listed, 8) == 2);
+    assert(listed[0].practiced_at_epoch_seconds == 1700000000);
+    assert(listed[1].practiced_at_epoch_seconds == 1700000100);
+
+    // Acknowledging a missing entry is success.
+    assert(
+        english_course_core_remove_pending(
+            &queue,
+            "lesson_fruit",
+            "word-apple",
+            1700009999
+        ) == ENGLISH_COURSE_OK
+    );
+    assert(queue.pending_count == 2);
+    assert(
+        english_course_core_remove_pending(
+            &queue,
+            "lesson_fruit",
+            "word-apple",
+            1700000000
+        ) == ENGLISH_COURSE_OK
+    );
+    assert(queue.pending_count == 1);
+    assert(queue.pending[0].practiced_at_epoch_seconds == 1700000100);
+
+    // The queue is bounded to the same capacity as the log.
+    english_course_core_t bounded_queue;
+    english_course_core_init(&bounded_queue);
+    for (int index = 0; index < ENGLISH_COURSE_OUTBOUND_CAPACITY + 3; ++index) {
+        const english_course_attempt_t attempt = make_attempt_at(
+            "lesson_fruit",
+            "word-apple",
+            index % 101,
+            1700000000 + index
+        );
+        assert(
+            english_course_core_queue_pending(&bounded_queue, &attempt) ==
+            ENGLISH_COURSE_OK
+        );
+    }
+    assert(bounded_queue.pending_count == ENGLISH_COURSE_OUTBOUND_CAPACITY);
+    // Oldest rows are dropped, so the newest persists at the tail.
+    assert(
+        bounded_queue.pending[bounded_queue.pending_count - 1]
+            .practiced_at_epoch_seconds ==
+        1700000000 + ENGLISH_COURSE_OUTBOUND_CAPACITY + 2
+    );
+
+    // Clearing a child's history also drops anything queued for the platform.
+    assert(
+        english_course_core_clear_attempts(&bounded_queue) ==
+        ENGLISH_COURSE_OK
+    );
+    assert(bounded_queue.pending_count == 0);
 
     return 0;
 }

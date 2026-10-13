@@ -15,6 +15,9 @@ extern "C" {
  * retrying a revoked credential. The cached lessons are left untouched when the
  * network, clock, or response payload is unusable, and the local practice log
  * is preserved across every refresh.
+ *
+ * After a successful refresh the queued practice attempts are reported to the
+ * platform as well.
  */
 esp_err_t english_course_sync_now(void);
 

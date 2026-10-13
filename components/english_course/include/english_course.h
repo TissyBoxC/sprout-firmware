@@ -23,17 +23,38 @@ extern "C" {
 /** @brief Maximum number of practice attempts kept for progress. */
 #define ENGLISH_COURSE_ATTEMPT_CAPACITY 32
 
+/**
+ * @brief Maximum number of attempts waiting to be reported to the platform.
+ *
+ * The device reports each practice attempt to the platform once. The queue is
+ * persisted so an offline device still delivers its recent practice after it
+ * reconnects, and it is bounded to the same size as the local log so it cannot
+ * grow without limit.
+ */
+#define ENGLISH_COURSE_OUTBOUND_CAPACITY ENGLISH_COURSE_ATTEMPT_CAPACITY
+
 /** @brief Size of a lesson id including the terminator. */
 #define ENGLISH_COURSE_ID_SIZE 40
 
 /** @brief Size of a word or sentence item id including the terminator. */
 #define ENGLISH_COURSE_ITEM_ID_SIZE 40
 
+/** @brief Size of a child id including the terminator. */
+#define ENGLISH_COURSE_CHILD_ID_SIZE 40
+
 /** @brief Size of a short text field (term, phonetic, translation). */
 #define ENGLISH_COURSE_TEXT_SIZE 64
 
 /** @brief Size of a long text field (example, pattern, model answer). */
 #define ENGLISH_COURSE_LONG_TEXT_SIZE 160
+
+/**
+ * @brief Size of the recognized-speech text sent to the platform.
+ *
+ * The platform accepts at most 200 characters of recognized text; the buffer
+ * is sized in bytes and truncates rather than overflowing.
+ */
+#define ENGLISH_COURSE_RECOGNIZED_TEXT_SIZE 200
 
 /** @brief Score (0-100) at or above which one attempt counts as passed. */
 #define ENGLISH_COURSE_PASSING_SCORE 60
@@ -77,11 +98,23 @@ typedef struct {
     english_course_sentence_t sentences[ENGLISH_COURSE_SENTENCES_PER_LESSON];
 } english_course_lesson_t;
 
-/** @brief One locally recorded pronunciation-feedback attempt. */
+/**
+ * @brief One locally recorded pronunciation-feedback attempt.
+ *
+ * `child_id` may be empty when the device reports against a family-scoped
+ * session with a single child; `target_text` is the word or sentence the child
+ * was asked to say and is required for a reportable attempt; `recognized_text`
+ * is the best-effort speech-to-text result and may be empty. `passed` is
+ * derived from the clamped score so a caller cannot claim a pass it did not
+ * earn.
+ */
 typedef struct {
+    char child_id[ENGLISH_COURSE_CHILD_ID_SIZE];
     char lesson_id[ENGLISH_COURSE_ID_SIZE];
     char item_id[ENGLISH_COURSE_ITEM_ID_SIZE];
     english_course_item_type_t item_type;
+    char target_text[ENGLISH_COURSE_LONG_TEXT_SIZE];
+    char recognized_text[ENGLISH_COURSE_RECOGNIZED_TEXT_SIZE];
     int score;
     bool passed;
     int64_t practiced_at_epoch_seconds;
@@ -184,6 +217,34 @@ size_t english_course_attempt_count(void);
 
 /** @brief Remove every attempt, e.g. when a guardian clears a child's history. */
 esp_err_t english_course_clear_attempts(void);
+
+/** @brief Return the number of attempts waiting to be reported to the platform. */
+size_t english_course_pending_attempt_count(void);
+
+/**
+ * @brief Copy the recorded attempts waiting to be reported, oldest first.
+ *
+ * Report them in order and drop each one with `english_course_ack_attempt`
+ * after the platform accepts it.
+ */
+esp_err_t english_course_list_pending_attempts(
+    english_course_attempt_t *attempts_out,
+    size_t capacity,
+    size_t *count_out
+);
+
+/**
+ * @brief Drop one reported attempt from the pending queue.
+ *
+ * Keyed by (lesson id, item id, practiced-at) because a child can practise the
+ * same item more than once. A missing entry is success so a retried report
+ * never fails.
+ */
+esp_err_t english_course_ack_attempt(
+    const char *lesson_id,
+    const char *item_id,
+    int64_t practiced_at_epoch_seconds
+);
 
 /** @brief Return the stable string for one item type. */
 const char *english_course_item_type_name(english_course_item_type_t type);
