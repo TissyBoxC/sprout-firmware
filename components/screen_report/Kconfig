@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_SCREEN_REPORT
+    bool "Report the live screen state to the platform"
+    default n
+    depends on FEATURE_SCREEN_SURFACE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's screen capability flags and the active expression,
+        animation and video state so the guardian screen view matches the
+        surface actually rendering. A device without a screen never links the
+        component.
+
+config SCREEN_REPORT_INTERVAL_SECONDS
+    int "Screen report interval in seconds"
+    depends on FEATURE_SCREEN_REPORT
+    range 300 86400
+    default 900
+
+config SCREEN_REPORT_RETRY_INTERVAL_SECONDS
+    int "Screen report retry interval while offline"
+    depends on FEATURE_SCREEN_REPORT
+    range 5 300
+    default 15
+
+endmenu

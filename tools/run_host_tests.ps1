@@ -1501,6 +1501,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$screenReportRoot = Join-Path $firmwareRoot 'components/screen_report'
+Invoke-HostTest `
+    -Name 'screen_report_core' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenReportRoot 'src/screen_report_core.c')
+        (Join-Path $screenReportRoot 'test/test_screen_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+        (Join-Path $screenReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'screen_surface_moderation' `
     -Sources @(
