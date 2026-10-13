@@ -81,6 +81,10 @@
 #include "alarm_reminder.h"
 #endif
 
+#if CONFIG_FEATURE_ALARM_REMINDER_SYNC
+#include "alarm_reminder_sync.h"
+#endif
+
 #if CONFIG_FEATURE_LONG_TERM_MEMORY
 #include "long_term_memory.h"
 #endif
@@ -877,6 +881,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_ALARM_REMINDER
     ESP_ERROR_CHECK(module_registry_add(alarm_reminder_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_ALARM_REMINDER_SYNC
+    ESP_ERROR_CHECK(module_registry_add(alarm_reminder_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_LONG_TERM_MEMORY
     ESP_ERROR_CHECK(module_registry_add(long_term_memory_module_descriptor()));

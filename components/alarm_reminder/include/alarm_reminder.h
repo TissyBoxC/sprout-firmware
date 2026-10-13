@@ -100,6 +100,20 @@ esp_err_t alarm_reminder_remove_child(
     size_t *removed_out
 );
 
+/**
+ * @brief Replace the alarm schedule with one authoritative remote snapshot.
+ *
+ * The remote snapshot carries only the schedule, so the local firing state of
+ * any surviving alarm id is preserved. Duplicate or unusable alarms are
+ * dropped and the result is bounded to the local capacity. An empty snapshot
+ * clears the schedule; a non-empty snapshot that ends up empty is rejected so
+ * a malformed response cannot wipe the family schedule.
+ */
+esp_err_t alarm_reminder_replace_schedule(
+    const alarm_reminder_t *schedule,
+    size_t schedule_count
+);
+
 /** @brief Copy the cached alarms. */
 esp_err_t alarm_reminder_list(
     alarm_reminder_t *alarms_out,

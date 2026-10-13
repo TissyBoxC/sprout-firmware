@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_ALARM_REMINDER_SYNC
+    bool "Enable alarm reminder schedule synchronisation"
+    default y
+    depends on FEATURE_ALARM_REMINDER && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family's enabled alarm schedule and replaces the local
+        alarm cache, so a device rings the guardian's reminders even after a
+        reboot with no network.
+
+config ALARM_REMINDER_SYNC_INTERVAL_SECONDS
+    int "Alarm schedule sync interval in seconds"
+    depends on FEATURE_ALARM_REMINDER_SYNC
+    range 60 86400
+    default 900
+
+config ALARM_REMINDER_SYNC_RETRY_INTERVAL_SECONDS
+    int "Alarm schedule sync retry interval while offline"
+    depends on FEATURE_ALARM_REMINDER_SYNC
+    range 5 300
+    default 15
+
+endmenu

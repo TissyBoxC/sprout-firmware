@@ -266,6 +266,10 @@ if(CONFIG_FEATURE_ALARM_REMINDER)
     list(APPEND app_requires "alarm_reminder")
 endif()
 
+if(CONFIG_FEATURE_ALARM_REMINDER_SYNC)
+    list(APPEND app_requires "alarm_reminder_sync")
+endif()
+
 if(CONFIG_FEATURE_LONG_TERM_MEMORY)
     list(APPEND app_requires "long_term_memory")
 endif()

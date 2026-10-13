@@ -647,6 +647,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'alarm_reminder_sync_core' `
+    -Sources @(
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder_core.c')
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder_sync_core.c')
+        (Join-Path $alarmReminderRoot 'test/test_alarm_reminder_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $alarmReminderRoot 'include')
+        (Join-Path $alarmReminderRoot 'src')
+        (Join-Path $alarmReminderRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $bluetoothAudioRoot = Join-Path $firmwareRoot 'components/bluetooth_audio'
 Invoke-HostTest `
     -Name 'bluetooth_core' `

@@ -4,6 +4,7 @@ if(CONFIG_FEATURE_ALARM_REMINDER)
     list(APPEND alarm_reminder_sources
         "src/alarm_reminder.c"
         "src/alarm_reminder_core.c"
+        "src/alarm_reminder_sync_core.c"
     )
 endif()
 
@@ -12,6 +13,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_REQUIRES
         config_store
+        freertos
     REQUIRES
         module_registry
 )
