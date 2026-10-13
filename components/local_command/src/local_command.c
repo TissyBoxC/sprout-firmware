@@ -4,20 +4,29 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "local_command_core.h"
+#include "local_command_sync_core.h"
 
 // The bounded local command cache persists as one binary blob so a device can
 // keep answering the same trigger phrases across restarts while offline.
 #define LOCAL_COMMAND_STORE_KEY "local_command_index"
 
 static local_command_core_t s_core;
+static SemaphoreHandle_t s_lock;
 static bool s_ready;
 
-static esp_err_t local_command_persist(void) {
+static esp_err_t local_command_persist_core(
+    const local_command_core_t *core
+) {
+    if (core == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const esp_err_t stored = config_store_set_blob(
         LOCAL_COMMAND_STORE_KEY,
-        &s_core,
-        sizeof(s_core)
+        core,
+        sizeof(*core)
     );
     if (stored != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
@@ -45,6 +54,15 @@ static void local_command_restore(void) {
 }
 
 esp_err_t local_command_init(void) {
+    if (s_ready) {
+        return ESP_OK;
+    }
+    if (s_lock == NULL) {
+        s_lock = xSemaphoreCreateMutex();
+        if (s_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
     local_command_core_init(&s_core);
     local_command_restore();
     s_ready = true;
@@ -62,19 +80,55 @@ esp_err_t local_command_replace_all(
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    local_command_core_t updated;
     const local_command_error_t result = local_command_core_replace_all(
-        &s_core,
+        &updated,
         commands,
         command_count
     );
     switch (result) {
         case LOCAL_COMMAND_OK:
-            return local_command_persist();
+            break;
         case LOCAL_COMMAND_ERR_FULL:
+            xSemaphoreGive(s_lock);
             return ESP_ERR_INVALID_SIZE;
         default:
+            xSemaphoreGive(s_lock);
             return ESP_ERR_INVALID_ARG;
     }
+    const esp_err_t persisted = local_command_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
+}
+
+esp_err_t local_command_replace_remote(
+    const local_command_t *commands,
+    size_t command_count
+) {
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    local_command_core_t updated;
+    const local_command_error_t result = local_command_sync_core_replace(
+        &updated,
+        commands,
+        command_count
+    );
+    if (result != LOCAL_COMMAND_OK) {
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t persisted = local_command_persist_core(&updated);
+    if (persisted == ESP_OK) {
+        s_core = updated;
+    }
+    xSemaphoreGive(s_lock);
+    return persisted;
 }
 
 esp_err_t local_command_list(
@@ -91,11 +145,13 @@ esp_err_t local_command_list(
     if (commands_out == NULL && capacity > 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     const size_t copied = s_core.count < capacity ? s_core.count : capacity;
     for (size_t index = 0; index < copied; ++index) {
         commands_out[index] = s_core.commands[index];
     }
     *count_out = s_core.count;
+    xSemaphoreGive(s_lock);
     return ESP_OK;
 }
 
@@ -106,11 +162,24 @@ bool local_command_resolve(
     if (!s_ready) {
         return false;
     }
-    return local_command_core_resolve(&s_core, phrase, command_out);
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool resolved = local_command_core_resolve(
+        &s_core,
+        phrase,
+        command_out
+    );
+    xSemaphoreGive(s_lock);
+    return resolved;
 }
 
 size_t local_command_count(void) {
-    return s_core.count;
+    if (!s_ready) {
+        return 0;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const size_t count = s_core.count;
+    xSemaphoreGive(s_lock);
+    return count;
 }
 
 const char *local_command_action_name(local_command_action_t action) {

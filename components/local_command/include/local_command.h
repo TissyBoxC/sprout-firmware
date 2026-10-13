@@ -78,6 +78,20 @@ esp_err_t local_command_replace_all(
     size_t command_count
 );
 
+/**
+ * @brief Replace the command set from a remote snapshot, dropping bad entries.
+ *
+ * Unlike `local_command_replace_all`, this tolerates a partially malformed
+ * remote snapshot: unusable or duplicate entries are skipped and the rest are
+ * applied, bounded to the local capacity. An empty snapshot clears the set. A
+ * non-empty snapshot that ends up empty is rejected so a bad response cannot
+ * erase the working offline phrases.
+ */
+esp_err_t local_command_replace_remote(
+    const local_command_t *commands,
+    size_t command_count
+);
+
 /** @brief Copy every cached command, in stored order. */
 esp_err_t local_command_list(
     local_command_t *commands_out,

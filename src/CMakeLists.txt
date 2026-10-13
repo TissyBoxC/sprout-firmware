@@ -286,6 +286,10 @@ if(CONFIG_FEATURE_LOCAL_COMMAND)
     list(APPEND app_requires "local_command")
 endif()
 
+if(CONFIG_FEATURE_LOCAL_COMMAND_SYNC)
+    list(APPEND app_requires "local_command_sync")
+endif()
+
 if(CONFIG_FEATURE_OFFLINE_CONTENT)
     list(APPEND app_requires "offline_content")
 endif()

@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_LOCAL_COMMAND_SYNC
+    bool "Enable local command synchronisation"
+    default y
+    depends on FEATURE_LOCAL_COMMAND && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the family's guardian-published local command set and replaces
+        the local cache, keeping the offline trigger phrases consistent with the
+        parent app.
+
+config LOCAL_COMMAND_SYNC_INTERVAL_SECONDS
+    int "Local command sync interval in seconds"
+    depends on FEATURE_LOCAL_COMMAND_SYNC
+    range 60 86400
+    default 900
+
+config LOCAL_COMMAND_SYNC_RETRY_INTERVAL_SECONDS
+    int "Local command sync retry interval while offline"
+    depends on FEATURE_LOCAL_COMMAND_SYNC
+    range 5 300
+    default 15
+
+endmenu
