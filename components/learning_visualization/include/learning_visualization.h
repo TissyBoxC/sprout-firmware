@@ -21,6 +21,8 @@ extern "C" {
 #define LEARNING_MIN_SESSION_MINUTES 1u
 #define LEARNING_MAX_SESSION_MINUTES 60u
 #define LEARNING_MAX_FEEDBACK_EVENTS 100000u
+/** @brief Ceiling for a reported session length, mirroring the platform. */
+#define LEARNING_MAX_SESSION_MINUTES_REPORT 1440u
 
 /** @brief The fixed feedback-style catalog shared with the platform. */
 typedef enum {
@@ -64,6 +66,7 @@ typedef struct {
     uint8_t lesson_linkage_enabled;
     uint8_t max_session_minutes;
     uint8_t reserved;
+    uint32_t revision;
 } learning_policy_t;
 
 /** @brief Stable error codes for diagnostics and guardian-facing copy. */
@@ -92,7 +95,26 @@ typedef struct {
     bool reward_effects_enabled;
     bool lesson_linkage_enabled;
     int max_session_minutes;
+    int revision;
 } learning_visualization_remote_t;
+
+/**
+ * @brief One bounded surface status snapshot for the device endpoint report.
+ *
+ * The catalog names are stable shared contract strings; the snapshot is
+ * read-only state that the sync worker serialises into the status report.
+ */
+typedef struct {
+    bool supported;
+    bool touch_supported;
+    char linked_lesson_id[LEARNING_LESSON_ID_SIZE];
+    learning_visual_state_t visual_state;
+    learning_style_t feedback_style;
+    learning_animation_level_t animation_level;
+    uint32_t feedback_events;
+    uint32_t session_minutes;
+    uint32_t revision;
+} learning_visualization_status_t;
 
 /** @brief Return the conservative default policy (feature and animation off). */
 learning_policy_t learning_default(void);
@@ -211,6 +233,19 @@ const char *learning_visualization_linked_lesson(void);
 
 /** @brief Return how many feedback events the surface has counted. */
 uint32_t learning_visualization_feedback_events(void);
+
+/**
+ * @brief Report the current lesson session length in whole minutes.
+ *
+ * The value is clamped to the platform report ceiling so a status report is
+ * always accepted. The surface owns the timer; this only bounds the number.
+ */
+esp_err_t learning_visualization_report_session_minutes(
+    uint32_t session_minutes
+);
+
+/** @brief Return one bounded surface status snapshot for the report. */
+learning_visualization_status_t learning_visualization_status(void);
 
 /** @brief Return the removable-module descriptor for learning_visualization. */
 const module_descriptor_t *learning_visualization_module_descriptor(void);

@@ -36,6 +36,7 @@ int main() {
     remote.reward_effects_enabled = true;
     remote.lesson_linkage_enabled = true;
     remote.max_session_minutes = 999;
+    remote.revision = 11;
     learning_policy_t policy = {};
     assert(learning_visualization_sync_core_build_policy(&remote, &policy));
     assert(policy.schema_version == LEARNING_VISUALIZATION_SCHEMA_VERSION);
@@ -46,6 +47,7 @@ int main() {
     assert(policy.reward_effects_enabled == 1u);
     assert(policy.lesson_linkage_enabled == 1u);
     assert(policy.max_session_minutes == LEARNING_MAX_SESSION_MINUTES);
+    assert(policy.revision == 11u);
     assert(learning_is_valid(&policy));
 
     // A disabled policy pins the animation off.

@@ -14,6 +14,7 @@
 static learning_policy_t s_policy;
 static learning_visual_state_t s_state;
 static uint32_t s_feedback_events;
+static uint32_t s_session_minutes;
 static char s_lesson_id[LEARNING_LESSON_ID_SIZE];
 static bool s_ready;
 
@@ -55,6 +56,7 @@ esp_err_t learning_visualization_init(void) {
     // counter is session-local and never persisted.
     s_state = LEARNING_VISUAL_IDLE;
     s_feedback_events = 0u;
+    s_session_minutes = 0u;
     learning_clear_lesson();
     s_ready = true;
     return ESP_OK;
@@ -204,6 +206,7 @@ esp_err_t learning_visualization_stop(void) {
         return LEARNING_VISUALIZATION_ERR_INVALID_STATE;
     }
     s_state = LEARNING_VISUAL_IDLE;
+    s_session_minutes = 0u;
     learning_clear_lesson();
     return ESP_OK;
 }
@@ -230,6 +233,54 @@ const char *learning_visualization_linked_lesson(void) {
 
 uint32_t learning_visualization_feedback_events(void) {
     return s_feedback_events;
+}
+
+esp_err_t learning_visualization_report_session_minutes(
+    uint32_t session_minutes
+) {
+    if (!s_ready) {
+        return LEARNING_VISUALIZATION_ERR_INVALID_STATE;
+    }
+    s_session_minutes = session_minutes > LEARNING_MAX_SESSION_MINUTES_REPORT
+        ? LEARNING_MAX_SESSION_MINUTES_REPORT
+        : session_minutes;
+    return ESP_OK;
+}
+
+learning_visualization_status_t learning_visualization_status(void) {
+    learning_visualization_status_t status = {
+        .supported = true,
+        .touch_supported = s_policy.touch_feedback_enabled != 0u,
+        .linked_lesson_id = {0},
+        .visual_state = s_state,
+        .feedback_style = (learning_style_t)s_policy.feedback_style,
+        .animation_level =
+            learning_effective_animation(&s_policy, s_state),
+        .feedback_events = s_feedback_events,
+        .session_minutes = s_session_minutes,
+        .revision = s_policy.revision,
+    };
+    // The linked lesson id is copied defensively; an idle surface reports none.
+    if (s_state != LEARNING_VISUAL_IDLE && s_lesson_id[0] != '\0') {
+        size_t length = strlen(s_lesson_id);
+        if (length >= sizeof(status.linked_lesson_id)) {
+            length = sizeof(status.linked_lesson_id) - 1u;
+        }
+        memcpy(status.linked_lesson_id, s_lesson_id, length);
+        status.linked_lesson_id[length] = '\0';
+    } else {
+        status.linked_lesson_id[0] = '\0';
+    }
+    // A disabled policy reports a fully idle, animation-off surface so a stale
+    // state never reads as an active animation.
+    if (s_policy.enabled == 0u) {
+        status.visual_state = LEARNING_VISUAL_IDLE;
+        status.animation_level = LEARNING_ANIMATION_OFF;
+        status.linked_lesson_id[0] = '\0';
+        status.feedback_events = 0u;
+        status.session_minutes = 0u;
+    }
+    return status;
 }
 
 static esp_err_t learning_visualization_initialize(void) {

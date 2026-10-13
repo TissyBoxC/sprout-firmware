@@ -85,6 +85,39 @@ int main() {
     assert(learning_visualization_visual_state() == LEARNING_VISUAL_IDLE);
     assert(std::strcmp(learning_visualization_linked_lesson(), "") == 0);
 
+    // The status snapshot mirrors the live surface and the policy revision.
+    learning_policy_t revisioned = learning_visualization_get();
+    revisioned.enabled = 1u;
+    revisioned.animation_level = (uint8_t)LEARNING_ANIMATION_FULL;
+    revisioned.touch_feedback_enabled = 1u;
+    revisioned.revision = 8u;
+    assert(learning_visualization_set(&revisioned) == ESP_OK);
+    assert(learning_visualization_begin_lesson("colors_basic") == ESP_OK);
+    const uint32_t events_before = learning_visualization_feedback_events();
+    assert(learning_visualization_report_feedback() == ESP_OK);
+    assert(learning_visualization_report_session_minutes(5000u) == ESP_OK);
+    learning_visualization_status_t status = learning_visualization_status();
+    assert(status.supported);
+    assert(status.touch_supported);
+    assert(status.visual_state == LEARNING_VISUAL_FEEDBACK);
+    assert(status.animation_level == LEARNING_ANIMATION_FULL);
+    assert(status.feedback_style == (learning_style_t)LEARNING_STYLE_NEUTRAL);
+    assert(status.feedback_events == events_before + 1u);
+    // The reported session length is clamped to the platform ceiling.
+    assert(status.session_minutes == LEARNING_MAX_SESSION_MINUTES_REPORT);
+    assert(std::strcmp(status.linked_lesson_id, "colors_basic") == 0);
+    assert(status.revision == 8u);
+    // A disabled policy reports a fully idle, animation-off surface.
+    learning_policy_t off_now = learning_visualization_get();
+    off_now.enabled = 0u;
+    assert(learning_visualization_set(&off_now) == ESP_OK);
+    learning_visualization_status_t idle = learning_visualization_status();
+    assert(idle.visual_state == LEARNING_VISUAL_IDLE);
+    assert(idle.animation_level == LEARNING_ANIMATION_OFF);
+    assert(idle.feedback_events == 0u);
+    assert(idle.session_minutes == 0u);
+    assert(std::strcmp(idle.linked_lesson_id, "") == 0);
+
     // Persistence round trip keeps the edited policy.
     learning_policy_t persisted = learning_default();
     persisted.enabled = 1u;

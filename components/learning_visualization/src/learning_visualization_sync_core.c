@@ -74,6 +74,9 @@ bool learning_visualization_sync_core_build_policy(
     uint32_t session_minutes = remote->max_session_minutes < 0
         ? 0u
         : (uint32_t)remote->max_session_minutes;
+    uint32_t revision = remote->revision < 0
+        ? 0u
+        : (uint32_t)remote->revision;
     learning_policy_t policy = learning_default();
     policy.enabled = remote->enabled ? 1u : 0u;
     policy.feedback_style = (uint8_t)style;
@@ -82,6 +85,7 @@ bool learning_visualization_sync_core_build_policy(
     policy.reward_effects_enabled = remote->reward_effects_enabled ? 1u : 0u;
     policy.lesson_linkage_enabled = remote->lesson_linkage_enabled ? 1u : 0u;
     policy.max_session_minutes = (uint8_t)session_minutes;
+    policy.revision = revision;
     // The clamp pins the animation off when the feature is disabled.
     *policy_out = learning_clamp(&policy);
     return true;

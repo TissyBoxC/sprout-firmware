@@ -26,6 +26,7 @@ learning_policy_t learning_default(void) {
         .lesson_linkage_enabled = 1u,
         .max_session_minutes = 20u,
         .reserved = 0u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -59,6 +60,7 @@ learning_policy_t learning_clamp(const learning_policy_t *policy) {
         LEARNING_MAX_SESSION_MINUTES
     );
     clamped.reserved = 0u;
+    clamped.revision = policy->revision;
     // A disabled feature cannot animate; the derived level is pinned off here
     // so a stale animation setting never survives the switch.
     if (clamped.enabled == 0u) {

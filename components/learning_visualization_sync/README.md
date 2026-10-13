@@ -15,11 +15,19 @@ session token returns the policy in `data`:
 - `animation_level` one of `off`, `subtle`, `full`
 - `touch_feedback_enabled`, `reward_effects_enabled`, `lesson_linkage_enabled`
 - `max_session_minutes`
+- `revision`
 
 The response is parsed into a bounded policy and applied through
 `learning_visualization_apply_remote`, which maps the catalog names, clamps
 every field and pins the animation off when the feature is disabled. A response
 with a style or animation name outside its catalog is rejected.
+
+After a successful apply the worker reports the bounded surface status to
+`POST /api/v1/devices/{device_id}/learning-visualization/status` so the platform
+and admin overview see the live visual state, animation level, linked lesson,
+feedback counter, session length and the applied policy revision. The report is
+best effort: the policy is already applied, so a failed report is logged
+without delaying the sync cycle.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
