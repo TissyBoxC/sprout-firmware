@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_FORM_FACTOR_REPORT
+    bool "Report the composed form-factor profile to the platform"
+    default n
+    depends on FEATURE_FORM_FACTOR_PROFILE && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's composed form-factor profile (technical name and
+        capability mask) so the guardian view matches the hardware actually
+        present. The platform derives the action set from the capability mask.
+
+config FORM_FACTOR_REPORT_INTERVAL_SECONDS
+    int "Form-factor report interval in seconds"
+    depends on FEATURE_FORM_FACTOR_REPORT
+    range 300 86400
+    default 3600
+
+config FORM_FACTOR_REPORT_RETRY_INTERVAL_SECONDS
+    int "Form-factor report retry interval while offline"
+    depends on FEATURE_FORM_FACTOR_REPORT
+    range 5 300
+    default 15
+
+endmenu

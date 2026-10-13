@@ -1311,6 +1311,25 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$formFactorReportRoot = Join-Path $firmwareRoot 'components/form_factor_report'
+Invoke-HostTest `
+    -Name 'form_factor_report_core' `
+    -Sources @(
+        (Join-Path $formFactorRoot 'src/form_factor_core.c')
+        (Join-Path $formFactorReportRoot 'src/form_factor_report_core.c')
+        (Join-Path $formFactorReportRoot 'test/stubs/device_capabilities.c')
+        (Join-Path $formFactorReportRoot 'test/test_form_factor_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $formFactorRoot 'include')
+        (Join-Path $formFactorRoot 'src')
+        (Join-Path $formFactorRoot 'test/stubs')
+        (Join-Path $formFactorReportRoot 'src')
+        (Join-Path $formFactorReportRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $videoSessionRoot = Join-Path $firmwareRoot 'components/video_session'
 Invoke-HostTest `
     -Name 'video_core' `
