@@ -1,0 +1,24 @@
+menu "Sprout feature modules"
+
+config FEATURE_WEARABLE_SYNC
+    bool "Enable wearable location policy and SOS synchronisation"
+    default n
+    depends on FEATURE_WEARABLE_LOCATION && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reads the family location policy, applies it locally and reports the
+        device's position and SOS trigger back to the platform. A build without
+        a position provider applies the policy but never uploads a position.
+
+config WEARABLE_SYNC_INTERVAL_SECONDS
+    int "Wearable location sync interval in seconds"
+    depends on FEATURE_WEARABLE_SYNC
+    range 30 86400
+    default 300
+
+config WEARABLE_SYNC_RETRY_INTERVAL_SECONDS
+    int "Wearable sync retry interval while offline"
+    depends on FEATURE_WEARABLE_SYNC
+    range 5 300
+    default 15
+
+endmenu

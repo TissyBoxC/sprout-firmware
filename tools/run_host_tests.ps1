@@ -1509,6 +1509,25 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$wearableSyncRoot = Join-Path $firmwareRoot 'components/wearable_sync'
+Invoke-HostTest `
+    -Name 'wearable_sync_core' `
+    -Sources @(
+        (Join-Path $wearableRoot 'src/wearable_core.c')
+        (Join-Path $wearableSyncRoot 'src/wearable_sync_core.c')
+        (Join-Path $wearableSyncRoot 'test/test_wearable_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $wearableSyncRoot 'include')
+        (Join-Path $wearableSyncRoot 'src')
+        (Join-Path $wearableRoot 'include')
+        (Join-Path $wearableRoot 'src')
+        (Join-Path $wearableRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $familyRoot = Join-Path $firmwareRoot 'components/family_linkage'
 Invoke-HostTest `
     -Name 'family_core' `
