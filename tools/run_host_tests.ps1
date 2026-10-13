@@ -486,6 +486,21 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$uiTextSyncRoot = Join-Path $firmwareRoot 'components/ui_text_sync'
+Invoke-HostTest `
+    -Name 'ui_text_sync_core' `
+    -Sources @(
+        (Join-Path $uiTextSyncRoot 'src/ui_text_sync_core.c')
+        (Join-Path $uiTextSyncRoot 'test/test_ui_text_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $uiTextRoot 'include')
+        (Join-Path $uiTextRoot 'test/stubs')
+        (Join-Path $uiTextSyncRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $contentDownloaderRoot = Join-Path $firmwareRoot 'components/content_downloader'
 Invoke-HostTest `
     -Name 'content_download_state' `

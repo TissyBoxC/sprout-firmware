@@ -287,6 +287,9 @@
 #if CONFIG_FEATURE_UI_TEXT
 #include "ui_text.h"
 #endif
+#if CONFIG_FEATURE_UI_TEXT_SYNC
+#include "ui_text_sync.h"
+#endif
 #if CONFIG_FEATURE_VERSION_INFO
 #include "version_info.h"
 #endif
@@ -886,6 +889,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_UI_TEXT
     ESP_ERROR_CHECK(module_registry_add(ui_text_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_UI_TEXT_SYNC
+    ESP_ERROR_CHECK(module_registry_add(ui_text_sync_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_CONVERSATION_CONTEXT
     ESP_ERROR_CHECK(module_registry_add(conversation_context_module_descriptor()));

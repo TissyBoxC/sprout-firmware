@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "config_store.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "ui_text_store.h"
 
@@ -25,23 +26,36 @@ typedef struct {
     ui_text_entry_t entries[CONFIG_UI_TEXT_ENTRY_CAPACITY];
 } ui_text_persisted_t;
 
-static ui_text_entry_t ui_text_entries[CONFIG_UI_TEXT_ENTRY_CAPACITY];
-static ui_text_persisted_t ui_text_persisted;
+// The active entries and the serialization buffer are ~50 KB each, which does
+// not fit in internal DRAM beside the rest of the application. Both are
+// allocated once from PSRAM (internal RAM as a fallback) so enabling remote UI
+// text does not starve the Wi-Fi/audio stacks.
+static ui_text_entry_t *ui_text_entries;
+static ui_text_persisted_t *ui_text_persisted;
 static ui_text_store_t ui_text_store;
 static bool ui_text_ready;
 
+static void *ui_text_alloc(size_t size) {
+    return heap_caps_malloc_prefer(
+        size,
+        2,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+    );
+}
+
 static esp_err_t ui_text_persist(void) {
-    memset(&ui_text_persisted, 0, sizeof(ui_text_persisted));
-    ui_text_persisted.magic = UI_TEXT_INDEX_MAGIC;
-    ui_text_persisted.package = ui_text_store.package;
-    ui_text_persisted.entry_count = (uint32_t)ui_text_store.count;
+    memset(ui_text_persisted, 0, sizeof(*ui_text_persisted));
+    ui_text_persisted->magic = UI_TEXT_INDEX_MAGIC;
+    ui_text_persisted->package = ui_text_store.package;
+    ui_text_persisted->entry_count = (uint32_t)ui_text_store.count;
     for (size_t index = 0; index < ui_text_store.count; ++index) {
-        ui_text_persisted.entries[index] = ui_text_store.entries[index];
+        ui_text_persisted->entries[index] = ui_text_store.entries[index];
     }
     const esp_err_t result = config_store_set_blob(
         CONFIG_UI_TEXT_METADATA_KEY,
-        &ui_text_persisted,
-        sizeof(ui_text_persisted)
+        ui_text_persisted,
+        sizeof(*ui_text_persisted)
     );
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "package persistence failed: %s", esp_err_to_name(result));
@@ -50,28 +64,28 @@ static esp_err_t ui_text_persist(void) {
 }
 
 static void ui_text_load(void) {
-    memset(&ui_text_persisted, 0, sizeof(ui_text_persisted));
-    size_t value_size = sizeof(ui_text_persisted);
+    memset(ui_text_persisted, 0, sizeof(*ui_text_persisted));
+    size_t value_size = sizeof(*ui_text_persisted);
     const esp_err_t result = config_store_get_blob(
         CONFIG_UI_TEXT_METADATA_KEY,
-        &ui_text_persisted,
+        ui_text_persisted,
         &value_size
     );
     if (result == CONFIG_STORE_ERR_NOT_FOUND) {
         return;
     }
-    if (result != ESP_OK || value_size != sizeof(ui_text_persisted) ||
-        ui_text_persisted.magic != UI_TEXT_INDEX_MAGIC ||
-        ui_text_persisted.entry_count > CONFIG_UI_TEXT_ENTRY_CAPACITY ||
-        ui_text_persisted.entry_count == 0) {
+    if (result != ESP_OK || value_size != sizeof(*ui_text_persisted) ||
+        ui_text_persisted->magic != UI_TEXT_INDEX_MAGIC ||
+        ui_text_persisted->entry_count > CONFIG_UI_TEXT_ENTRY_CAPACITY ||
+        ui_text_persisted->entry_count == 0) {
         // A corrupt package must not prevent boot; clearing it falls back to
         // built-in text until the next successful sync.
         ESP_LOGW(TAG, "discarding corrupt ui text package");
         (void)config_store_erase_key(CONFIG_UI_TEXT_METADATA_KEY);
         return;
     }
-    for (size_t index = 0; index < ui_text_persisted.entry_count; ++index) {
-        if (!ui_text_store_entry_is_valid(&ui_text_persisted.entries[index])) {
+    for (size_t index = 0; index < ui_text_persisted->entry_count; ++index) {
+        if (!ui_text_store_entry_is_valid(&ui_text_persisted->entries[index])) {
             ESP_LOGW(TAG, "discarding invalid ui text entry");
             (void)config_store_erase_key(CONFIG_UI_TEXT_METADATA_KEY);
             return;
@@ -80,9 +94,9 @@ static void ui_text_load(void) {
     bool changed = false;
     if (ui_text_store_apply_package(
             &ui_text_store,
-            &ui_text_persisted.package,
-            ui_text_persisted.entries,
-            ui_text_persisted.entry_count,
+            &ui_text_persisted->package,
+            ui_text_persisted->entries,
+            ui_text_persisted->entry_count,
             &changed
         ) != UI_TEXT_STORE_OK) {
         ESP_LOGW(TAG, "discarding unusable ui text package");
@@ -96,6 +110,22 @@ esp_err_t ui_text_init(void) {
     }
     if (!config_store_is_ready()) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (ui_text_entries == NULL) {
+        ui_text_entries = (ui_text_entry_t *)ui_text_alloc(
+            sizeof(ui_text_entry_t) * CONFIG_UI_TEXT_ENTRY_CAPACITY
+        );
+        if (ui_text_entries == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (ui_text_persisted == NULL) {
+        ui_text_persisted = (ui_text_persisted_t *)ui_text_alloc(
+            sizeof(ui_text_persisted_t)
+        );
+        if (ui_text_persisted == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
     if (ui_text_store_init(
             &ui_text_store,

@@ -1,0 +1,31 @@
+menu "Sprout feature modules"
+
+config FEATURE_UI_TEXT_SYNC
+    bool "Enable remote UI text synchronisation"
+    default n
+    depends on FEATURE_UI_TEXT && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Pulls published device_firmware UI text packages and applies the newest
+        published copy, so the device renders the same copy the platform and
+        parent app show. A withdrawal reverts the device to built-in text.
+
+config UI_TEXT_SYNC_LANGUAGE
+    string "Device language tag for remote UI text"
+    depends on FEATURE_UI_TEXT_SYNC
+    default "zh-CN"
+    help
+        Only packages whose language matches this BCP-47-ish tag are applied.
+
+config UI_TEXT_SYNC_INTERVAL_SECONDS
+    int "UI text sync interval in seconds"
+    depends on FEATURE_UI_TEXT_SYNC
+    range 300 86400
+    default 3600
+
+config UI_TEXT_SYNC_RETRY_INTERVAL_SECONDS
+    int "UI text sync retry interval while offline"
+    depends on FEATURE_UI_TEXT_SYNC
+    range 5 300
+    default 15
+
+endmenu
