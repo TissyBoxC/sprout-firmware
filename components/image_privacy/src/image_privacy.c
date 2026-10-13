@@ -218,6 +218,35 @@ image_block_reason_t image_privacy_last_block_reason(void) {
     return s_last_block_reason;
 }
 
+image_privacy_status_t image_privacy_status(void) {
+    image_privacy_status_t status = {
+        .camera_supported = true,
+        .local_processing = image_privacy_can_process(&s_policy),
+        .upload_allowed = image_privacy_can_upload(&s_policy),
+        .processing_mode = (image_processing_mode_t)s_policy.processing_mode,
+        .upload_scope = (image_upload_scope_t)s_policy.upload_scope,
+        .redaction_level = (image_redaction_level_t)s_policy.redaction_level,
+        .processed_count = s_processed_count,
+        .uploaded_count = s_uploaded_count,
+        .blocked_count = s_blocked_count,
+        .last_block_reason = s_last_block_reason,
+        .revision = s_policy.revision,
+    };
+    // A disabled policy reports a fully off pipeline with no counters, so a
+    // stale state never reads as an active upload.
+    if (s_policy.enabled == 0u) {
+        status.local_processing = false;
+        status.upload_allowed = false;
+        status.processing_mode = IMAGE_PROCESSING_OFF;
+        status.upload_scope = IMAGE_UPLOAD_NONE;
+        status.processed_count = 0u;
+        status.uploaded_count = 0u;
+        status.blocked_count = 0u;
+        status.last_block_reason = IMAGE_BLOCK_NONE;
+    }
+    return status;
+}
+
 static esp_err_t image_privacy_initialize(void) {
     return image_privacy_init();
 }

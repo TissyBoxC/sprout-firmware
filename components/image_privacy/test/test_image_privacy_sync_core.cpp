@@ -45,6 +45,7 @@ int main() {
     remote.retention_days = 999;
     remote.redaction_level = "standard";
     remote.require_child_consent = false;
+    remote.revision = 3;
     image_privacy_policy_t policy = {};
     assert(image_privacy_sync_core_build_policy(&remote, &policy));
     assert(policy.schema_version == IMAGE_PRIVACY_SCHEMA_VERSION);
@@ -56,6 +57,7 @@ int main() {
     assert(policy.retention_days == IMAGE_PRIVACY_MAX_RETENTION_DAYS);
     assert(policy.redaction_level == (uint8_t)IMAGE_REDACTION_STANDARD);
     assert(policy.require_child_consent == 0u);
+    assert(policy.revision == 3u);
     assert(image_privacy_is_valid(&policy));
 
     // A disabled policy pins the processing mode off and revokes upload.

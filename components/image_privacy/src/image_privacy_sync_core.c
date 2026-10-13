@@ -93,6 +93,9 @@ bool image_privacy_sync_core_build_policy(
     uint32_t retention_days = remote->retention_days < 0
         ? 0u
         : (uint32_t)remote->retention_days;
+    uint32_t revision = remote->revision < 0
+        ? 0u
+        : (uint32_t)remote->revision;
     image_privacy_policy_t policy = image_privacy_default();
     policy.enabled = remote->enabled ? 1u : 0u;
     policy.upload_allowed = remote->upload_allowed ? 1u : 0u;
@@ -102,6 +105,7 @@ bool image_privacy_sync_core_build_policy(
     policy.retention_days = (uint8_t)retention_days;
     policy.redaction_level = (uint8_t)redaction;
     policy.require_child_consent = remote->require_child_consent ? 1u : 0u;
+    policy.revision = revision;
     // The clamp pins the mode/scope off when the feature is disabled and
     // revokes upload whenever it is unauthorised or local-only.
     *policy_out = image_privacy_clamp(&policy);

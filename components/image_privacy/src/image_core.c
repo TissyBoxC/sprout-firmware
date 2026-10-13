@@ -26,6 +26,7 @@ image_privacy_policy_t image_privacy_default(void) {
         .redaction_level = (uint8_t)IMAGE_REDACTION_STRICT,
         .require_child_consent = 1u,
         .reserved = 0u,
+        .revision = 0u,
     };
     return policy;
 }
@@ -65,6 +66,7 @@ image_privacy_policy_t image_privacy_clamp(
     clamped.require_child_consent =
         policy->require_child_consent != 0u ? 1u : 0u;
     clamped.reserved = 0u;
+    clamped.revision = policy->revision;
     // A disabled feature cannot process; the derived mode is pinned off here
     // so a stale processing setting never survives the switch.
     if (clamped.enabled == 0u) {

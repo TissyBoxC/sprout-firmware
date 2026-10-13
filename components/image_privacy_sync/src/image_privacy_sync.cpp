@@ -36,6 +36,7 @@
 
 #define IMAGE_PRIVACY_SYNC_URL_SIZE 384
 #define IMAGE_PRIVACY_SYNC_RESPONSE_SIZE 4096
+#define IMAGE_PRIVACY_SYNC_REQUEST_SIZE 640
 
 static const char *const TAG = "image_privacy_sync";
 static bool s_ready;
@@ -94,36 +95,55 @@ static esp_err_t image_privacy_sync_http_event(
     return ESP_OK;
 }
 
-static esp_err_t image_privacy_sync_fetch(JsonDocument *document) {
-    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED) {
+// Resolve the session token, device id and platform base url shared by the
+// policy fetch and the status report. The caller owns and must clear the token.
+static esp_err_t image_privacy_sync_prepare(
+    char *session_token,
+    size_t session_token_size,
+    char *device_id,
+    size_t device_id_size,
+    char *base_url,
+    size_t base_url_size
+) {
+    if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
+        !time_sync_is_synchronized() ||
+        !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!time_sync_is_synchronized()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!device_binding_client_is_registered()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     if (device_binding_client_copy_session_token(
             session_token,
-            sizeof(session_token)
+            session_token_size
         ) != ESP_OK) {
         return ESP_ERR_INVALID_STATE;
     }
-    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
-    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK) {
-        memset(session_token, 0, sizeof(session_token));
+    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_STATE;
     }
-    char base_url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
     if (device_binding_client_get_platform_base_url(
             base_url,
-            sizeof(base_url)
+            base_url_size
         ) != ESP_OK ||
         strncmp(base_url, "https://", 8) != 0) {
-        memset(session_token, 0, sizeof(session_token));
+        memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t image_privacy_sync_fetch(JsonDocument *document) {
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
+    if (image_privacy_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return ESP_ERR_INVALID_STATE;
     }
     char url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -223,7 +243,119 @@ static esp_err_t image_privacy_sync_apply_document(
     remote.retention_days = data["retention_days"] | 0;
     remote.redaction_level = redaction_level;
     remote.require_child_consent = data["require_child_consent"] | true;
+    remote.revision = data["revision"] | 0;
     return image_privacy_apply_remote(&remote);
+}
+
+// The status report is best effort: the policy is already applied, so a failed
+// report is logged without failing or delaying the sync cycle.
+static void image_privacy_sync_report_status(void) {
+    char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
+    char base_url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
+    if (image_privacy_sync_prepare(
+            session_token,
+            sizeof(session_token),
+            device_id,
+            sizeof(device_id),
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK) {
+        return;
+    }
+    char url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
+    const int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/image-privacy/status",
+        base_url,
+        device_id
+    );
+    if (written <= 0 || (size_t)written >= sizeof(url)) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+#if IMAGE_PRIVACY_SYNC_HAS_TRANSPORT_SECURITY
+    if (transport_security_validate_outbound(url, NULL) !=
+        TRANSPORT_SECURITY_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+#endif
+
+    const image_privacy_status_t status = image_privacy_status();
+    JsonDocument payload;
+    payload["camera_supported"] = status.camera_supported;
+    payload["local_processing"] = status.local_processing;
+    payload["upload_allowed"] = status.upload_allowed;
+    payload["processing_mode"] =
+        image_privacy_mode_name(status.processing_mode);
+    payload["upload_scope"] =
+        image_privacy_scope_name(status.upload_scope);
+    payload["redaction_level"] =
+        image_privacy_redaction_name(status.redaction_level);
+    payload["processed_count"] = (int)status.processed_count;
+    payload["uploaded_count"] = (int)status.uploaded_count;
+    payload["blocked_count"] = (int)status.blocked_count;
+    payload["last_block_reason"] =
+        image_privacy_block_reason_name(status.last_block_reason);
+    payload["policy_revision"] = (int)status.revision;
+    char request_body[IMAGE_PRIVACY_SYNC_REQUEST_SIZE] = {0};
+    const size_t body_length =
+        serializeJson(payload, request_body, sizeof(request_body));
+    if (body_length == 0 || body_length >= sizeof(request_body)) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+
+    image_privacy_sync_response_t response = {};
+    if (image_privacy_sync_response_init(&response) != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 15000;
+    config.event_handler = image_privacy_sync_http_event;
+    config.user_data = &response;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        image_privacy_sync_response_destroy(&response);
+        memset(session_token, 0, sizeof(session_token));
+        return;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
+    snprintf(
+        authorization,
+        sizeof(authorization),
+        "Bearer %s",
+        session_token
+    );
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(
+        client,
+        request_body,
+        (int)body_length
+    );
+    const esp_err_t transport_result = esp_http_client_perform(client);
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    memset(authorization, 0, sizeof(authorization));
+    memset(session_token, 0, sizeof(session_token));
+    if (transport_result != ESP_OK ||
+        status_code < 200 || status_code >= 300) {
+        ESP_LOGW(
+            TAG,
+            "image privacy status report failed: %s (status %d)",
+            esp_err_to_name(transport_result),
+            status_code
+        );
+    }
+    image_privacy_sync_response_destroy(&response);
 }
 
 esp_err_t image_privacy_sync_now(void) {
@@ -240,8 +372,10 @@ esp_err_t image_privacy_sync_now(void) {
     if (apply_result != ESP_OK) {
         ESP_LOGW(TAG, "image privacy policy rejected: %s",
                  esp_err_to_name(apply_result));
+        return apply_result;
     }
-    return apply_result;
+    image_privacy_sync_report_status();
+    return ESP_OK;
 }
 
 static void image_privacy_sync_worker(void *argument) {

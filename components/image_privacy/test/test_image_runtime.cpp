@@ -42,6 +42,22 @@ int main() {
     assert(image_privacy_last_block_reason() == IMAGE_BLOCK_QUOTA);
     assert(image_privacy_block(IMAGE_BLOCK_NONE) == ESP_ERR_INVALID_ARG);
 
+    // The status snapshot mirrors the live pipeline and the applied revision.
+    policy = image_privacy_get();
+    policy.revision = 9u;
+    assert(image_privacy_set(&policy) == ESP_OK);
+    image_privacy_status_t status = image_privacy_status();
+    assert(status.camera_supported);
+    assert(status.local_processing);
+    assert(status.upload_allowed);
+    assert(status.processing_mode == IMAGE_PROCESSING_LOCAL_FULL);
+    assert(status.upload_scope == IMAGE_UPLOAD_THUMBNAILS);
+    assert(status.processed_count == 1u);
+    assert(status.uploaded_count == 1u);
+    assert(status.blocked_count == 3u);
+    assert(status.last_block_reason == IMAGE_BLOCK_QUOTA);
+    assert(status.revision == 9u);
+
     // Local-only processing revokes upload in one step.
     policy = image_privacy_get();
     policy.local_processing_only = 1u;
@@ -65,6 +81,16 @@ int main() {
     assert(image_privacy_begin_processing() ==
            IMAGE_PRIVACY_ERR_PERMISSION_DENIED);
     assert(image_privacy_last_block_reason() == IMAGE_BLOCK_DISABLED);
+    // A disabled policy reports a fully off pipeline with no counters.
+    image_privacy_status_t disabled = image_privacy_status();
+    assert(!disabled.local_processing);
+    assert(!disabled.upload_allowed);
+    assert(disabled.processing_mode == IMAGE_PROCESSING_OFF);
+    assert(disabled.upload_scope == IMAGE_UPLOAD_NONE);
+    assert(disabled.processed_count == 0u);
+    assert(disabled.uploaded_count == 0u);
+    assert(disabled.blocked_count == 0u);
+    assert(disabled.last_block_reason == IMAGE_BLOCK_NONE);
 
     // Persistence round trip keeps the edited policy.
     image_privacy_policy_t persisted = image_privacy_default();

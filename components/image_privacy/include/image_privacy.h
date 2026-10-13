@@ -68,6 +68,7 @@ typedef struct {
     uint8_t redaction_level;
     uint8_t require_child_consent;
     uint8_t reserved;
+    uint32_t revision;
 } image_privacy_policy_t;
 
 /** @brief Stable error codes for diagnostics and guardian-facing copy. */
@@ -98,7 +99,28 @@ typedef struct {
     int retention_days;
     const char *redaction_level;
     bool require_child_consent;
+    int revision;
 } image_privacy_remote_t;
+
+/**
+ * @brief One bounded pipeline status snapshot for the device endpoint report.
+ *
+ * The catalog names are stable shared contract strings; the snapshot is
+ * read-only state that the sync worker serialises into the status report.
+ */
+typedef struct {
+    bool camera_supported;
+    bool local_processing;
+    bool upload_allowed;
+    image_processing_mode_t processing_mode;
+    image_upload_scope_t upload_scope;
+    image_redaction_level_t redaction_level;
+    uint32_t processed_count;
+    uint32_t uploaded_count;
+    uint32_t blocked_count;
+    image_block_reason_t last_block_reason;
+    uint32_t revision;
+} image_privacy_status_t;
 
 /** @brief Return the conservative default policy (processing and upload off). */
 image_privacy_policy_t image_privacy_default(void);
@@ -211,6 +233,9 @@ uint32_t image_privacy_blocked_count(void);
 
 /** @brief Return the reason the last processing or upload was blocked. */
 image_block_reason_t image_privacy_last_block_reason(void);
+
+/** @brief Return one bounded pipeline status snapshot for the report. */
+image_privacy_status_t image_privacy_status(void);
 
 /** @brief Return the removable-module descriptor for image_privacy. */
 const module_descriptor_t *image_privacy_module_descriptor(void);

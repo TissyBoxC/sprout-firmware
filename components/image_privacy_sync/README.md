@@ -16,12 +16,20 @@ token returns the policy in `data`:
 - `retention_days`
 - `redaction_level` one of `none`, `standard`, `strict`
 - `require_child_consent`
+- `revision`
 
 The response is parsed into a bounded policy and applied through
 `image_privacy_apply_remote`, which maps the catalog names, clamps every field,
 pins the processing mode off when the feature is disabled and revokes upload
 whenever it is unauthorised or local-only. A response with a name outside its
 catalog is rejected.
+
+After a successful apply the worker reports the bounded pipeline status to
+`POST /api/v1/devices/{device_id}/image-privacy/status` so the platform and
+admin overview see the live processing mode, upload scope, redaction level,
+processed/uploaded/blocked counters, last block reason and the applied policy
+revision. The report is best effort: the policy is already applied, so a failed
+report is logged without delaying the sync cycle.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
