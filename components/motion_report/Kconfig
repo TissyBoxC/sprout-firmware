@@ -1,0 +1,25 @@
+menu "Sprout feature modules"
+
+config FEATURE_MOTION_REPORT
+    bool "Report the live motion state to the platform"
+    default n
+    depends on FEATURE_MOTION_CONTROL && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Reports the device's motion lifecycle state, running action, actuator
+        count and fault flag so the guardian motion view matches the body
+        actually moving. A device without a moving body never links the
+        component.
+
+config MOTION_REPORT_INTERVAL_SECONDS
+    int "Motion report interval in seconds"
+    depends on FEATURE_MOTION_REPORT
+    range 300 86400
+    default 900
+
+config MOTION_REPORT_RETRY_INTERVAL_SECONDS
+    int "Motion report retry interval while offline"
+    depends on FEATURE_MOTION_REPORT
+    range 5 300
+    default 15
+
+endmenu

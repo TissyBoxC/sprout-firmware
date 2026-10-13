@@ -1280,6 +1280,23 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$motionReportRoot = Join-Path $firmwareRoot 'components/motion_report'
+Invoke-HostTest `
+    -Name 'motion_report_core' `
+    -Sources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionReportRoot 'src/motion_report_core.c')
+        (Join-Path $motionReportRoot 'test/test_motion_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $motionRoot 'include')
+        (Join-Path $motionRoot 'src')
+        (Join-Path $motionRoot 'test/stubs')
+        (Join-Path $motionReportRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $formFactorRoot = Join-Path $firmwareRoot 'components/form_factor_profile'
 Invoke-HostTest `
     -Name 'form_factor_core' `

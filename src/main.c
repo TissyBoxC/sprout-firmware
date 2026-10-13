@@ -228,6 +228,9 @@
 #if CONFIG_FEATURE_MOTION_CONTROL
 #include "motion_control.h"
 #endif
+#if CONFIG_FEATURE_MOTION_REPORT
+#include "motion_report.h"
+#endif
 #if CONFIG_FEATURE_FORM_FACTOR_PROFILE
 #include "form_factor_profile.h"
 #endif
@@ -803,6 +806,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_MOTION_CONTROL
     ESP_ERROR_CHECK(module_registry_add(motion_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_MOTION_REPORT
+    ESP_ERROR_CHECK(module_registry_add(motion_report_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_FORM_FACTOR_PROFILE
     ESP_ERROR_CHECK(module_registry_add(form_factor_module_descriptor()));
