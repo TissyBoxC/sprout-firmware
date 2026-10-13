@@ -8,4 +8,14 @@ config FEATURE_CONFIG_STORE
         settings in NVS. This module never logs or returns secrets. Production
         images must enable NVS encryption for the target partition.
 
+config CONFIG_STORE_LARGE_PARTITION
+    string "NVS partition for large configuration blobs"
+    depends on FEATURE_CONFIG_STORE
+    default "nvs_data"
+    help
+        Separate NVS partition used for large blobs such as the cached
+        English course catalog and UI text package. Keeping these out of the
+        default nvs partition lets small credential records stay in the
+        legacy 24 KB partition while large caches have room to grow.
+
 endmenu

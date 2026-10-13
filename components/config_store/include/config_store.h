@@ -29,6 +29,9 @@ extern "C" {
  */
 #define CONFIG_STORE_KEY_MAX_SIZE 15
 
+/** @brief Blobs above this size are stored in the large NVS partition. */
+#define CONFIG_STORE_LARGE_BLOB_THRESHOLD 4096
+
 /** @brief Fail compilation when a key cannot fit in the NVS key field. */
 #ifdef __cplusplus
 #define CONFIG_STORE_KEY_ASSERT(key)                                       \
