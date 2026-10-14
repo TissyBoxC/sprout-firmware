@@ -1,5 +1,7 @@
 #include "temperature_monitor_core.h"
 
+#include <stddef.h>
+
 temperature_core_state_t temperature_core_classify(
     int celsius_tenths,
     const temperature_core_thresholds_t *thresholds
