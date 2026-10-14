@@ -57,6 +57,58 @@ void test_topic_identity_is_derived() {
     );
 }
 
+void test_topic_builders_round_trip() {
+    char topic[DEVICE_MQTT_TOPIC_SIZE] = {0};
+    assert(
+        device_mqtt_build_command_topic(
+            DEVICE_ID,
+            topic,
+            sizeof(topic)
+        ) == DEVICE_MQTT_OK
+    );
+    assert(
+        std::strcmp(topic, "sprout/v1/devices/device_demo_001/commands") == 0
+    );
+    char decoded[DEVICE_MQTT_DEVICE_ID_SIZE] = {0};
+    assert(
+        device_mqtt_device_id_from_topic(topic, decoded, sizeof(decoded)) ==
+        DEVICE_MQTT_OK
+    );
+    assert(std::strcmp(decoded, DEVICE_ID) == 0);
+
+    assert(
+        device_mqtt_build_ack_topic(
+            DEVICE_ID,
+            topic,
+            sizeof(topic)
+        ) == DEVICE_MQTT_OK
+    );
+    assert(
+        std::strcmp(
+            topic,
+            "sprout/v1/devices/device_demo_001/commands/ack"
+        ) == 0
+    );
+
+    // An invalid device id must never produce a subscribable topic, and a
+    // too-small buffer must fail instead of truncating.
+    assert(
+        device_mqtt_build_command_topic(
+            "Device_Demo_001",
+            topic,
+            sizeof(topic)
+        ) == DEVICE_MQTT_ERR_INVALID_TOPIC
+    );
+    char small[16] = {0};
+    assert(
+        device_mqtt_build_command_topic(
+            DEVICE_ID,
+            small,
+            sizeof(small)
+        ) == DEVICE_MQTT_ERR_FIELD_TOO_LONG
+    );
+}
+
 void test_valid_command_parses() {
     device_mqtt_command_t command = {};
     assert(
@@ -522,6 +574,7 @@ void test_adapter_rejects_trailing_and_partial_data() {
 
 int main() {
     test_topic_identity_is_derived();
+    test_topic_builders_round_trip();
     test_valid_command_parses();
     test_command_without_data_keeps_empty_object();
     test_oversized_command_data_is_rejected();

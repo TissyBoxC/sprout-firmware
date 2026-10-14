@@ -822,6 +822,64 @@ device_mqtt_error_t device_mqtt_device_id_from_topic(
     return DEVICE_MQTT_OK;
 }
 
+static device_mqtt_error_t device_mqtt_build_topic(
+    const char *device_id,
+    const char *suffix,
+    char *topic_out,
+    size_t topic_out_size
+) {
+    static const char prefix[] = "sprout/v1/devices/";
+    if (device_id == NULL || suffix == NULL || topic_out == NULL ||
+        topic_out_size == 0) {
+        return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (!device_mqtt_identifier_is_valid(
+            device_id,
+            strlen(device_id),
+            DEVICE_MQTT_DEVICE_ID_SIZE - 1
+        )) {
+        return DEVICE_MQTT_ERR_INVALID_TOPIC;
+    }
+    const int written = snprintf(
+        topic_out,
+        topic_out_size,
+        "%s%s%s",
+        prefix,
+        device_id,
+        suffix
+    );
+    if (written <= 0 || (size_t)written >= topic_out_size) {
+        return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
+    }
+    return DEVICE_MQTT_OK;
+}
+
+device_mqtt_error_t device_mqtt_build_command_topic(
+    const char *device_id,
+    char *topic_out,
+    size_t topic_out_size
+) {
+    return device_mqtt_build_topic(
+        device_id,
+        "/commands",
+        topic_out,
+        topic_out_size
+    );
+}
+
+device_mqtt_error_t device_mqtt_build_ack_topic(
+    const char *device_id,
+    char *topic_out,
+    size_t topic_out_size
+) {
+    return device_mqtt_build_topic(
+        device_id,
+        "/commands/ack",
+        topic_out,
+        topic_out_size
+    );
+}
+
 device_mqtt_error_t device_mqtt_parse_command(
     const char *device_id,
     const char *payload,

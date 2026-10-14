@@ -36,6 +36,9 @@ extern "C" {
 /** @brief Number of recent command outcomes retained for duplicate detection. */
 #define DEVICE_MQTT_DEDUPE_CAPACITY 16
 
+/** @brief Buffer size required for a command or acknowledgement topic. */
+#define DEVICE_MQTT_TOPIC_SIZE 192
+
 /** @brief Stable command channel schema accepted by this component. */
 #define DEVICE_MQTT_SCHEMA_VERSION "1.0.0"
 
@@ -146,6 +149,31 @@ device_mqtt_error_t device_mqtt_device_id_from_topic(
     const char *topic,
     char *device_id_out,
     size_t device_id_out_size
+);
+
+/**
+ * @brief Build the platform-to-device command topic for one device.
+ *
+ * The device id is validated with the same rules used when decoding an
+ * incoming topic, so a device can never subscribe to a topic that would be
+ * rejected on delivery. Returns DEVICE_MQTT_ERR_FIELD_TOO_LONG when the
+ * output buffer cannot hold the topic.
+ */
+device_mqtt_error_t device_mqtt_build_command_topic(
+    const char *device_id,
+    char *topic_out,
+    size_t topic_out_size
+);
+
+/**
+ * @brief Build the device-to-platform acknowledgement topic for one device.
+ *
+ * Uses the same device id validation as the command topic builder.
+ */
+device_mqtt_error_t device_mqtt_build_ack_topic(
+    const char *device_id,
+    char *topic_out,
+    size_t topic_out_size
 );
 
 /**
