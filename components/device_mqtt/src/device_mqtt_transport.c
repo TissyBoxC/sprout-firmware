@@ -288,11 +288,14 @@ static void device_mqtt_event_handler(
                 break;
             }
 
+            if (event->data_len < 0 ||
+                event->data_len >=
+                    (int)(DEVICE_MQTT_COMMAND_DATA_SIZE + 320)) {
+                ESP_LOGW(TAG, "rejecting oversized command payload");
+                break;
+            }
             char payload[DEVICE_MQTT_COMMAND_DATA_SIZE + 320] = {0};
-            const int payload_length =
-                event->data_len < (int)sizeof(payload) - 1
-                    ? event->data_len
-                    : (int)sizeof(payload) - 1;
+            const int payload_length = event->data_len;
             memcpy(payload, event->data, (size_t)payload_length);
             payload[payload_length] = '\0';
             const esp_err_t result = device_mqtt_command_callback(

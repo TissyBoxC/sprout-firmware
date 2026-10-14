@@ -829,9 +829,13 @@ static device_mqtt_error_t device_mqtt_build_topic(
     size_t topic_out_size
 ) {
     static const char prefix[] = "sprout/v1/devices/";
-    if (device_id == NULL || suffix == NULL || topic_out == NULL ||
-        topic_out_size == 0) {
+    if (device_id == NULL || suffix == NULL || topic_out == NULL) {
         return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (topic_out_size > 0) {
+        topic_out[0] = '\0';
+    } else {
+        return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
     }
     if (!device_mqtt_identifier_is_valid(
             device_id,
@@ -840,17 +844,17 @@ static device_mqtt_error_t device_mqtt_build_topic(
         )) {
         return DEVICE_MQTT_ERR_INVALID_TOPIC;
     }
-    const int written = snprintf(
-        topic_out,
-        topic_out_size,
-        "%s%s%s",
-        prefix,
-        device_id,
-        suffix
-    );
-    if (written <= 0 || (size_t)written >= topic_out_size) {
+    const size_t required_length =
+        (sizeof(prefix) - 1) + strlen(device_id) + strlen(suffix);
+    if (required_length + 1 > topic_out_size) {
         return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
     }
+    memcpy(topic_out, prefix, sizeof(prefix) - 1);
+    size_t offset = sizeof(prefix) - 1;
+    const size_t device_id_length = strlen(device_id);
+    memcpy(topic_out + offset, device_id, device_id_length);
+    offset += device_id_length;
+    memcpy(topic_out + offset, suffix, strlen(suffix) + 1);
     return DEVICE_MQTT_OK;
 }
 

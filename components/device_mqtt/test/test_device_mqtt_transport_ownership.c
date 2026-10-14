@@ -1,4 +1,5 @@
 #include "device_mqtt_transport.h"
+#include "device_mqtt.h"
 
 #include <assert.h>
 #include <string.h>
@@ -28,6 +29,7 @@ static TickType_t current_ticks;
 static int published_message_id = 1;
 static bool deliver_publish_event = true;
 static esp_event_handler_t registered_event_handler;
+static unsigned int command_callback_count;
 
 #define TEST_MUTEX_COUNT 4
 
@@ -138,6 +140,7 @@ esp_err_t test_command_callback(
     (void)device_id;
     (void)payload;
     (void)payload_length;
+    ++command_callback_count;
     return ESP_OK;
 }
 
@@ -272,6 +275,26 @@ int main(void) {
         device_mqtt_transport_publish_ack(DEVICE_ID, "{\"ok\":true}") ==
         ESP_ERR_TIMEOUT
     );
+
+    {
+        char oversized_payload[DEVICE_MQTT_COMMAND_DATA_SIZE + 321] = {0};
+        memset(oversized_payload, 'a', sizeof(oversized_payload) - 1);
+        const char command_topic[] =
+            "sprout/v1/devices/device_demo_001/commands";
+        esp_mqtt_event_t command_event = {};
+        command_event.topic = (char *)command_topic;
+        command_event.topic_len = (int)strlen(command_topic);
+        command_event.data = oversized_payload;
+        command_event.data_len = (int)sizeof(oversized_payload) - 1;
+        command_event.total_data_len = command_event.data_len;
+        registered_event_handler(
+            NULL,
+            NULL,
+            MQTT_EVENT_DATA,
+            &command_event
+        );
+        assert(command_callback_count == 0);
+    }
 
     assert(device_mqtt_transport_stop() == ESP_OK);
     return 0;

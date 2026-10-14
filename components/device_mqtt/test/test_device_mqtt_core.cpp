@@ -59,6 +59,7 @@ void test_topic_identity_is_derived() {
 
 void test_topic_builders_round_trip() {
     char topic[DEVICE_MQTT_TOPIC_SIZE] = {0};
+    const char untouched = (char)0x7f;
     assert(
         device_mqtt_build_command_topic(
             DEVICE_ID,
@@ -100,6 +101,7 @@ void test_topic_builders_round_trip() {
         ) == DEVICE_MQTT_ERR_INVALID_TOPIC
     );
     char small[16] = {0};
+    small[0] = untouched;
     assert(
         device_mqtt_build_command_topic(
             DEVICE_ID,
@@ -107,6 +109,17 @@ void test_topic_builders_round_trip() {
             sizeof(small)
         ) == DEVICE_MQTT_ERR_FIELD_TOO_LONG
     );
+    assert(small[0] == '\0');
+
+    char zero_size[1] = {untouched};
+    assert(
+        device_mqtt_build_ack_topic(
+            DEVICE_ID,
+            zero_size,
+            0
+        ) == DEVICE_MQTT_ERR_FIELD_TOO_LONG
+    );
+    assert(zero_size[0] == untouched);
 }
 
 void test_valid_command_parses() {
