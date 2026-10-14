@@ -1846,4 +1846,77 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+Invoke-HostTest `
+    -Name 'volume_control_runtime' `
+    -Sources @(
+        (Join-Path $volumeControlRoot 'src/volume_control.c')
+        (Join-Path $volumeControlRoot 'test/stubs/config_store.c')
+        (Join-Path $volumeControlRoot 'test/test_volume_control_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $volumeControlRoot 'include')
+        (Join-Path $volumeControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_VOLUME_CONTROL_DEFAULT_PERCENT=40'
+        '-DCONFIG_VOLUME_CONTROL_MAX_PERCENT=70'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'volume_control_persistence' `
+    -Sources @(
+        (Join-Path $volumeControlRoot 'src/volume_control.c')
+        (Join-Path $volumeControlRoot 'test/stubs/config_store.c')
+        (Join-Path $volumeControlRoot 'test/test_volume_control_persistence.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $volumeControlRoot 'include')
+        (Join-Path $volumeControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_VOLUME_CONTROL_DEFAULT_PERCENT=40'
+        '-DCONFIG_VOLUME_CONTROL_MAX_PERCENT=70'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'volume_control_clamp' `
+    -Sources @(
+        (Join-Path $volumeControlRoot 'src/volume_control.c')
+        (Join-Path $volumeControlRoot 'test/stubs/config_store.c')
+        (Join-Path $volumeControlRoot 'test/test_volume_control_clamp.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $volumeControlRoot 'include')
+        (Join-Path $volumeControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_VOLUME_CONTROL_DEFAULT_PERCENT=40'
+        '-DCONFIG_VOLUME_CONTROL_MAX_PERCENT=70'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'volume_control_fallback' `
+    -Sources @(
+        (Join-Path $volumeControlRoot 'src/volume_control.c')
+        (Join-Path $volumeControlRoot 'test/stubs/config_store.c')
+        (Join-Path $volumeControlRoot 'test/test_volume_control_fallback.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $volumeControlRoot 'include')
+        (Join-Path $volumeControlRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_VOLUME_CONTROL_DEFAULT_PERCENT=40'
+        '-DCONFIG_VOLUME_CONTROL_MAX_PERCENT=70'
+    ) `
+    -Compiler $compiler
+
 Write-Host 'Host verification passed.'
