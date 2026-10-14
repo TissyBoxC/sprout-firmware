@@ -6,14 +6,22 @@
 
 #include "device_mqtt.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include "mqtt_client.h"
 
 static const char *const TAG = "device_mqtt_transport";
+// The broker acknowledgement is expected on the next event-loop turn. The
+// bound keeps an acknowledgement from turning into an unbounded blocking call.
+#define DEVICE_MQTT_ACK_TIMEOUT_MS 1000
+#define DEVICE_MQTT_ACK_QUEUE_LENGTH 4
 
 static esp_mqtt_client_handle_t device_mqtt_client;
 static bool device_mqtt_connected;
 static device_mqtt_command_callback_t device_mqtt_command_callback;
 static char device_mqtt_subscribed_device_id[DEVICE_MQTT_DEVICE_ID_SIZE];
+static QueueHandle_t device_mqtt_ack_event_queue;
 static char *device_mqtt_broker_url;
 static char *device_mqtt_ca_pem;
 static char *device_mqtt_client_certificate_pem;
@@ -45,6 +53,14 @@ static void device_mqtt_clear_credentials(void) {
     device_mqtt_clear_string(&device_mqtt_client_certificate_pem);
     device_mqtt_clear_string(&device_mqtt_ca_pem);
     device_mqtt_clear_string(&device_mqtt_broker_url);
+}
+
+static void device_mqtt_clear_ack_event_queue(void) {
+    if (device_mqtt_ack_event_queue == NULL) {
+        return;
+    }
+    vQueueDelete(device_mqtt_ack_event_queue);
+    device_mqtt_ack_event_queue = NULL;
 }
 
 static esp_err_t device_mqtt_copy_credentials(
@@ -121,6 +137,19 @@ static void device_mqtt_event_handler(
         case MQTT_EVENT_DISCONNECTED:
             device_mqtt_connected = false;
             break;
+
+        case MQTT_EVENT_PUBLISHED: {
+            if (device_mqtt_ack_event_queue == NULL) {
+                break;
+            }
+            const int message_id = event->msg_id;
+            (void)xQueueSend(
+                device_mqtt_ack_event_queue,
+                &message_id,
+                0
+            );
+            break;
+        }
 
         case MQTT_EVENT_DATA: {
             if (event->topic == NULL || event->data == NULL) {
@@ -233,6 +262,7 @@ esp_err_t device_mqtt_transport_start(
     if (device_mqtt_client != NULL) {
         device_mqtt_transport_stop();
     }
+    device_mqtt_clear_ack_event_queue();
 
     device_mqtt_command_callback = callback;
     device_mqtt_connected = false;
@@ -252,6 +282,17 @@ esp_err_t device_mqtt_transport_start(
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
         return copy_result;
+    }
+
+    device_mqtt_ack_event_queue = xQueueCreate(
+        DEVICE_MQTT_ACK_QUEUE_LENGTH,
+        sizeof(int)
+    );
+    if (device_mqtt_ack_event_queue == NULL) {
+        device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_credentials();
+        return ESP_ERR_NO_MEM;
     }
 
     const esp_mqtt_client_config_t client_config = {
@@ -295,6 +336,7 @@ esp_err_t device_mqtt_transport_start(
         device_mqtt_client = NULL;
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_ack_event_queue();
         device_mqtt_clear_credentials();
         return register_result;
     }
@@ -304,6 +346,7 @@ esp_err_t device_mqtt_transport_start(
         device_mqtt_client = NULL;
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_ack_event_queue();
         device_mqtt_clear_credentials();
         return start_result;
     }
@@ -315,6 +358,7 @@ esp_err_t device_mqtt_transport_stop(void) {
         device_mqtt_connected = false;
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_ack_event_queue();
         device_mqtt_clear_credentials();
         return ESP_OK;
     }
@@ -324,6 +368,7 @@ esp_err_t device_mqtt_transport_stop(void) {
     device_mqtt_connected = false;
     device_mqtt_command_callback = NULL;
     device_mqtt_subscribed_device_id[0] = '\0';
+    device_mqtt_clear_ack_event_queue();
     device_mqtt_clear_credentials();
     return result;
 }
@@ -343,10 +388,17 @@ esp_err_t device_mqtt_transport_publish_ack(
     if (!device_mqtt_transport_is_connected()) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (device_mqtt_ack_event_queue == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
     char topic[DEVICE_MQTT_TOPIC_SIZE] = {0};
     if (device_mqtt_build_ack_topic(device_id, topic, sizeof(topic)) !=
         DEVICE_MQTT_OK) {
         return ESP_ERR_INVALID_SIZE;
+    }
+    int stale_message_id = 0;
+    while (xQueueReceive(device_mqtt_ack_event_queue, &stale_message_id, 0) ==
+           pdTRUE) {
     }
     const int message_id = esp_mqtt_client_publish(
         device_mqtt_client,
@@ -356,5 +408,31 @@ esp_err_t device_mqtt_transport_publish_ack(
         1,
         0
     );
-    return message_id >= 0 ? ESP_OK : ESP_FAIL;
+    if (message_id < 0) {
+        return ESP_FAIL;
+    }
+
+    // ESP-MQTT returns a message id once the publish is queued. Only the
+    // matching MQTT_EVENT_PUBLISHED confirms that the broker accepted it.
+    // The event may arrive before publish returns, so queue the id in the
+    // event handler rather than relying on a transient shared flag.
+    const TickType_t deadline =
+        xTaskGetTickCount() + pdMS_TO_TICKS(DEVICE_MQTT_ACK_TIMEOUT_MS);
+    for (;;) {
+        const TickType_t now = xTaskGetTickCount();
+        if ((int32_t)(now - deadline) >= 0) {
+            return ESP_ERR_TIMEOUT;
+        }
+        int published_message_id = 0;
+        if (xQueueReceive(
+                device_mqtt_ack_event_queue,
+                &published_message_id,
+                deadline - now
+            ) != pdTRUE) {
+            return ESP_ERR_TIMEOUT;
+        }
+        if (published_message_id == message_id) {
+            return ESP_OK;
+        }
+    }
 }

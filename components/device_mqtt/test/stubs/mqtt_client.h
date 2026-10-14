@@ -21,6 +21,7 @@ typedef enum esp_mqtt_event_id_t {
     MQTT_EVENT_ERROR = 0,
     MQTT_EVENT_CONNECTED,
     MQTT_EVENT_DISCONNECTED,
+    MQTT_EVENT_PUBLISHED,
     MQTT_EVENT_DATA,
 } esp_mqtt_event_id_t;
 
@@ -44,6 +45,7 @@ typedef struct esp_mqtt_event_t {
     char *data;
     int data_len;
     int total_data_len;
+    int msg_id;
     esp_mqtt_error_codes_t *error_handle;
 } esp_mqtt_event_t;
 

@@ -3,6 +3,9 @@
 #include <assert.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include "mqtt_client.h"
 
 static const char *const DEVICE_ID = "device_demo_001";
@@ -20,6 +23,75 @@ typedef struct {
 
 static mock_client_t active_client;
 static bool client_started;
+static TickType_t current_ticks;
+static int published_message_id = 1;
+static bool deliver_publish_event = true;
+static esp_event_handler_t registered_event_handler;
+
+#define TEST_QUEUE_LENGTH 8
+
+typedef struct {
+    int items[TEST_QUEUE_LENGTH];
+    unsigned long head;
+    unsigned long tail;
+    unsigned long count;
+} test_queue_t;
+
+QueueHandle_t xQueueCreate(
+    unsigned long length,
+    unsigned long item_size
+) {
+    assert(length <= TEST_QUEUE_LENGTH);
+    assert(item_size == sizeof(int));
+    static test_queue_t queue;
+    memset(&queue, 0, sizeof(queue));
+    return &queue;
+}
+
+void vQueueDelete(QueueHandle_t queue) {
+    (void)queue;
+}
+
+int xQueueSend(
+    QueueHandle_t queue,
+    const void *item,
+    TickType_t timeout
+) {
+    (void)timeout;
+    test_queue_t *test_queue = (test_queue_t *)queue;
+    if (test_queue == NULL || item == NULL ||
+        test_queue->count == TEST_QUEUE_LENGTH) {
+        return pdFALSE;
+    }
+    test_queue->items[test_queue->tail] = *(const int *)item;
+    test_queue->tail = (test_queue->tail + 1) % TEST_QUEUE_LENGTH;
+    ++test_queue->count;
+    return pdTRUE;
+}
+
+int xQueueReceive(
+    QueueHandle_t queue,
+    void *item,
+    TickType_t timeout
+) {
+    test_queue_t *test_queue = (test_queue_t *)queue;
+    if (test_queue == NULL || item == NULL || test_queue->count == 0) {
+        current_ticks += timeout;
+        return pdFALSE;
+    }
+    *(int *)item = test_queue->items[test_queue->head];
+    test_queue->head = (test_queue->head + 1) % TEST_QUEUE_LENGTH;
+    --test_queue->count;
+    return pdTRUE;
+}
+
+TickType_t xTaskGetTickCount(void) {
+    return current_ticks;
+}
+
+void vTaskDelay(TickType_t ticks) {
+    current_ticks += ticks;
+}
 
 esp_err_t test_command_callback(
     const char *device_id,
@@ -52,8 +124,8 @@ esp_err_t esp_mqtt_client_register_event(
 ) {
     (void)client;
     (void)event;
-    (void)event_handler;
     (void)event_handler_arg;
+    registered_event_handler = event_handler;
     return ESP_OK;
 }
 
@@ -99,6 +171,16 @@ int esp_mqtt_client_publish(
     (void)len;
     (void)qos;
     (void)retain;
+    if (deliver_publish_event && registered_event_handler != NULL) {
+        esp_mqtt_event_t event = {};
+        event.msg_id = published_message_id;
+        registered_event_handler(
+            NULL,
+            NULL,
+            MQTT_EVENT_PUBLISHED,
+            &event
+        );
+    }
     return 1;
 }
 
@@ -123,6 +205,17 @@ int main(void) {
         ) == ESP_OK
     );
     assert(client_started);
+    assert(registered_event_handler != NULL);
+    {
+        esp_mqtt_event_t connected_event = {};
+        connected_event.client = (esp_mqtt_client_handle_t)&active_client;
+        registered_event_handler(
+            NULL,
+            NULL,
+            MQTT_EVENT_CONNECTED,
+            &connected_event
+        );
+    }
 
     // Caller-owned buffers from the real service are cleared immediately after
     // start returns. The client must still see the transport's retained copy.
@@ -135,6 +228,13 @@ int main(void) {
     assert(strcmp(active_client.ca, CA_PEM) == 0);
     assert(strcmp(active_client.certificate, CLIENT_CERTIFICATE_PEM) == 0);
     assert(strcmp(active_client.key, CLIENT_KEY_PEM) == 0);
+
+    assert(device_mqtt_transport_publish_ack(DEVICE_ID, "{\"ok\":true}") == ESP_OK);
+    deliver_publish_event = false;
+    assert(
+        device_mqtt_transport_publish_ack(DEVICE_ID, "{\"ok\":true}") ==
+        ESP_ERR_TIMEOUT
+    );
 
     assert(device_mqtt_transport_stop() == ESP_OK);
     return 0;

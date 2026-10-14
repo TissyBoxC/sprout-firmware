@@ -58,7 +58,8 @@ bool device_mqtt_transport_is_connected(void);
  *
  * The topic is built from the supplied device id. A publish attempted while
  * disconnected returns ESP_ERR_INVALID_STATE so the runtime can fall back to
- * the authenticated HTTP acknowledgement route.
+ * the authenticated HTTP acknowledgement route. Success means the broker
+ * acknowledged the QoS 1 publish; enqueueing alone is not treated as delivery.
  */
 esp_err_t device_mqtt_transport_publish_ack(
     const char *device_id,

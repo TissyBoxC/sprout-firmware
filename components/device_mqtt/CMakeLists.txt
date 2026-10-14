@@ -11,6 +11,6 @@ endif()
 idf_component_register(
     SRCS ${device_mqtt_sources}
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES espressif__mqtt
+    PRIV_REQUIRES espressif__mqtt freertos
     REQUIRES module_registry
 )
