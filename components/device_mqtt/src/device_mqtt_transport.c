@@ -1,5 +1,6 @@
 #include "device_mqtt_transport.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +9,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
 
@@ -26,6 +28,67 @@ static char *device_mqtt_broker_url;
 static char *device_mqtt_ca_pem;
 static char *device_mqtt_client_certificate_pem;
 static char *device_mqtt_client_key_pem;
+static SemaphoreHandle_t device_mqtt_state_mutex;
+static StaticSemaphore_t device_mqtt_state_mutex_buffer;
+static SemaphoreHandle_t device_mqtt_publish_mutex;
+static StaticSemaphore_t device_mqtt_publish_mutex_buffer;
+static atomic_flag device_mqtt_lock_init_in_progress = ATOMIC_FLAG_INIT;
+static atomic_bool device_mqtt_locks_ready = ATOMIC_VAR_INIT(false);
+
+static void device_mqtt_ensure_locks(void) {
+    if (atomic_load_explicit(&device_mqtt_locks_ready, memory_order_acquire)) {
+        return;
+    }
+    if (!atomic_flag_test_and_set_explicit(
+            &device_mqtt_lock_init_in_progress,
+            memory_order_acq_rel
+        )) {
+        device_mqtt_state_mutex = xSemaphoreCreateMutexStatic(
+            &device_mqtt_state_mutex_buffer
+        );
+        device_mqtt_publish_mutex = xSemaphoreCreateMutexStatic(
+            &device_mqtt_publish_mutex_buffer
+        );
+        atomic_store_explicit(
+            &device_mqtt_locks_ready,
+            true,
+            memory_order_release
+        );
+        return;
+    }
+    while (!atomic_load_explicit(
+        &device_mqtt_locks_ready,
+        memory_order_acquire
+    )) {
+        vTaskDelay(1);
+    }
+}
+
+static void device_mqtt_state_lock(void) {
+    device_mqtt_ensure_locks();
+    if (device_mqtt_state_mutex != NULL) {
+        (void)xSemaphoreTake(device_mqtt_state_mutex, portMAX_DELAY);
+    }
+}
+
+static void device_mqtt_state_unlock(void) {
+    if (device_mqtt_state_mutex != NULL) {
+        (void)xSemaphoreGive(device_mqtt_state_mutex);
+    }
+}
+
+static void device_mqtt_publish_lock(void) {
+    device_mqtt_ensure_locks();
+    if (device_mqtt_publish_mutex != NULL) {
+        (void)xSemaphoreTake(device_mqtt_publish_mutex, portMAX_DELAY);
+    }
+}
+
+static void device_mqtt_publish_unlock(void) {
+    if (device_mqtt_publish_mutex != NULL) {
+        (void)xSemaphoreGive(device_mqtt_publish_mutex);
+    }
+}
 
 static esp_err_t device_mqtt_copy_string(const char *value, char **copy_out) {
     *copy_out = NULL;
@@ -63,6 +126,23 @@ static void device_mqtt_clear_ack_event_queue(void) {
     device_mqtt_ack_event_queue = NULL;
 }
 
+static void device_mqtt_destroy_client(void) {
+    if (device_mqtt_client != NULL) {
+        esp_mqtt_client_handle_t client = device_mqtt_client;
+        device_mqtt_client = NULL;
+        (void)esp_mqtt_client_stop(client);
+        (void)esp_mqtt_client_destroy(client);
+    }
+}
+
+static void device_mqtt_release_state(void) {
+    device_mqtt_connected = false;
+    device_mqtt_command_callback = NULL;
+    device_mqtt_subscribed_device_id[0] = '\0';
+    device_mqtt_clear_ack_event_queue();
+    device_mqtt_clear_credentials();
+}
+
 static esp_err_t device_mqtt_copy_credentials(
     const char *broker_url,
     const char *ca_pem,
@@ -94,13 +174,16 @@ static esp_err_t device_mqtt_copy_credentials(
     return result;
 }
 
-static void device_mqtt_subscribe_if_ready(esp_mqtt_client_handle_t client) {
-    if (client == NULL || device_mqtt_subscribed_device_id[0] == '\0') {
+static void device_mqtt_subscribe_if_ready(
+    esp_mqtt_client_handle_t client,
+    const char *device_id
+) {
+    if (client == NULL || device_id == NULL || device_id[0] == '\0') {
         return;
     }
     char topic[DEVICE_MQTT_TOPIC_SIZE] = {0};
     if (device_mqtt_build_command_topic(
-            device_mqtt_subscribed_device_id,
+            device_id,
             topic,
             sizeof(topic)
         ) != DEVICE_MQTT_OK) {
@@ -129,25 +212,41 @@ static void device_mqtt_event_handler(
     }
 
     switch ((esp_mqtt_event_id_t)event_id) {
-        case MQTT_EVENT_CONNECTED:
+        case MQTT_EVENT_CONNECTED: {
+            device_mqtt_state_lock();
             device_mqtt_connected = true;
-            device_mqtt_subscribe_if_ready(event->client);
+            char device_id[sizeof(device_mqtt_subscribed_device_id)] = {0};
+            snprintf(
+                device_id,
+                sizeof(device_id),
+                "%s",
+                device_mqtt_subscribed_device_id
+            );
+            device_mqtt_state_unlock();
+            device_mqtt_subscribe_if_ready(event->client, device_id);
             break;
+        }
 
         case MQTT_EVENT_DISCONNECTED:
+            device_mqtt_state_lock();
             device_mqtt_connected = false;
+            device_mqtt_state_unlock();
             break;
 
         case MQTT_EVENT_PUBLISHED: {
-            if (device_mqtt_ack_event_queue == NULL) {
+            device_mqtt_state_lock();
+            QueueHandle_t queue = device_mqtt_ack_event_queue;
+            if (queue == NULL) {
+                device_mqtt_state_unlock();
                 break;
             }
             const int message_id = event->msg_id;
             (void)xQueueSend(
-                device_mqtt_ack_event_queue,
+                queue,
                 &message_id,
                 0
             );
+            device_mqtt_state_unlock();
             break;
         }
 
@@ -259,10 +358,12 @@ esp_err_t device_mqtt_transport_start(
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (device_mqtt_client != NULL) {
-        device_mqtt_transport_stop();
-    }
-    device_mqtt_clear_ack_event_queue();
+    device_mqtt_publish_lock();
+    device_mqtt_state_lock();
+    device_mqtt_destroy_client();
+    device_mqtt_release_state();
+    device_mqtt_state_unlock();
+    device_mqtt_state_lock();
 
     device_mqtt_command_callback = callback;
     device_mqtt_connected = false;
@@ -281,6 +382,8 @@ esp_err_t device_mqtt_transport_start(
     if (copy_result != ESP_OK) {
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return copy_result;
     }
 
@@ -292,6 +395,8 @@ esp_err_t device_mqtt_transport_start(
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
         device_mqtt_clear_credentials();
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return ESP_ERR_NO_MEM;
     }
 
@@ -323,8 +428,11 @@ esp_err_t device_mqtt_transport_start(
         device_mqtt_command_callback = NULL;
         device_mqtt_subscribed_device_id[0] = '\0';
         device_mqtt_clear_credentials();
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return ESP_FAIL;
     }
+    device_mqtt_state_unlock();
     const esp_err_t register_result = esp_mqtt_client_register_event(
         device_mqtt_client,
         ESP_EVENT_ANY_ID,
@@ -332,49 +440,58 @@ esp_err_t device_mqtt_transport_start(
         NULL
     );
     if (register_result != ESP_OK) {
-        esp_mqtt_client_destroy(device_mqtt_client);
-        device_mqtt_client = NULL;
-        device_mqtt_command_callback = NULL;
-        device_mqtt_subscribed_device_id[0] = '\0';
-        device_mqtt_clear_ack_event_queue();
-        device_mqtt_clear_credentials();
+        device_mqtt_state_lock();
+        device_mqtt_destroy_client();
+        device_mqtt_release_state();
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return register_result;
     }
     const esp_err_t start_result = esp_mqtt_client_start(device_mqtt_client);
     if (start_result != ESP_OK) {
-        esp_mqtt_client_destroy(device_mqtt_client);
-        device_mqtt_client = NULL;
-        device_mqtt_command_callback = NULL;
-        device_mqtt_subscribed_device_id[0] = '\0';
-        device_mqtt_clear_ack_event_queue();
-        device_mqtt_clear_credentials();
+        device_mqtt_state_lock();
+        device_mqtt_destroy_client();
+        device_mqtt_release_state();
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return start_result;
     }
+    device_mqtt_publish_unlock();
     return ESP_OK;
 }
 
 esp_err_t device_mqtt_transport_stop(void) {
+    device_mqtt_publish_lock();
+    device_mqtt_state_lock();
     if (device_mqtt_client == NULL) {
-        device_mqtt_connected = false;
-        device_mqtt_command_callback = NULL;
-        device_mqtt_subscribed_device_id[0] = '\0';
-        device_mqtt_clear_ack_event_queue();
-        device_mqtt_clear_credentials();
+        device_mqtt_release_state();
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
         return ESP_OK;
     }
-    const esp_err_t result = esp_mqtt_client_stop(device_mqtt_client);
-    esp_mqtt_client_destroy(device_mqtt_client);
+    esp_mqtt_client_handle_t client = device_mqtt_client;
     device_mqtt_client = NULL;
     device_mqtt_connected = false;
-    device_mqtt_command_callback = NULL;
-    device_mqtt_subscribed_device_id[0] = '\0';
-    device_mqtt_clear_ack_event_queue();
-    device_mqtt_clear_credentials();
+    device_mqtt_state_unlock();
+
+    const esp_err_t result = esp_mqtt_client_stop(client);
+    (void)esp_mqtt_client_destroy(client);
+
+    device_mqtt_state_lock();
+    device_mqtt_release_state();
+    device_mqtt_state_unlock();
+    device_mqtt_publish_unlock();
     return result;
 }
 
 bool device_mqtt_transport_is_connected(void) {
-    return device_mqtt_client != NULL && device_mqtt_connected;
+    device_mqtt_state_lock();
+    const bool connected =
+        device_mqtt_client != NULL &&
+        device_mqtt_command_callback != NULL &&
+        device_mqtt_connected;
+    device_mqtt_state_unlock();
+    return connected;
 }
 
 esp_err_t device_mqtt_transport_publish_ack(
@@ -385,23 +502,41 @@ esp_err_t device_mqtt_transport_publish_ack(
         ack_json == NULL || ack_json[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!device_mqtt_transport_is_connected()) {
+    device_mqtt_state_lock();
+    if (device_mqtt_client == NULL ||
+        device_mqtt_command_callback == NULL ||
+        !device_mqtt_connected) {
+        device_mqtt_state_unlock();
         return ESP_ERR_INVALID_STATE;
     }
     if (device_mqtt_ack_event_queue == NULL) {
+        device_mqtt_state_unlock();
         return ESP_ERR_INVALID_STATE;
     }
     char topic[DEVICE_MQTT_TOPIC_SIZE] = {0};
     if (device_mqtt_build_ack_topic(device_id, topic, sizeof(topic)) !=
         DEVICE_MQTT_OK) {
+        device_mqtt_state_unlock();
         return ESP_ERR_INVALID_SIZE;
+    }
+    esp_mqtt_client_handle_t client = device_mqtt_client;
+    device_mqtt_state_unlock();
+
+    device_mqtt_publish_lock();
+    device_mqtt_state_lock();
+    if (device_mqtt_client != client || !device_mqtt_connected ||
+        device_mqtt_ack_event_queue == NULL) {
+        device_mqtt_state_unlock();
+        device_mqtt_publish_unlock();
+        return ESP_ERR_INVALID_STATE;
     }
     int stale_message_id = 0;
     while (xQueueReceive(device_mqtt_ack_event_queue, &stale_message_id, 0) ==
            pdTRUE) {
     }
+    device_mqtt_state_unlock();
     const int message_id = esp_mqtt_client_publish(
-        device_mqtt_client,
+        client,
         topic,
         ack_json,
         0,
@@ -409,6 +544,7 @@ esp_err_t device_mqtt_transport_publish_ack(
         0
     );
     if (message_id < 0) {
+        device_mqtt_publish_unlock();
         return ESP_FAIL;
     }
 
@@ -421,17 +557,27 @@ esp_err_t device_mqtt_transport_publish_ack(
     for (;;) {
         const TickType_t now = xTaskGetTickCount();
         if ((int32_t)(now - deadline) >= 0) {
+            device_mqtt_publish_unlock();
             return ESP_ERR_TIMEOUT;
         }
         int published_message_id = 0;
+        device_mqtt_state_lock();
+        QueueHandle_t queue = device_mqtt_ack_event_queue;
+        device_mqtt_state_unlock();
+        if (queue == NULL) {
+            device_mqtt_publish_unlock();
+            return ESP_ERR_INVALID_STATE;
+        }
         if (xQueueReceive(
-                device_mqtt_ack_event_queue,
+                queue,
                 &published_message_id,
                 deadline - now
             ) != pdTRUE) {
+            device_mqtt_publish_unlock();
             return ESP_ERR_TIMEOUT;
         }
         if (published_message_id == message_id) {
+            device_mqtt_publish_unlock();
             return ESP_OK;
         }
     }

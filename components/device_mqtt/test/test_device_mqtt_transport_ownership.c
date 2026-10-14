@@ -5,6 +5,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mqtt_client.h"
 
@@ -27,6 +28,42 @@ static TickType_t current_ticks;
 static int published_message_id = 1;
 static bool deliver_publish_event = true;
 static esp_event_handler_t registered_event_handler;
+
+#define TEST_MUTEX_COUNT 4
+
+typedef struct {
+    int locked;
+} test_mutex_t;
+
+static test_mutex_t test_mutexes[TEST_MUTEX_COUNT];
+static unsigned long test_mutex_count;
+
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *buffer) {
+    assert(test_mutex_count < TEST_MUTEX_COUNT);
+    assert(buffer != NULL);
+    test_mutex_t *mutex = &test_mutexes[test_mutex_count++];
+    mutex->locked = 0;
+    return (SemaphoreHandle_t)mutex;
+}
+
+int xSemaphoreTake(SemaphoreHandle_t semaphore, TickType_t timeout) {
+    (void)timeout;
+    test_mutex_t *mutex = (test_mutex_t *)semaphore;
+    if (mutex == NULL || mutex->locked) {
+        return pdFALSE;
+    }
+    mutex->locked = 1;
+    return pdTRUE;
+}
+
+int xSemaphoreGive(SemaphoreHandle_t semaphore) {
+    test_mutex_t *mutex = (test_mutex_t *)semaphore;
+    if (mutex == NULL || !mutex->locked) {
+        return pdFALSE;
+    }
+    mutex->locked = 0;
+    return pdTRUE;
+}
 
 #define TEST_QUEUE_LENGTH 8
 
