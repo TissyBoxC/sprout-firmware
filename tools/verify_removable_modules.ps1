@@ -73,7 +73,7 @@ function Remove-OptionalModule {
         $moduleMacro,
         $ModuleName
     $registrationPattern =
-        '(?ms)^#if CONFIG_FEATURE_{0}\r?\n\s*ESP_ERROR_CHECK\(module_registry_add\({1}_module_descriptor\(\)\)\);\r?\n#endif\r?\n' -f
+        '(?ms)^#if CONFIG_FEATURE_{0}[ \t]*\r?\n(?:(?!#endif).)*?module_registry_add\(\s*{1}_module_descriptor\(\)\s*\)\s*\)\s*;[ \t]*\r?\n#endif\r?\n' -f
         $moduleMacro,
         $ModuleName
     $composition = $composition -replace $includePattern, ''
@@ -100,6 +100,89 @@ function Remove-OptionalModule {
     )
 }
 
+function Assert-NoResidualRemovedDependency {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$RemovedModules
+    )
+
+    $removed = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]$RemovedModules,
+        [System.StringComparer]::Ordinal
+    )
+    $componentsRoot = Join-Path $ProjectPath 'components'
+    if (-not (Test-Path -LiteralPath $componentsRoot)) {
+        return
+    }
+
+    $residualDependencies = New-Object System.Collections.Generic.List[string]
+    Get-ChildItem -LiteralPath $componentsRoot -Directory | ForEach-Object {
+        $component = $_.Name
+        $cmakePath = Join-Path $_.FullName 'CMakeLists.txt'
+        if (-not (Test-Path -LiteralPath $cmakePath)) {
+            return
+        }
+
+        # Collect every hard dependency source: list(APPEND <...>requires ...)
+        # variables and each REQUIRES / PRIV_REQUIRES keyword block inside the
+        # register call. Optional edges may dangle because
+        # idf_component_optional_requires is a no-op for an absent component.
+        $source = Get-Content -LiteralPath $cmakePath -Raw
+        $dependencyText = New-Object System.Text.StringBuilder
+        foreach ($listMatch in [regex]::Matches(
+            $source,
+            '(?ms)list\(APPEND\s+\w*requires\s+(?<deps>.*?)\)'
+        )) {
+            [void]$dependencyText.AppendLine($listMatch.Groups['deps'].Value)
+        }
+        $registerMatch = [regex]::Match(
+            $source,
+            '(?ms)idf_component_register\((?<body>.*?)\)'
+        )
+        if ($registerMatch.Success) {
+            $body = $registerMatch.Groups['body'].Value
+            # Walk the register block line by line: a REQUIRES / PRIV_REQUIRES
+            # keyword starts a dependency list that continues until the next
+            # keyword or the end of the block. A single regex with a
+            # lookahead can match the keyword itself and capture nothing, so
+            # the line walk keeps every component name.
+            $collecting = $false
+            foreach ($line in ($body -split "\r?\n")) {
+                if ($line -match '^\s*(?:REQUIRES|PRIV_REQUIRES)\b') {
+                    $collecting = $true
+                    $remainder = $line -replace '^\s*(?:REQUIRES|PRIV_REQUIRES)\b', ''
+                    [void]$dependencyText.AppendLine($remainder)
+                    continue
+                }
+                if ($line -match '^\s*(?:SRCS|INCLUDE_DIRS|PRIV_INCLUDE_DIRS|WHOLE_ARCHIVE|LDFRAGMENTS)\b') {
+                    $collecting = $false
+                    continue
+                }
+                if ($collecting) {
+                    [void]$dependencyText.AppendLine($line)
+                }
+            }
+        }
+        foreach ($token in [regex]::Matches(
+            $dependencyText.ToString(),
+            '\b([a-z][a-z0-9_]*)\b'
+        )) {
+            $dependency = $token.Groups[1].Value
+            if ($removed.Contains($dependency)) {
+                $residualDependencies.Add("$component -> $dependency")
+            }
+        }
+    }
+
+    if ($residualDependencies.Count -gt 0) {
+        $details = ($residualDependencies | Sort-Object) -join '; '
+        throw "Remaining components still hard-require removed modules: $details"
+    }
+}
+
 function Test-OptionalModuleRemoval {
     param(
         [Parameter(Mandatory = $true)]
@@ -107,6 +190,70 @@ function Test-OptionalModuleRemoval {
 
         [Parameter(Mandatory = $true)]
         [string]$PlatformIoCommand
+    )
+
+    # The *_sync companions and connectivity_report are Kconfig-gated behind the
+    # modules below, but ESP-IDF still evaluates every component directory it
+    # can see and resolves each component's REQUIRES list. A companion that is
+    # left in place therefore keeps a hard edge to a deleted component and
+    # fails at the configure step, so it has to leave the graph with the module
+    # it hard-requires.
+    $removableModules = @(
+        'ui_text_sync'
+        'vision_sync'
+        'theme_package_sync'
+        'english_course_sync'
+        'playback_request_sync'
+        'playback_history_sync'
+        'local_command_sync'
+        'favorites_sync'
+        'connectivity_report'
+        'ui_text'
+        'content_filter'
+        'camera_vision'
+        'camera_capture'
+        'theme_package'
+        'companionship'
+        'growth_record'
+        'habit_reminder'
+        'long_term_memory'
+        'english_course'
+        'playback_request'
+        'local_command'
+        'offline_content'
+        'favorites'
+        'playback_history'
+        'content_package_manager'
+        'content_downloader'
+        'content_library'
+        'voice_session'
+        'privacy_guard'
+        'conversation_context'
+        'child_prompt_profile'
+        'transport_security'
+        'factory_reset'
+        'led_indicator'
+        'button_input'
+        'wake_feedback'
+        'voice_wake'
+        'diagnostic_reporter'
+        'device_message'
+        'device_mqtt'
+        'device_runtime_reporter'
+        'provisioning_reporter'
+        'parent_control_runtime'
+        'usage_ledger'
+        'parent_policy'
+        'device_provisioning'
+        'offline_fallback'
+        'network_quality'
+        'prompt_tone'
+        'audio_output'
+        'playback_queue'
+        'volume_control'
+        'audio_input'
+        'audio_pipeline'
+        'audio_codec'
     )
 
     # Keep the copied project path short. ESP-IDF generates deeply nested
@@ -123,58 +270,14 @@ function Test-OptionalModuleRemoval {
             Copy-Item -Destination $temporaryRoot -Recurse
         # Remove dependents before the modules they require, so the remaining
         # CMake graph never references a component that is already gone.
-        foreach ($moduleName in @(
-            'ui_text'
-            'content_filter'
-            'camera_vision'
-            'camera_capture'
-            'theme_package'
-            'companionship'
-            'growth_record'
-            'habit_reminder'
-            'long_term_memory'
-            'english_course'
-            'playback_request'
-            'local_command'
-            'offline_content'
-            'favorites'
-            'playback_history'
-            'content_package_manager'
-            'content_downloader'
-            'content_library'
-            'voice_session'
-            'privacy_guard'
-            'conversation_context'
-            'child_prompt_profile'
-            'transport_security'
-            'factory_reset'
-            'led_indicator'
-            'button_input'
-            'wake_feedback'
-            'voice_wake'
-            'diagnostic_reporter'
-            'device_message'
-            'device_mqtt'
-            'device_runtime_reporter'
-            'provisioning_reporter'
-            'parent_control_runtime'
-            'usage_ledger'
-            'parent_policy'
-            'device_provisioning'
-            'offline_fallback'
-            'network_quality'
-            'prompt_tone'
-            'audio_output'
-            'playback_queue'
-            'volume_control'
-            'audio_input'
-            'audio_pipeline'
-            'audio_codec'
-        )) {
+        foreach ($moduleName in $removableModules) {
             Remove-OptionalModule `
                 -ProjectPath $temporaryRoot `
                 -ModuleName $moduleName
         }
+        Assert-NoResidualRemovedDependency `
+            -ProjectPath $temporaryRoot `
+            -RemovedModules $removableModules
         Invoke-PlatformIoBuild `
             -ProjectPath $temporaryRoot `
             -Environments @('esp32-s3-n16r8') `
