@@ -25,6 +25,7 @@ set(device_runtime_reporter_priv_requires
     esp_app_format
     esp_http_client
     esp-tls
+    freertos
     mbedtls
 )
 
