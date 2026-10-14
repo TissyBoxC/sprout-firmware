@@ -281,6 +281,7 @@ static esp_err_t device_runtime_mqtt_start_if_configured(void) {
     if (result != ESP_OK) {
         // Keep the Wi-Fi observer eligible to retry the configured channel
         // after a transient broker or credential failure.
+        (void)device_runtime_reporter_set_mqtt_ack_publisher(NULL);
         device_runtime_mqtt_service_device_id[0] = '\0';
     }
     device_runtime_mqtt_clear_pem(&key_pem);
