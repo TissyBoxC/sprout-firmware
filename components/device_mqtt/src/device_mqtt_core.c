@@ -26,7 +26,7 @@ typedef struct {
 } device_mqtt_envelope_fields_t;
 
 typedef struct {
-    char command_ids[DEVICE_MQTT_DEDUPE_CAPACITY][DEVICE_MQTT_COMMAND_ID_SIZE];
+    device_mqtt_command_record_t records[DEVICE_MQTT_DEDUPE_CAPACITY];
     size_t count;
     size_t next;
 } device_mqtt_ledger_t;
@@ -1218,22 +1218,36 @@ device_mqtt_error_t device_mqtt_parse_privacy_consent(
     return DEVICE_MQTT_OK;
 }
 
-bool device_mqtt_is_duplicate(const char *command_id) {
-    if (command_id == NULL || command_id[0] == '\0') {
-        return false;
+device_mqtt_error_t device_mqtt_lookup_command(
+    const char *command_id,
+    device_mqtt_command_record_t *command_out
+) {
+    if (command_id == NULL || command_out == NULL) {
+        return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (command_id[0] == '\0' ||
+        !device_mqtt_command_id_is_valid(
+            command_id,
+            strlen(command_id)
+        )) {
+        return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
     }
     const size_t length = strlen(command_id);
     for (size_t index = 0; index < device_mqtt_ledger.count; ++index) {
-        if (strlen(device_mqtt_ledger.command_ids[index]) == length &&
-            memcmp(
-                device_mqtt_ledger.command_ids[index],
-                command_id,
-                length
-            ) == 0) {
-            return true;
+        const device_mqtt_command_record_t *record =
+            &device_mqtt_ledger.records[index];
+        if (strlen(record->command_id) == length &&
+            memcmp(record->command_id, command_id, length) == 0) {
+            *command_out = *record;
+            return DEVICE_MQTT_OK;
         }
     }
-    return false;
+    return DEVICE_MQTT_ERR_NOT_FOUND;
+}
+
+bool device_mqtt_is_duplicate(const char *command_id) {
+    device_mqtt_command_record_t record = {};
+    return device_mqtt_lookup_command(command_id, &record) == DEVICE_MQTT_OK;
 }
 
 device_mqtt_error_t device_mqtt_record_command(
@@ -1249,7 +1263,9 @@ device_mqtt_error_t device_mqtt_record_command(
         )) {
         return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
     }
-    if (device_mqtt_is_duplicate(command->command_id)) {
+    device_mqtt_command_record_t existing = {};
+    if (device_mqtt_lookup_command(command->command_id, &existing) ==
+        DEVICE_MQTT_OK) {
         *status_out = DEVICE_MQTT_COMMAND_STATUS_DUPLICATE;
         return DEVICE_MQTT_OK;
     }
@@ -1257,11 +1273,22 @@ device_mqtt_error_t device_mqtt_record_command(
             DEVICE_MQTT_DEDUPE_CAPACITY
         ? device_mqtt_ledger.count
         : device_mqtt_ledger.next;
+    memset(
+        &device_mqtt_ledger.records[slot],
+        0,
+        sizeof(device_mqtt_ledger.records[slot])
+    );
     snprintf(
-        device_mqtt_ledger.command_ids[slot],
-        sizeof(device_mqtt_ledger.command_ids[slot]),
+        device_mqtt_ledger.records[slot].command_id,
+        sizeof(device_mqtt_ledger.records[slot].command_id),
         "%s",
         command->command_id
+    );
+    snprintf(
+        device_mqtt_ledger.records[slot].request_id,
+        sizeof(device_mqtt_ledger.records[slot].request_id),
+        "%s",
+        command->request_id
     );
     if (device_mqtt_ledger.count < DEVICE_MQTT_DEDUPE_CAPACITY) {
         device_mqtt_ledger.count += 1;
@@ -1271,6 +1298,61 @@ device_mqtt_error_t device_mqtt_record_command(
     }
     *status_out = DEVICE_MQTT_COMMAND_STATUS_NEW;
     return DEVICE_MQTT_OK;
+}
+
+device_mqtt_error_t device_mqtt_complete_command(
+    const char *command_id,
+    const char *request_id,
+    const char *status,
+    const char *result_code
+) {
+    if (command_id == NULL || request_id == NULL || status == NULL ||
+        result_code == NULL) {
+        return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (strcmp(status, "acknowledged") != 0 &&
+        strcmp(status, "failed") != 0) {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    if (!device_mqtt_json_token_is_safe(
+            request_id,
+            DEVICE_MQTT_REQUEST_ID_SIZE - 1
+        ) ||
+        !device_mqtt_json_token_is_safe(
+            result_code,
+            DEVICE_MQTT_ACK_RESULT_CODE_SIZE - 1
+        )) {
+        return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
+    }
+    const size_t length = strlen(command_id);
+    for (size_t index = 0; index < device_mqtt_ledger.count; ++index) {
+        device_mqtt_command_record_t *record =
+            &device_mqtt_ledger.records[index];
+        if (strlen(record->command_id) == length &&
+            memcmp(record->command_id, command_id, length) == 0) {
+            snprintf(
+                record->request_id,
+                sizeof(record->request_id),
+                "%s",
+                request_id
+            );
+            snprintf(
+                record->status,
+                sizeof(record->status),
+                "%s",
+                status
+            );
+            snprintf(
+                record->result_code,
+                sizeof(record->result_code),
+                "%s",
+                result_code
+            );
+            record->completed = true;
+            return DEVICE_MQTT_OK;
+        }
+    }
+    return DEVICE_MQTT_ERR_NOT_FOUND;
 }
 
 static esp_err_t device_mqtt_append(
@@ -1438,6 +1520,8 @@ const char *device_mqtt_error_name(device_mqtt_error_t error) {
             return "invalid_topic";
         case DEVICE_MQTT_ERR_DEVICE_MISMATCH:
             return "device_mismatch";
+        case DEVICE_MQTT_ERR_NOT_FOUND:
+            return "not_found";
         case DEVICE_MQTT_ERR_INVALID_JSON:
             return "invalid_json";
         case DEVICE_MQTT_ERR_UNSUPPORTED_SCHEMA:

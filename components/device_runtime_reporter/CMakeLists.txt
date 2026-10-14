@@ -81,6 +81,13 @@ if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
     list(APPEND device_runtime_reporter_requires "privacy_guard")
 endif()
 
+# The MQTT command bridge is optional. When the contract component is absent
+# the runtime keeps the authenticated HTTP polling and acknowledgement path.
+if(CONFIG_FEATURE_DEVICE_MQTT AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../device_mqtt/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "device_mqtt")
+endif()
+
 idf_component_register(
     SRCS ${device_runtime_reporter_sources}
     INCLUDE_DIRS "include"

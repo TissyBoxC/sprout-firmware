@@ -33,7 +33,7 @@ extern "C" {
  */
 #define DEVICE_MQTT_COMMAND_DATA_SIZE 1024
 
-/** @brief Number of recent command ids retained for duplicate detection. */
+/** @brief Number of recent command outcomes retained for duplicate detection. */
 #define DEVICE_MQTT_DEDUPE_CAPACITY 16
 
 /** @brief Stable command channel schema accepted by this component. */
@@ -96,6 +96,26 @@ typedef enum {
     DEVICE_MQTT_COMMAND_STATUS_DUPLICATE,
 } device_mqtt_command_status_t;
 
+/** @brief Maximum acknowledgement status length retained by the ledger. */
+#define DEVICE_MQTT_ACK_STATUS_SIZE 32
+
+/** @brief Maximum acknowledgement result-code length retained by the ledger. */
+#define DEVICE_MQTT_ACK_RESULT_CODE_SIZE 64
+
+/**
+ * @brief Persisted execution outcome for one acknowledged command.
+ *
+ * The runtime records this after execution so a QoS 1 retransmission can
+ * republish the same acknowledgement without executing the command again.
+ */
+typedef struct {
+    char command_id[DEVICE_MQTT_COMMAND_ID_SIZE];
+    char request_id[DEVICE_MQTT_REQUEST_ID_SIZE];
+    char status[DEVICE_MQTT_ACK_STATUS_SIZE];
+    char result_code[DEVICE_MQTT_ACK_RESULT_CODE_SIZE];
+    bool completed;
+} device_mqtt_command_record_t;
+
 /** @brief Stable rejection reasons for diagnostics and tests. */
 typedef enum {
     DEVICE_MQTT_OK = 0,
@@ -112,6 +132,7 @@ typedef enum {
     DEVICE_MQTT_ERR_STORAGE,
     DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND,
     DEVICE_MQTT_ERR_INVALID_PAYLOAD,
+    DEVICE_MQTT_ERR_NOT_FOUND,
 } device_mqtt_error_t;
 
 /**
@@ -153,8 +174,34 @@ device_mqtt_error_t device_mqtt_record_command(
     device_mqtt_command_status_t *status_out
 );
 
+/**
+ * @brief Look up a command id in the ledger.
+ *
+ * Returns DEVICE_MQTT_OK and fills command_out when the command has been seen
+ * before. Returns DEVICE_MQTT_ERR_NOT_FOUND when it has not. A record with
+ * completed=false means the first delivery is still executing and the caller
+ * must not run it again.
+ */
+device_mqtt_error_t device_mqtt_lookup_command(
+    const char *command_id,
+    device_mqtt_command_record_t *command_out
+);
+
 /** @brief Return true when a command id is already in the ledger. */
 bool device_mqtt_is_duplicate(const char *command_id);
+
+/**
+ * @brief Persist the acknowledgement outcome for one recorded command.
+ *
+ * The command id must already be in the ledger. Once completed, duplicate
+ * deliveries reuse this exact status and result code instead of re-executing.
+ */
+device_mqtt_error_t device_mqtt_complete_command(
+    const char *command_id,
+    const char *request_id,
+    const char *status,
+    const char *result_code
+);
 
 /** @brief Clear the in-memory deduplication ledger. */
 void device_mqtt_reset_state(void);

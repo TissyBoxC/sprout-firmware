@@ -108,6 +108,13 @@ extern "C" {
 #define DEVICE_RUNTIME_HAS_PRIVACY_GUARD 0
 #endif
 
+#if CONFIG_FEATURE_DEVICE_MQTT && __has_include("device_mqtt.h")
+#include "device_mqtt.h"
+#define DEVICE_RUNTIME_HAS_DEVICE_MQTT 1
+#else
+#define DEVICE_RUNTIME_HAS_DEVICE_MQTT 0
+#endif
+
 #define DEVICE_RUNTIME_RESPONSE_SIZE 8192
 #define DEVICE_RUNTIME_REQUEST_SIZE 16384
 #define DEVICE_RUNTIME_URL_SIZE 320
@@ -168,6 +175,20 @@ typedef enum {
 } device_runtime_command_execution_t;
 
 static bool device_runtime_ready;
+#if DEVICE_RUNTIME_HAS_DEVICE_MQTT
+static device_runtime_mqtt_ack_publisher_t
+    device_runtime_mqtt_ack_publisher;
+
+static esp_err_t device_runtime_acknowledge_mqtt_command(
+    const char *device_id,
+    const char *command_id,
+    const char *request_id,
+    const char *status,
+    const char *result_code,
+    char *ack_json,
+    size_t ack_json_size
+);
+#endif
 
 // The factory-reset operation erases the NVS partition, so its guard cannot
 // live there. RTC memory survives a software reset long enough to retry a
@@ -1237,8 +1258,20 @@ device_runtime_acknowledge_command(
 static device_runtime_command_execution_t device_runtime_execute_command(
     const char *device_id,
     const device_runtime_command_t *command,
-    const char *session_token
+    const char *session_token,
+    const char *request_id,
+    bool prefer_mqtt_ack,
+    char *status_out,
+    size_t status_out_size,
+    char *result_code_out,
+    size_t result_code_out_size
 ) {
+    if (status_out != NULL && status_out_size > 0) {
+        status_out[0] = '\0';
+    }
+    if (result_code_out != NULL && result_code_out_size > 0) {
+        result_code_out[0] = '\0';
+    }
     const char *result_code = "ok";
     esp_err_t result = ESP_OK;
     if (strcmp(command->type, "reconnect_network") == 0) {
@@ -1329,20 +1362,56 @@ static device_runtime_command_execution_t device_runtime_execute_command(
         }
 #endif
     } else {
-        return DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED;
+        // Keep the command type contract open for future commands: report a
+        // stable unsupported result instead of leaving the command without an
+        // acknowledgement.
+        result = ESP_ERR_NOT_SUPPORTED;
+        result_code = "unsupported_command";
     }
     const char *status = result == ESP_OK ? "acknowledged" : "failed";
     if (result != ESP_OK && strcmp(result_code, "ok") == 0) {
         result_code = esp_err_to_name(result);
     }
-    const device_runtime_command_ack_result_t ack_result =
-        device_runtime_acknowledge_command(
+    if (status_out != NULL && status_out_size > 0) {
+        snprintf(status_out, status_out_size, "%s", status);
+    }
+    if (result_code_out != NULL && result_code_out_size > 0) {
+        snprintf(result_code_out, result_code_out_size, "%s", result_code);
+    }
+    device_runtime_command_ack_result_t ack_result =
+        DEVICE_RUNTIME_COMMAND_ACK_INVALID;
+#if DEVICE_RUNTIME_HAS_DEVICE_MQTT
+    if (prefer_mqtt_ack && request_id != NULL &&
+        device_runtime_mqtt_ack_publisher != NULL) {
+        char ack_json[DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE * 4] = {0};
+        const esp_err_t publish_result =
+            device_runtime_acknowledge_mqtt_command(
+                device_id,
+                command->id,
+                request_id,
+                status,
+                result_code,
+                ack_json,
+                sizeof(ack_json)
+            );
+        memset(ack_json, 0, sizeof(ack_json));
+        if (publish_result == ESP_OK) {
+            ack_result = DEVICE_RUNTIME_COMMAND_ACK_OK;
+        }
+    }
+#else
+    (void)request_id;
+    (void)prefer_mqtt_ack;
+#endif
+    if (ack_result == DEVICE_RUNTIME_COMMAND_ACK_INVALID) {
+        ack_result = device_runtime_acknowledge_command(
             device_id,
             command->id,
             status,
             result_code,
             session_token
         );
+    }
     const bool ack_completed =
         ack_result == DEVICE_RUNTIME_COMMAND_ACK_OK ||
         ack_result == DEVICE_RUNTIME_COMMAND_ACK_ALREADY_HANDLED;
@@ -1365,6 +1434,159 @@ static device_runtime_command_execution_t device_runtime_execute_command(
         ? DEVICE_RUNTIME_COMMAND_EXECUTION_COMPLETED
         : DEVICE_RUNTIME_COMMAND_EXECUTION_FAILED;
 }
+
+#if DEVICE_RUNTIME_HAS_DEVICE_MQTT
+static bool device_runtime_copy_mqtt_command(
+    device_runtime_command_t *command_out,
+    const char *command_id,
+    const char *command_type,
+    const char *data,
+    size_t data_length
+) {
+    if (command_out == nullptr || command_id == nullptr ||
+        command_type == nullptr || command_id[0] == '\0' ||
+        command_type[0] == '\0') {
+        return false;
+    }
+    if (strlen(command_id) >= sizeof(command_out->id) ||
+        strlen(command_type) >= sizeof(command_out->type)) {
+        return false;
+    }
+    if (data_length > 0 && data == nullptr) {
+        return false;
+    }
+    memset(command_out, 0, sizeof(*command_out));
+    snprintf(command_out->id, sizeof(command_out->id), "%s", command_id);
+    snprintf(command_out->type, sizeof(command_out->type), "%s", command_type);
+
+    if (strcmp(command_type, "display_message") == 0) {
+#if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
+        device_mqtt_display_message_t message = {};
+        device_mqtt_command_t mqtt_command = {};
+        snprintf(
+            mqtt_command.command_type,
+            sizeof(mqtt_command.command_type),
+            "%s",
+            command_type
+        );
+        if (data_length >= sizeof(mqtt_command.data)) {
+            return false;
+        }
+        if (data_length > 0) {
+            memcpy(mqtt_command.data, data, data_length);
+            mqtt_command.data[data_length] = '\0';
+        }
+        mqtt_command.data_length = data_length;
+        if (device_mqtt_parse_display_message(&mqtt_command, &message) !=
+            DEVICE_MQTT_OK) {
+            return false;
+        }
+        snprintf(
+            command_out->message.id,
+            sizeof(command_out->message.id),
+            "%s",
+            message.notification_id
+        );
+        snprintf(
+            command_out->message.title,
+            sizeof(command_out->message.title),
+            "%s",
+            message.title
+        );
+        snprintf(
+            command_out->message.body,
+            sizeof(command_out->message.body),
+            "%s",
+            message.body
+        );
+        snprintf(
+            command_out->message.severity,
+            sizeof(command_out->message.severity),
+            "%s",
+            message.severity
+        );
+        snprintf(
+            command_out->message.category,
+            sizeof(command_out->message.category),
+            "%s",
+            message.category
+        );
+        command_out->message.duration_seconds = message.duration_seconds;
+        command_out->has_message = true;
+#else
+        // The presenter is absent from this image. Keep the command valid so
+        // the shared executor can acknowledge it as unsupported rather than
+        // reporting a malformed payload.
+#endif
+    } else if (strcmp(command_type, "sync_privacy_consent") == 0) {
+#if DEVICE_RUNTIME_HAS_PRIVACY_GUARD
+        device_mqtt_privacy_consent_t consent = {};
+        device_mqtt_command_t mqtt_command = {};
+        snprintf(
+            mqtt_command.command_type,
+            sizeof(mqtt_command.command_type),
+            "%s",
+            command_type
+        );
+        if (data_length >= sizeof(mqtt_command.data)) {
+            return false;
+        }
+        if (data_length > 0) {
+            memcpy(mqtt_command.data, data, data_length);
+            mqtt_command.data[data_length] = '\0';
+        }
+        mqtt_command.data_length = data_length;
+        if (device_mqtt_parse_privacy_consent(&mqtt_command, &consent) !=
+            DEVICE_MQTT_OK) {
+            return false;
+        }
+        command_out->audio_upload_consent = consent.audio_upload_consent;
+        command_out->image_upload_consent = consent.image_upload_consent;
+        command_out->conversation_history_consent =
+            consent.conversation_history_consent;
+        command_out->usage_analytics_consent =
+            consent.usage_analytics_consent;
+        command_out->has_consent = true;
+#else
+        // No privacy guard is compiled in; the shared executor drops it.
+#endif
+    }
+    return true;
+}
+
+static esp_err_t device_runtime_acknowledge_mqtt_command(
+    const char *device_id,
+    const char *command_id,
+    const char *request_id,
+    const char *status,
+    const char *result_code,
+    char *ack_json,
+    size_t ack_json_size
+) {
+    if (device_runtime_mqtt_ack_publisher == nullptr) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    char occurred_at[32] = {0};
+    device_runtime_format_time(
+        static_cast<time_t>(time(nullptr)),
+        occurred_at,
+        sizeof(occurred_at)
+    );
+    if (device_mqtt_build_command_ack(
+            device_id,
+            command_id,
+            request_id,
+            occurred_at,
+            status,
+            result_code,
+            ack_json,
+            ack_json_size
+        ) != ESP_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return device_runtime_mqtt_ack_publisher(device_id, ack_json);
+}
+#endif
 
 static esp_err_t device_runtime_apply_platform_time(JsonDocument *response) {
     JsonVariant data = response->as<JsonVariant>();
@@ -1510,7 +1732,13 @@ static esp_err_t device_runtime_poll_commands(const char *session_token) {
         (void)device_runtime_execute_command(
             device_id,
             &command,
-            session_token
+            session_token,
+            NULL,
+            false,
+            NULL,
+            0,
+            NULL,
+            0
         );
         ++processed;
     }
@@ -1618,6 +1846,166 @@ esp_err_t device_runtime_reporter_init(void) {
     }
     device_runtime_ready = true;
     return ESP_OK;
+}
+
+esp_err_t device_runtime_reporter_set_mqtt_ack_publisher(
+    device_runtime_mqtt_ack_publisher_t publisher
+) {
+#if DEVICE_RUNTIME_HAS_DEVICE_MQTT
+    device_runtime_mqtt_ack_publisher = publisher;
+    return ESP_OK;
+#else
+    (void)publisher;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+device_runtime_mqtt_command_result_t
+device_runtime_reporter_handle_mqtt_command(
+    const char *device_id,
+    const char *command_id,
+    const char *command_type,
+    const char *request_id,
+    const char *data,
+    size_t data_length
+) {
+#if !DEVICE_RUNTIME_HAS_DEVICE_MQTT
+    (void)device_id;
+    (void)command_id;
+    (void)command_type;
+    (void)request_id;
+    (void)data;
+    (void)data_length;
+    return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+#else
+    if (device_id == nullptr || command_id == nullptr ||
+        command_type == nullptr || request_id == nullptr) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+    }
+    device_runtime_command_t command = {};
+    if (!device_runtime_copy_mqtt_command(
+            &command,
+            command_id,
+            command_type,
+            data,
+            data_length
+        )) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+    }
+
+    device_mqtt_command_t mqtt_command = {};
+    snprintf(
+        mqtt_command.command_id,
+        sizeof(mqtt_command.command_id),
+        "%s",
+        command_id
+    );
+    snprintf(
+        mqtt_command.command_type,
+        sizeof(mqtt_command.command_type),
+        "%s",
+        command_type
+    );
+    snprintf(
+        mqtt_command.request_id,
+        sizeof(mqtt_command.request_id),
+        "%s",
+        request_id
+    );
+    if (data_length >= sizeof(mqtt_command.data)) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+    }
+    if (data_length > 0) {
+        memcpy(mqtt_command.data, data, data_length);
+        mqtt_command.data[data_length] = '\0';
+    }
+    mqtt_command.data_length = data_length;
+    device_mqtt_command_status_t disposition =
+        DEVICE_MQTT_COMMAND_STATUS_NEW;
+    if (device_mqtt_record_command(&mqtt_command, &disposition) !=
+        DEVICE_MQTT_OK) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+    }
+    if (disposition == DEVICE_MQTT_COMMAND_STATUS_DUPLICATE) {
+        device_mqtt_command_record_t record = {};
+        if (device_mqtt_lookup_command(command_id, &record) !=
+            DEVICE_MQTT_OK) {
+            return DEVICE_RUNTIME_MQTT_COMMAND_INVALID;
+        }
+        if (!record.completed) {
+            return DEVICE_RUNTIME_MQTT_COMMAND_DUPLICATE;
+        }
+        if (device_runtime_mqtt_ack_publisher == nullptr) {
+            return DEVICE_RUNTIME_MQTT_COMMAND_DUPLICATE;
+        }
+        char ack_json[DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE * 4] = {0};
+        const esp_err_t republish_result =
+            device_runtime_acknowledge_mqtt_command(
+                device_id,
+                record.command_id,
+                record.request_id,
+                record.status,
+                record.result_code,
+                ack_json,
+                sizeof(ack_json)
+            );
+        memset(ack_json, 0, sizeof(ack_json));
+        if (republish_result != ESP_OK) {
+            return DEVICE_RUNTIME_MQTT_COMMAND_EXECUTION_FAILED;
+        }
+#if DEVICE_RUNTIME_HAS_FACTORY_RESET
+        if (strcmp(command_type, "factory_reset") == 0 &&
+            strcmp(record.status, "acknowledged") == 0 &&
+            device_runtime_factory_reset_completed_matches(
+                record.command_id
+            )) {
+            // The erase completed before the ACK was lost. A QoS 1 replay
+            // delivers that ACK now, so the original reset may finish.
+            device_runtime_clear_factory_reset_completed();
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
+        }
+#endif
+        return DEVICE_RUNTIME_MQTT_COMMAND_DUPLICATE;
+    }
+
+    char session_token[DEVICE_RUNTIME_SESSION_TOKEN_SIZE] = {0};
+    const bool has_session =
+        device_binding_client_copy_session_token(
+            session_token,
+            sizeof(session_token)
+        ) == ESP_OK;
+    char command_status[DEVICE_MQTT_ACK_STATUS_SIZE] = {0};
+    char command_result_code[DEVICE_MQTT_ACK_RESULT_CODE_SIZE] = {0};
+    const device_runtime_command_execution_t execution =
+        device_runtime_execute_command(
+            device_id,
+            &command,
+            has_session ? session_token : nullptr,
+            request_id,
+            true,
+            command_status,
+            sizeof(command_status),
+            command_result_code,
+            sizeof(command_result_code)
+        );
+    memset(session_token, 0, sizeof(session_token));
+    const bool has_completion =
+        command_status[0] != '\0' && command_result_code[0] != '\0';
+    const esp_err_t completion_result = device_mqtt_complete_command(
+        command_id,
+        request_id,
+        has_completion ? command_status : "failed",
+        has_completion ? command_result_code : "ack_failed"
+    );
+    if (completion_result != DEVICE_MQTT_OK) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_EXECUTION_FAILED;
+    }
+    if (execution != DEVICE_RUNTIME_COMMAND_EXECUTION_COMPLETED) {
+        return DEVICE_RUNTIME_MQTT_COMMAND_EXECUTION_FAILED;
+    }
+    return DEVICE_RUNTIME_MQTT_COMMAND_OK;
+#endif
 }
 
 const module_descriptor_t *device_runtime_reporter_module_descriptor(void) {

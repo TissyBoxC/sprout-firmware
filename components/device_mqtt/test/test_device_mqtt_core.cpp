@@ -252,6 +252,59 @@ void test_ledger_is_bounded() {
     ));
 }
 
+void test_completed_records_are_replayable() {
+    device_mqtt_reset_state();
+    device_mqtt_command_t command = {};
+    assert(
+        device_mqtt_parse_command(
+            DEVICE_ID,
+            VALID_COMMAND,
+            std::strlen(VALID_COMMAND),
+            &command
+        ) == DEVICE_MQTT_OK
+    );
+    device_mqtt_command_status_t status = DEVICE_MQTT_COMMAND_STATUS_NEW;
+    assert(device_mqtt_record_command(&command, &status) == DEVICE_MQTT_OK);
+    assert(status == DEVICE_MQTT_COMMAND_STATUS_NEW);
+
+    device_mqtt_command_record_t record = {};
+    assert(
+        device_mqtt_lookup_command(command.command_id, &record) ==
+        DEVICE_MQTT_OK
+    );
+    assert(!record.completed);
+    assert(std::strcmp(record.status, "") == 0);
+
+    assert(
+        device_mqtt_complete_command(
+            command.command_id,
+            command.request_id,
+            "acknowledged",
+            "consent_revoked"
+        ) == DEVICE_MQTT_OK
+    );
+    assert(
+        device_mqtt_lookup_command(command.command_id, &record) ==
+        DEVICE_MQTT_OK
+    );
+    assert(record.completed);
+    assert(std::strcmp(record.status, "acknowledged") == 0);
+    assert(std::strcmp(record.result_code, "consent_revoked") == 0);
+    assert(std::strcmp(record.request_id, "request_demo_001") == 0);
+}
+
+void test_completion_requires_recorded_command() {
+    device_mqtt_reset_state();
+    assert(
+        device_mqtt_complete_command(
+            UUID_COMMAND_ID,
+            "request_demo_001",
+            "acknowledged",
+            "ok"
+        ) == DEVICE_MQTT_ERR_NOT_FOUND
+    );
+}
+
 void test_ack_envelope_is_contract_complete() {
     char ack[2048] = {0};
     assert(
@@ -477,6 +530,8 @@ int main() {
     test_missing_or_mismatched_request_id_is_rejected();
     test_duplicate_delivery_is_suppressed();
     test_ledger_is_bounded();
+    test_completed_records_are_replayable();
+    test_completion_requires_recorded_command();
     test_ack_envelope_is_contract_complete();
     test_display_message_adapter_parses_escaped_text();
     test_display_message_requires_identity_and_title();
