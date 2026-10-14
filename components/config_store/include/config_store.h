@@ -81,8 +81,9 @@ esp_err_t config_store_set_blob(
 /**
  * @brief Read one binary value.
  *
- * Returns CONFIG_STORE_ERR_NOT_FOUND when the key is absent. On
- * ESP_ERR_NVS_INVALID_LENGTH, value_size_out contains the required size.
+ * Returns CONFIG_STORE_ERR_NOT_FOUND when the key is absent.
+ * Returns ESP_ERR_INVALID_SIZE when the output buffer is too small;
+ * value_size_out then contains the required size.
  */
 esp_err_t config_store_get_blob(
     const char *key,
@@ -104,7 +105,7 @@ esp_err_t config_store_set_string(
  * @brief Read one string value.
  *
  * Returns CONFIG_STORE_ERR_NOT_FOUND when the key is absent and
- * ESP_ERR_NVS_INVALID_LENGTH when the output buffer is too small.
+ * ESP_ERR_INVALID_SIZE when the output buffer is too small.
  */
 esp_err_t config_store_get_string(
     const char *key,

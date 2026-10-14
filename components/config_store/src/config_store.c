@@ -229,6 +229,9 @@ esp_err_t config_store_get_blob(
     if (result == ESP_ERR_NVS_NOT_FOUND) {
         return CONFIG_STORE_ERR_NOT_FOUND;
     }
+    if (result == ESP_ERR_NVS_INVALID_LENGTH) {
+        return ESP_ERR_INVALID_SIZE;
+    }
     return result;
 }
 

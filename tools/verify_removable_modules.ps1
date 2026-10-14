@@ -379,6 +379,20 @@ $mainSource = Get-Content -Raw -LiteralPath (
 
 $contractChecks = @(
     @{
+        Name = 'config_store blob size error contract'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/config_store/src/config_store.c'
+        ))
+        Pattern = 'ESP_ERR_NVS_INVALID_LENGTH[\s\S]*return ESP_ERR_INVALID_SIZE;'
+    },
+    @{
+        Name = 'diagnostic reporter consumes the config_store size error'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/diagnostic_reporter/src/diagnostic_reporter.cpp'
+        ))
+        Pattern = 'result == ESP_ERR_INVALID_SIZE'
+    },
+    @{
         Name = 'diagnostic state layout version'
         Text = $diagnosticStateHeader
         Pattern = '#define DIAGNOSTIC_REPORTER_STATE_VERSION 6u'
@@ -778,6 +792,27 @@ $contractChecks = @(
         Pattern = 'env:esp32-s3-n16r8-production[\s\S]*verify_production_signing\.py'
     }
 )
+
+$rawNvsSizeConsumers = New-Object System.Collections.Generic.List[string]
+foreach ($extension in @('*.c', '*.cpp', '*.h')) {
+    Get-ChildItem `
+        -LiteralPath (Join-Path $firmwareRoot 'components') `
+        -Recurse `
+        -File `
+        -Filter $extension |
+        Where-Object {
+            $_.FullName -notmatch '[\\/]config_store[\\/]' -and
+            (Get-Content -Raw -LiteralPath $_.FullName) -match
+                'ESP_ERR_NVS_INVALID_LENGTH'
+        } |
+        ForEach-Object { $rawNvsSizeConsumers.Add($_.FullName) }
+}
+if ($rawNvsSizeConsumers.Count -gt 0) {
+    throw (
+        'Components above config_store must not consume raw NVS size errors: ' +
+        ($rawNvsSizeConsumers -join '; ')
+    )
+}
 
 foreach ($contractCheck in $contractChecks) {
     if ($contractCheck.Text -notmatch $contractCheck.Pattern) {

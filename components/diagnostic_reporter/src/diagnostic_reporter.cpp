@@ -189,7 +189,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
         raw_state,
         &state_size
     );
-    if (result == ESP_ERR_NVS_INVALID_LENGTH) {
+    if (result == ESP_ERR_INVALID_SIZE) {
         // config_store reports the required size. A legacy v3/v4 record is
         // bounded and safe to read once into the current maximum buffer.
         if (state_size == 0 || state_size > sizeof(raw_state)) {
@@ -213,7 +213,7 @@ static esp_err_t diagnostic_reporter_load_state_locked(void) {
     if (result != ESP_OK) {
         // A record written by a different firmware layout is not usable, but
         // other NVS errors are real storage failures and must remain visible.
-        if (result == ESP_ERR_NVS_INVALID_LENGTH) {
+        if (result == ESP_ERR_INVALID_SIZE) {
             diagnostic_reporter_clear_state_locked();
             return ESP_ERR_INVALID_STATE;
         }
