@@ -1,0 +1,13 @@
+menu "Sprout feature modules"
+
+config FEATURE_DEVICE_MQTT
+    bool "Enable the device MQTT command contract"
+    default y
+    help
+        Parses platform-to-device command envelopes from the shared MQTT
+        contract, validates the topic-derived device identity, suppresses QoS 1
+        duplicate deliveries, and builds idempotent command acknowledgements.
+        The transport connection is owned by the composition root once the
+        production broker endpoint and client certificate are confirmed.
+
+endmenu

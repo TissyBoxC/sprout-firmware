@@ -33,6 +33,10 @@ CONFIG_FEATURE_USAGE_LEDGER=y
 CONFIG_FEATURE_PARENT_CONTROL_RUNTIME=y
 CONFIG_FEATURE_DIAGNOSTIC_REPORTER=y
 CONFIG_FEATURE_PROVISIONING_REPORTER=y
+# Device command MQTT keeps the platform command channel closed over the
+# versioned topic contract. The component owns parsing, deduplication, and ACK
+# construction; broker credentials remain in the composition root.
+CONFIG_FEATURE_DEVICE_MQTT=y
 # Thermal telemetry shares the runtime heartbeat so operators can alert on
 # heat and the device can protect itself.
 CONFIG_FEATURE_TEMPERATURE_MONITOR=y

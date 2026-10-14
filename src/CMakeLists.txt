@@ -167,6 +167,10 @@ if(CONFIG_FEATURE_DEVICE_MESSAGE)
     list(APPEND app_requires "device_message")
 endif()
 
+if(CONFIG_FEATURE_DEVICE_MQTT)
+    list(APPEND app_requires "device_mqtt")
+endif()
+
 if(CONFIG_FEATURE_FACTORY_RESET)
     list(APPEND app_requires "factory_reset")
 endif()

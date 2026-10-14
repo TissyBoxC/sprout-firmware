@@ -154,6 +154,7 @@ function Test-OptionalModuleRemoval {
             'voice_wake'
             'diagnostic_reporter'
             'device_message'
+            'device_mqtt'
             'device_runtime_reporter'
             'provisioning_reporter'
             'parent_control_runtime'

@@ -183,6 +183,20 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$deviceMqttRoot = Join-Path $firmwareRoot 'components/device_mqtt'
+Invoke-HostTest `
+    -Name 'device_mqtt_core' `
+    -Sources @(
+        (Join-Path $deviceMqttRoot 'src/device_mqtt_core.c')
+        (Join-Path $deviceMqttRoot 'test/test_device_mqtt_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceMqttRoot 'include')
+        (Join-Path $deviceMqttRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $deviceMessageRoot = Join-Path $firmwareRoot 'components/device_message'
 Invoke-HostTest `
     -Name 'device_message_core' `

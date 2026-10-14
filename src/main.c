@@ -171,6 +171,9 @@
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
 #include "device_runtime_reporter.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_MQTT
+#include "device_mqtt.h"
+#endif
 #if CONFIG_FEATURE_DIAGNOSTIC_REPORTER
 #include "diagnostic_reporter.h"
 #endif
@@ -806,6 +809,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
     ESP_ERROR_CHECK(module_registry_add(device_runtime_reporter_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_DEVICE_MQTT
+    ESP_ERROR_CHECK(module_registry_add(device_mqtt_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_PROVISIONING_PAYLOAD
     ESP_ERROR_CHECK(module_registry_add(provisioning_payload_module_descriptor()));
