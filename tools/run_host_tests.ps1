@@ -158,6 +158,37 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$moduleRegistryRoot = Join-Path $firmwareRoot 'components/module_registry'
+Invoke-HostTest `
+    -Name 'module_registry_lifecycle' `
+    -Sources @(
+        (Join-Path $moduleRegistryRoot 'src/module_registry.c')
+        (Join-Path $moduleRegistryRoot 'test/test_module_registry_lifecycle.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $moduleRegistryRoot 'include')
+        (Join-Path $moduleRegistryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_MODULE_REGISTRY_CAPACITY=16'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'module_registry_capacity' `
+    -Sources @(
+        (Join-Path $moduleRegistryRoot 'src/module_registry.c')
+        (Join-Path $moduleRegistryRoot 'test/test_module_registry_capacity.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $moduleRegistryRoot 'include')
+        (Join-Path $moduleRegistryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_MODULE_REGISTRY_CAPACITY=2'
+    ) `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
