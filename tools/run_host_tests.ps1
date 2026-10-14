@@ -289,16 +289,24 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$cjsonRoot = Join-Path $firmwareRoot 'managed_components/espressif__cjson'
+if (-not (Test-Path -LiteralPath (Join-Path $cjsonRoot 'cJSON/cJSON.c'))) {
+    throw (
+        'The voice_session_token host test requires ' +
+        "'pio run -e esp32-s3-n16r8 -t compiledb' to resolve ESP-IDF " +
+        'components before it runs.'
+    )
+}
 $voiceSessionTokenInclude = @(
     (Join-Path $voiceSessionRoot 'include')
-    (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON')
+    (Join-Path $cjsonRoot 'cJSON')
 )
 Invoke-HostTest `
     -Name 'voice_session_token' `
     -Sources @(
         (Join-Path $voiceSessionRoot 'src/voice_session_token.c')
         (Join-Path $voiceSessionRoot 'test/test_voice_session_token.cpp')
-        (Join-Path $firmwareRoot 'managed_components/espressif__cjson/cJSON/cJSON.c')
+        (Join-Path $cjsonRoot 'cJSON/cJSON.c')
     ) `
     -IncludeDirectories $voiceSessionTokenInclude `
     -AdditionalArguments @() `
