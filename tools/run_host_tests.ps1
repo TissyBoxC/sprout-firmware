@@ -91,6 +91,20 @@ $cCompiler = Resolve-HostCompiler -Language 'c'
 
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 
+$errorCodeRoot = Join-Path $firmwareRoot 'components/error_code'
+Invoke-HostTest `
+    -Name 'error_code_contract' `
+    -Sources @(
+        (Join-Path $errorCodeRoot 'src/error_code.c')
+        (Join-Path $errorCodeRoot 'test/test_error_code.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $errorCodeRoot 'include')
+        (Join-Path $errorCodeRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `

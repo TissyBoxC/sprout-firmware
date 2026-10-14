@@ -1,5 +1,7 @@
 #include "error_code.h"
 
+#include <stddef.h>
+
 const char *error_code_to_string(error_code_t error_code) {
     switch (error_code) {
         case ERROR_CODE_OK:
