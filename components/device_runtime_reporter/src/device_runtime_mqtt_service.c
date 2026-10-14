@@ -1,5 +1,6 @@
 #include "device_runtime_mqtt_service.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "network_manager.h"
 
@@ -47,6 +49,84 @@ static QueueHandle_t device_runtime_mqtt_service_command_queue;
 static TaskHandle_t device_runtime_mqtt_service_command_task;
 static bool device_runtime_mqtt_service_command_task_started;
 static volatile bool device_runtime_mqtt_service_command_task_stop;
+static atomic_bool device_runtime_mqtt_service_command_task_running =
+    ATOMIC_VAR_INIT(false);
+static SemaphoreHandle_t device_runtime_mqtt_service_state_mutex;
+static StaticSemaphore_t device_runtime_mqtt_service_state_mutex_buffer;
+static SemaphoreHandle_t device_runtime_mqtt_service_command_queue_mutex;
+static StaticSemaphore_t device_runtime_mqtt_service_command_queue_mutex_buffer;
+static atomic_flag device_runtime_mqtt_service_locks_init_in_progress =
+    ATOMIC_FLAG_INIT;
+static atomic_bool device_runtime_mqtt_service_locks_ready =
+    ATOMIC_VAR_INIT(false);
+
+static void device_runtime_mqtt_service_ensure_locks(void) {
+    if (atomic_load_explicit(
+            &device_runtime_mqtt_service_locks_ready,
+            memory_order_acquire
+        )) {
+        return;
+    }
+    if (!atomic_flag_test_and_set_explicit(
+            &device_runtime_mqtt_service_locks_init_in_progress,
+            memory_order_acq_rel
+        )) {
+        device_runtime_mqtt_service_state_mutex =
+            xSemaphoreCreateMutexStatic(
+                &device_runtime_mqtt_service_state_mutex_buffer
+            );
+        device_runtime_mqtt_service_command_queue_mutex =
+            xSemaphoreCreateMutexStatic(
+                &device_runtime_mqtt_service_command_queue_mutex_buffer
+            );
+        atomic_store_explicit(
+            &device_runtime_mqtt_service_locks_ready,
+            true,
+            memory_order_release
+        );
+        return;
+    }
+    while (!atomic_load_explicit(
+        &device_runtime_mqtt_service_locks_ready,
+        memory_order_acquire
+    )) {
+        vTaskDelay(1);
+    }
+}
+
+static void device_runtime_mqtt_service_lock_state(void) {
+    device_runtime_mqtt_service_ensure_locks();
+    if (device_runtime_mqtt_service_state_mutex != NULL) {
+        (void)xSemaphoreTake(
+            device_runtime_mqtt_service_state_mutex,
+            portMAX_DELAY
+        );
+    }
+}
+
+static void device_runtime_mqtt_service_unlock_state(void) {
+    if (device_runtime_mqtt_service_state_mutex != NULL) {
+        (void)xSemaphoreGive(device_runtime_mqtt_service_state_mutex);
+    }
+}
+
+static void device_runtime_mqtt_service_lock_command_queue(void) {
+    device_runtime_mqtt_service_ensure_locks();
+    if (device_runtime_mqtt_service_command_queue_mutex != NULL) {
+        (void)xSemaphoreTake(
+            device_runtime_mqtt_service_command_queue_mutex,
+            portMAX_DELAY
+        );
+    }
+}
+
+static void device_runtime_mqtt_service_unlock_command_queue(void) {
+    if (device_runtime_mqtt_service_command_queue_mutex != NULL) {
+        (void)xSemaphoreGive(
+            device_runtime_mqtt_service_command_queue_mutex
+        );
+    }
+}
 
 static esp_err_t device_runtime_mqtt_read_pem(
     const char *key,
@@ -136,7 +216,11 @@ static void device_runtime_mqtt_command_task(void *argument) {
         }
         memset(&item, 0, sizeof(item));
     }
-    device_runtime_mqtt_service_command_task = NULL;
+    atomic_store_explicit(
+        &device_runtime_mqtt_service_command_task_running,
+        false,
+        memory_order_release
+    );
     vTaskDelete(NULL);
 }
 
@@ -153,8 +237,11 @@ static esp_err_t device_runtime_mqtt_enqueue_command(
         )) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    device_runtime_mqtt_service_lock_command_queue();
     if (!device_runtime_mqtt_service_command_task_started ||
         device_runtime_mqtt_service_command_queue == NULL) {
+        device_runtime_mqtt_service_unlock_command_queue();
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -163,24 +250,35 @@ static esp_err_t device_runtime_mqtt_enqueue_command(
     memcpy(item.payload, payload, payload_length);
     item.payload[payload_length] = '\0';
     item.payload_length = payload_length;
-    return xQueueSend(
-               device_runtime_mqtt_service_command_queue,
-               &item,
-               0
-           ) == pdTRUE
-               ? ESP_OK
-               : ESP_ERR_TIMEOUT;
+    const esp_err_t result = xQueueSend(
+                                   device_runtime_mqtt_service_command_queue,
+                                   &item,
+                                   0
+                               ) == pdTRUE
+                                   ? ESP_OK
+                                   : ESP_ERR_TIMEOUT;
+    device_runtime_mqtt_service_unlock_command_queue();
+    return result;
 }
 
 static esp_err_t device_runtime_mqtt_start_command_task(void) {
+    device_runtime_mqtt_service_lock_command_queue();
     if (device_runtime_mqtt_service_command_task_started) {
+        device_runtime_mqtt_service_unlock_command_queue();
         return ESP_OK;
     }
+    device_runtime_mqtt_service_command_task_stop = false;
+    atomic_store_explicit(
+        &device_runtime_mqtt_service_command_task_running,
+        false,
+        memory_order_release
+    );
     device_runtime_mqtt_service_command_queue = xQueueCreate(
         DEVICE_RUNTIME_MQTT_COMMAND_QUEUE_LENGTH,
         sizeof(device_runtime_mqtt_command_item_t)
     );
     if (device_runtime_mqtt_service_command_queue == NULL) {
+        device_runtime_mqtt_service_unlock_command_queue();
         return ESP_ERR_NO_MEM;
     }
     if (xTaskCreate(
@@ -194,31 +292,48 @@ static esp_err_t device_runtime_mqtt_start_command_task(void) {
         vQueueDelete(device_runtime_mqtt_service_command_queue);
         device_runtime_mqtt_service_command_queue = NULL;
         device_runtime_mqtt_service_command_task = NULL;
+        device_runtime_mqtt_service_command_task_stop = true;
+        device_runtime_mqtt_service_unlock_command_queue();
         return ESP_ERR_NO_MEM;
     }
     device_runtime_mqtt_service_command_task_started = true;
-    device_runtime_mqtt_service_command_task_stop = false;
+    atomic_store_explicit(
+        &device_runtime_mqtt_service_command_task_running,
+        true,
+        memory_order_release
+    );
+    device_runtime_mqtt_service_unlock_command_queue();
     return ESP_OK;
 }
 
 static void device_runtime_mqtt_stop_command_task(void) {
+    device_runtime_mqtt_service_lock_command_queue();
     if (!device_runtime_mqtt_service_command_task_started) {
+        device_runtime_mqtt_service_unlock_command_queue();
         return;
     }
     device_runtime_mqtt_service_command_task_stop = true;
     const TickType_t deadline =
         xTaskGetTickCount() + pdMS_TO_TICKS(1000);
-    while (device_runtime_mqtt_service_command_task != NULL &&
+    while (atomic_load_explicit(
+               &device_runtime_mqtt_service_command_task_running,
+               memory_order_acquire
+           ) &&
            (int32_t)(xTaskGetTickCount() - deadline) < 0) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    if (device_runtime_mqtt_service_command_task != NULL) {
+    if (atomic_load_explicit(
+            &device_runtime_mqtt_service_command_task_running,
+            memory_order_acquire
+        ) &&
+        device_runtime_mqtt_service_command_task != NULL) {
         vTaskDelete(device_runtime_mqtt_service_command_task);
-        device_runtime_mqtt_service_command_task = NULL;
     }
+    device_runtime_mqtt_service_command_task = NULL;
     vQueueDelete(device_runtime_mqtt_service_command_queue);
     device_runtime_mqtt_service_command_queue = NULL;
     device_runtime_mqtt_service_command_task_started = false;
+    device_runtime_mqtt_service_unlock_command_queue();
 }
 
 static esp_err_t device_runtime_mqtt_start_if_configured(void) {
@@ -283,6 +398,7 @@ static esp_err_t device_runtime_mqtt_start_if_configured(void) {
         // after a transient broker or credential failure.
         (void)device_runtime_reporter_set_mqtt_ack_publisher(NULL);
         device_runtime_mqtt_service_device_id[0] = '\0';
+        device_runtime_mqtt_service_transport_started = false;
     }
     device_runtime_mqtt_clear_pem(&key_pem);
     device_runtime_mqtt_clear_pem(&cert_pem);
@@ -306,25 +422,36 @@ static void device_runtime_mqtt_network_observer(
     if (state != NETWORK_MANAGER_STATE_CONNECTED) {
         return;
     }
+    device_runtime_mqtt_service_lock_state();
+    if (!device_runtime_mqtt_service_ready) {
+        device_runtime_mqtt_service_unlock_state();
+        return;
+    }
     if (device_runtime_mqtt_service_transport_started ||
         device_runtime_mqtt_service_device_id[0] != '\0') {
         // Credentials already resolved; the ESP-MQTT client reconnects on its
         // own, so there is nothing to do on a Wi-Fi flap.
+        device_runtime_mqtt_service_unlock_state();
         return;
     }
     (void)device_runtime_mqtt_start_if_configured();
+    device_runtime_mqtt_service_unlock_state();
 }
 
 esp_err_t device_runtime_mqtt_service_start(void) {
+    device_runtime_mqtt_service_lock_state();
     if (device_runtime_mqtt_service_ready) {
+        device_runtime_mqtt_service_unlock_state();
         return ESP_OK;
     }
     if (!config_store_is_ready()) {
+        device_runtime_mqtt_service_unlock_state();
         return ESP_ERR_INVALID_STATE;
     }
     const esp_err_t command_task_result =
         device_runtime_mqtt_start_command_task();
     if (command_task_result != ESP_OK) {
+        device_runtime_mqtt_service_unlock_state();
         return command_task_result;
     }
     if (!device_runtime_mqtt_service_observer_registered) {
@@ -334,6 +461,7 @@ esp_err_t device_runtime_mqtt_service_start(void) {
         );
         if (observer_result != ESP_OK) {
             device_runtime_mqtt_stop_command_task();
+            device_runtime_mqtt_service_unlock_state();
             return observer_result;
         }
         device_runtime_mqtt_service_observer_registered = true;
@@ -349,10 +477,13 @@ esp_err_t device_runtime_mqtt_service_start(void) {
             ESP_LOGW(TAG, "initial MQTT start deferred: %s", esp_err_to_name(result));
         }
     }
+    device_runtime_mqtt_service_unlock_state();
     return ESP_OK;
 }
 
 esp_err_t device_runtime_mqtt_service_stop(void) {
+    device_runtime_mqtt_service_lock_state();
+    device_runtime_mqtt_service_ready = false;
     if (device_runtime_mqtt_service_observer_registered) {
         (void)network_manager_remove_state_callback(
             device_runtime_mqtt_network_observer,
@@ -360,18 +491,22 @@ esp_err_t device_runtime_mqtt_service_stop(void) {
         );
         device_runtime_mqtt_service_observer_registered = false;
     }
+    esp_err_t transport_result = ESP_OK;
     if (device_runtime_mqtt_service_transport_started) {
-        (void)device_mqtt_transport_stop();
+        transport_result = device_mqtt_transport_stop();
         device_runtime_mqtt_service_transport_started = false;
     }
     device_runtime_mqtt_stop_command_task();
     (void)device_runtime_reporter_set_mqtt_ack_publisher(NULL);
     device_runtime_mqtt_service_device_id[0] = '\0';
-    device_runtime_mqtt_service_ready = false;
-    return ESP_OK;
+    device_runtime_mqtt_service_unlock_state();
+    return transport_result;
 }
 
 bool device_runtime_mqtt_service_is_connected(void) {
-    return device_runtime_mqtt_service_transport_started &&
-           device_mqtt_transport_is_connected();
+    device_runtime_mqtt_service_lock_state();
+    const bool transport_started =
+        device_runtime_mqtt_service_transport_started;
+    device_runtime_mqtt_service_unlock_state();
+    return transport_started && device_mqtt_transport_is_connected();
 }
