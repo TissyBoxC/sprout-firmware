@@ -171,6 +171,9 @@
 #if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER
 #include "device_runtime_reporter.h"
 #endif
+#if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER && CONFIG_FEATURE_DEVICE_MQTT
+#include "device_runtime_mqtt_service.h"
+#endif
 #if CONFIG_FEATURE_DEVICE_MQTT
 #include "device_mqtt.h"
 #endif
@@ -1145,6 +1148,16 @@ void app_main(void) {
 #endif
 #if CONFIG_FEATURE_PROVISIONING_REPORTER
         provisioning_reporter_register_observers();
+#endif
+#if CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER && CONFIG_FEATURE_DEVICE_MQTT
+        const esp_err_t mqtt_result = device_runtime_mqtt_service_start();
+        if (mqtt_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "MQTT command channel unavailable: %s",
+                esp_err_to_name(mqtt_result)
+            );
+        }
 #endif
         start_voice_interaction();
     }

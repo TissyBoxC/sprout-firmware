@@ -2,6 +2,12 @@ set(device_runtime_reporter_sources "")
 
 if(CONFIG_FEATURE_DEVICE_RUNTIME_REPORTER)
     list(APPEND device_runtime_reporter_sources "src/device_runtime_reporter.cpp")
+    if(CONFIG_FEATURE_DEVICE_MQTT AND EXISTS
+            "${CMAKE_CURRENT_LIST_DIR}/../device_mqtt/CMakeLists.txt")
+        list(APPEND device_runtime_reporter_sources
+            "src/device_runtime_mqtt_service.c"
+        )
+    endif()
 endif()
 
 set(device_runtime_reporter_requires
@@ -14,6 +20,17 @@ set(device_runtime_reporter_requires
     offline_fallback
     time_sync
 )
+
+set(device_runtime_reporter_priv_requires
+    esp_app_format
+    esp_http_client
+    esp-tls
+    mbedtls
+)
+
+if(CONFIG_FEATURE_DEVICE_IDENTITY)
+    list(APPEND device_runtime_reporter_requires device_identity)
+endif()
 
 # Keep the optional integration buildable when parent_policy is deleted. The
 # source guard removes the calls at the same time.
@@ -81,16 +98,16 @@ if(CONFIG_FEATURE_PRIVACY_GUARD AND EXISTS
     list(APPEND device_runtime_reporter_requires "privacy_guard")
 endif()
 
-# The MQTT command bridge is optional. When the contract component is absent
-# the runtime keeps the authenticated HTTP polling and acknowledgement path.
-if(CONFIG_FEATURE_DEVICE_MQTT AND EXISTS
-        "${CMAKE_CURRENT_LIST_DIR}/../device_mqtt/CMakeLists.txt")
-    list(APPEND device_runtime_reporter_requires "device_mqtt")
+# The MQTT command bridge is optional and private to this component. When the
+# contract component is absent the runtime keeps the authenticated HTTP
+# polling and acknowledgement path.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../device_mqtt/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_priv_requires device_mqtt)
 endif()
 
 idf_component_register(
     SRCS ${device_runtime_reporter_sources}
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES esp_app_format esp_http_client esp-tls mbedtls
+    PRIV_REQUIRES ${device_runtime_reporter_priv_requires}
     REQUIRES ${device_runtime_reporter_requires}
 )

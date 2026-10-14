@@ -16,6 +16,16 @@ elapsed; a policy refresh failure is recorded by `parent_policy` and does not
 change the heartbeat result. No token, SSID, password, audio, image, or child
 data is logged.
 
+When `CONFIG_FEATURE_DEVICE_MQTT` is enabled and the configuration store holds
+`mqtt_url`, `mqtt_ca`, `mqtt_cert`, and `mqtt_key`, the reporter starts a
+mutual-TLS MQTT subscriber on `sprout/v1/devices/{device_id}/commands`. A
+delivery is parsed by the shared `device_mqtt` contract and executed through
+the same idempotent runtime path as HTTP polling. Acknowledgements are
+published at QoS 1 on `sprout/v1/devices/{device_id}/commands/ack`; when the
+broker connection is unavailable, the authenticated HTTP acknowledgement
+route remains the fallback. A device without provisioned MQTT credentials
+keeps using HTTP polling and logs that the channel is not configured.
+
 The heartbeat includes an optional `provisioning` object with the contract
 state, Wi-Fi configuration flag, session state, last provisioning time, and a
 bounded array of provisioning events. Events are acknowledged only after the
