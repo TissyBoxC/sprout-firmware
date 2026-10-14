@@ -105,6 +105,25 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$versionInfoRoot = Join-Path $firmwareRoot 'components/version_info'
+Invoke-HostTest `
+    -Name 'version_info_contract' `
+    -Sources @(
+        (Join-Path $versionInfoRoot 'src/version_info.c')
+        (Join-Path $versionInfoRoot 'test/stubs/esp_app_desc.c')
+        (Join-Path $versionInfoRoot 'test/test_version_info.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $versionInfoRoot 'include')
+        (Join-Path $versionInfoRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_IDF_TARGET=\"esp32s3\"'
+        '-DCONFIG_FIRMWARE_SCHEMA_VERSION=\"1.0.0\"'
+        '-DCONFIG_FIRMWARE_PROTOCOL_VERSION=\"1.0.0\"'
+    ) `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
