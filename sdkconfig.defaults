@@ -104,10 +104,10 @@ CONFIG_FEATURE_WAKE_FEEDBACK=y
 CONFIG_FEATURE_LED_INDICATOR=y
 CONFIG_FEATURE_BUTTON_INPUT=y
 CONFIG_FEATURE_FACTORY_RESET=y
-# The full feature profile is approaching the previous 80-slot ceiling, so keep
-# generous headroom above the live count to avoid a hard boot failure when
-# another module is enabled.
-CONFIG_MODULE_REGISTRY_CAPACITY=96
+# The composition root registers 105 feature modules, and product profiles
+# enable up to 82 of them. Keep headroom above that live count so a new module
+# cannot silently overflow the registry and abort boot inside ESP_ERROR_CHECK.
+CONFIG_MODULE_REGISTRY_CAPACITY=112
 
 # Local wake detection uses ESP-SR WakeNet in production. The model lives in
 # its own flash partition so OTA updates of the application do not rewrite it.

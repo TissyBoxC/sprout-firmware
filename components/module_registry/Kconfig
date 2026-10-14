@@ -11,7 +11,7 @@ config MODULE_REGISTRY_CAPACITY
     int "Maximum registered feature modules"
     depends on FEATURE_MODULE_REGISTRY
     range 1 128
-    default 64
+    default 112
     help
         Static registry capacity. Keep this above the number of modules enabled
         by any released product profile.

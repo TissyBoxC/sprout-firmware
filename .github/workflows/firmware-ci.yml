@@ -36,6 +36,10 @@ jobs:
         shell: pwsh
         run: ./tools/verify_removable_modules.ps1
 
+      - name: Verify module_registry capacity covers all registrations
+        shell: pwsh
+        run: ./tools/verify_module_registry_capacity.ps1
+
   production:
     runs-on: ubuntu-latest
     steps:
