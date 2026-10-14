@@ -242,6 +242,23 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$childPromptProfileRoot = Join-Path $firmwareRoot 'components/child_prompt_profile'
+Invoke-HostTest `
+    -Name 'child_prompt_profile_state' `
+    -Sources @(
+        (Join-Path $childPromptProfileRoot 'src/child_prompt_profile.c')
+        (Join-Path $childPromptProfileRoot 'test/stubs/child_prompt_profile_deps.c')
+        (Join-Path $childPromptProfileRoot 'test/test_child_prompt_profile.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $childPromptProfileRoot 'include')
+        (Join-Path $childPromptProfileRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_PARENT_POLICY=1'
+    ) `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
