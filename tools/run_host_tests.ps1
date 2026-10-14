@@ -206,6 +206,21 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$cloudAuthRoot = Join-Path $firmwareRoot 'components/cloud_auth'
+Invoke-HostTest `
+    -Name 'cloud_auth_state_machine' `
+    -Sources @(
+        (Join-Path $cloudAuthRoot 'src/cloud_auth.c')
+        (Join-Path $cloudAuthRoot 'test/stubs/cloud_auth_deps.c')
+        (Join-Path $cloudAuthRoot 'test/test_cloud_auth.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $cloudAuthRoot 'include')
+        (Join-Path $cloudAuthRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `

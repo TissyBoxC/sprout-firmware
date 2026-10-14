@@ -1,5 +1,7 @@
 #include "cloud_auth.h"
 
+#include <stddef.h>
+
 #include "device_binding_client.h"
 #include "esp_log.h"
 #include "network_manager.h"
