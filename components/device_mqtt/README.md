@@ -27,6 +27,9 @@ root.
 - Acknowledgements are `device.command_ack` envelopes published at QoS 1 on
   `sprout/v1/devices/{device_id}/commands/ack`; the HTTP acknowledgement route
   remains a compatible fallback.
+- The transport copies the broker URL and mutual-TLS credential buffers before
+  creating the ESP-MQTT client and retains those copies until the transport is
+  stopped. Callers keep ownership of the buffers they pass in.
 
 ## Boundary
 

@@ -1,5 +1,7 @@
 #include "device_mqtt_transport.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "device_mqtt.h"
@@ -12,6 +14,69 @@ static esp_mqtt_client_handle_t device_mqtt_client;
 static bool device_mqtt_connected;
 static device_mqtt_command_callback_t device_mqtt_command_callback;
 static char device_mqtt_subscribed_device_id[DEVICE_MQTT_DEVICE_ID_SIZE];
+static char *device_mqtt_broker_url;
+static char *device_mqtt_ca_pem;
+static char *device_mqtt_client_certificate_pem;
+static char *device_mqtt_client_key_pem;
+
+static esp_err_t device_mqtt_copy_string(const char *value, char **copy_out) {
+    *copy_out = NULL;
+    const size_t value_length = strlen(value);
+    char *copy = (char *)malloc(value_length + 1);
+    if (copy == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(copy, value, value_length + 1);
+    *copy_out = copy;
+    return ESP_OK;
+}
+
+static void device_mqtt_clear_string(char **value) {
+    if (value == NULL || *value == NULL) {
+        return;
+    }
+    memset(*value, 0, strlen(*value));
+    free(*value);
+    *value = NULL;
+}
+
+static void device_mqtt_clear_credentials(void) {
+    device_mqtt_clear_string(&device_mqtt_client_key_pem);
+    device_mqtt_clear_string(&device_mqtt_client_certificate_pem);
+    device_mqtt_clear_string(&device_mqtt_ca_pem);
+    device_mqtt_clear_string(&device_mqtt_broker_url);
+}
+
+static esp_err_t device_mqtt_copy_credentials(
+    const char *broker_url,
+    const char *ca_pem,
+    const char *client_certificate_pem,
+    const char *client_key_pem
+) {
+    esp_err_t result = device_mqtt_copy_string(
+        broker_url,
+        &device_mqtt_broker_url
+    );
+    if (result == ESP_OK) {
+        result = device_mqtt_copy_string(ca_pem, &device_mqtt_ca_pem);
+    }
+    if (result == ESP_OK) {
+        result = device_mqtt_copy_string(
+            client_certificate_pem,
+            &device_mqtt_client_certificate_pem
+        );
+    }
+    if (result == ESP_OK) {
+        result = device_mqtt_copy_string(
+            client_key_pem,
+            &device_mqtt_client_key_pem
+        );
+    }
+    if (result != ESP_OK) {
+        device_mqtt_clear_credentials();
+    }
+    return result;
+}
 
 static void device_mqtt_subscribe_if_ready(esp_mqtt_client_handle_t client) {
     if (client == NULL || device_mqtt_subscribed_device_id[0] == '\0') {
@@ -177,19 +242,30 @@ esp_err_t device_mqtt_transport_start(
         "%s",
         device_id
     );
+    const esp_err_t copy_result = device_mqtt_copy_credentials(
+        broker_url,
+        ca_pem,
+        client_certificate_pem,
+        client_key_pem
+    );
+    if (copy_result != ESP_OK) {
+        device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        return copy_result;
+    }
 
     const esp_mqtt_client_config_t client_config = {
         .broker = {
-            .address.uri = broker_url,
+            .address.uri = device_mqtt_broker_url,
             .verification = {
-                .certificate = ca_pem,
+                .certificate = device_mqtt_ca_pem,
                 .skip_cert_common_name_check = false,
             },
         },
         .credentials = {
             .authentication = {
-                .certificate = client_certificate_pem,
-                .key = client_key_pem,
+                .certificate = device_mqtt_client_certificate_pem,
+                .key = device_mqtt_client_key_pem,
             },
         },
         .session = {
@@ -204,6 +280,8 @@ esp_err_t device_mqtt_transport_start(
     device_mqtt_client = esp_mqtt_client_init(&client_config);
     if (device_mqtt_client == NULL) {
         device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_credentials();
         return ESP_FAIL;
     }
     const esp_err_t register_result = esp_mqtt_client_register_event(
@@ -216,6 +294,8 @@ esp_err_t device_mqtt_transport_start(
         esp_mqtt_client_destroy(device_mqtt_client);
         device_mqtt_client = NULL;
         device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_credentials();
         return register_result;
     }
     const esp_err_t start_result = esp_mqtt_client_start(device_mqtt_client);
@@ -223,6 +303,8 @@ esp_err_t device_mqtt_transport_start(
         esp_mqtt_client_destroy(device_mqtt_client);
         device_mqtt_client = NULL;
         device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_credentials();
         return start_result;
     }
     return ESP_OK;
@@ -232,6 +314,8 @@ esp_err_t device_mqtt_transport_stop(void) {
     if (device_mqtt_client == NULL) {
         device_mqtt_connected = false;
         device_mqtt_command_callback = NULL;
+        device_mqtt_subscribed_device_id[0] = '\0';
+        device_mqtt_clear_credentials();
         return ESP_OK;
     }
     const esp_err_t result = esp_mqtt_client_stop(device_mqtt_client);
@@ -240,6 +324,7 @@ esp_err_t device_mqtt_transport_stop(void) {
     device_mqtt_connected = false;
     device_mqtt_command_callback = NULL;
     device_mqtt_subscribed_device_id[0] = '\0';
+    device_mqtt_clear_credentials();
     return result;
 }
 

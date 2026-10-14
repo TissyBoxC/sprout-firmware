@@ -7,7 +7,17 @@ Set-StrictMode -Version Latest
 $firmwareRoot = Split-Path -Parent $PSScriptRoot
 
 function Resolve-HostCompiler {
-    foreach ($candidate in @('g++', 'clang++')) {
+    param(
+        [ValidateSet('c', 'c++')]
+        [string]$Language = 'c++'
+    )
+
+    $candidates = if ($Language -eq 'c') {
+        @('gcc', 'clang')
+    } else {
+        @('g++', 'clang++')
+    }
+    foreach ($candidate in $candidates) {
         $command = Get-Command $candidate -ErrorAction SilentlyContinue
         if ($null -ne $command) {
             return $command.Source
@@ -30,10 +40,14 @@ function Invoke-HostTest {
         # binding an empty array to a mandatory parameter fails under pwsh 7.
         [string[]]$AdditionalArguments = @(),
 
+        [ValidateSet('c', 'c++')]
+        [string]$Language = 'c++',
+
         [Parameter(Mandatory = $true)]
         [string]$Compiler
     )
 
+    $languageStandard = if ($Language -eq 'c') { '-std=c11' } else { '-std=c++17' }
     $outputDirectory = Join-Path ([System.IO.Path]::GetTempPath()) (
         'sprout-host-' + [System.Guid]::NewGuid().ToString('N').Substring(0, 8)
     )
@@ -42,7 +56,7 @@ function Invoke-HostTest {
 
     try {
         $arguments = @(
-            '-std=c++17'
+            $languageStandard
             '-Wall'
             '-Wextra'
             '-Werror'
@@ -72,7 +86,8 @@ function Invoke-HostTest {
     }
 }
 
-$compiler = Resolve-HostCompiler
+$compiler = Resolve-HostCompiler -Language 'c++'
+$cCompiler = Resolve-HostCompiler -Language 'c'
 
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 
@@ -196,6 +211,21 @@ Invoke-HostTest `
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'device_mqtt_transport_ownership' `
+    -Sources @(
+        (Join-Path $deviceMqttRoot 'src/device_mqtt_core.c')
+        (Join-Path $deviceMqttRoot 'src/device_mqtt_transport.c')
+        (Join-Path $deviceMqttRoot 'test/test_device_mqtt_transport_ownership.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceMqttRoot 'include')
+        (Join-Path $deviceMqttRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Language 'c' `
+    -Compiler $cCompiler
 
 $deviceMessageRoot = Join-Path $firmwareRoot 'components/device_message'
 Invoke-HostTest `

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "esp_err.h"
 
@@ -29,7 +30,9 @@ typedef esp_err_t (*device_mqtt_command_callback_t)(
  * supplied by the caller. Nothing is hardcoded: production credentials come
  * from the device provisioning flow and the compiled configuration. The URL
  * must be an `mqtts://` endpoint on the trusted host allowlist and peer plus
- * hostname verification stay enabled.
+ * hostname verification stay enabled. All supplied strings are borrowed for
+ * the duration of this call; the transport copies them and retains the copies
+ * until the transport is stopped.
  *
  * Passing a callback replaces the previously registered command callback.
  * Starting twice with the same configuration is idempotent; starting again
