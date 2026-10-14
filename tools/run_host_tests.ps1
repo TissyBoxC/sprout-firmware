@@ -221,6 +221,27 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$wakeFeedbackRoot = Join-Path $firmwareRoot 'components/wake_feedback'
+Invoke-HostTest `
+    -Name 'wake_feedback_fanout' `
+    -Sources @(
+        (Join-Path $wakeFeedbackRoot 'src/wake_feedback.c')
+        (Join-Path $wakeFeedbackRoot 'test/stubs/wake_feedback_deps.c')
+        (Join-Path $wakeFeedbackRoot 'test/test_wake_feedback.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $wakeFeedbackRoot 'include')
+        (Join-Path $wakeFeedbackRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_VOICE_WAKE=1'
+        '-DCONFIG_FEATURE_PROMPT_TONE=1'
+        '-DCONFIG_FEATURE_LED_INDICATOR=1'
+        '-DCONFIG_FEATURE_DIAGNOSTIC_REPORTER=1'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
