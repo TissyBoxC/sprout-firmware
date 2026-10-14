@@ -45,6 +45,18 @@ extern "C" {
 /** @brief Stable command acknowledgement event type emitted by the device. */
 #define DEVICE_MQTT_COMMAND_ACK_EVENT_TYPE "device.command_ack"
 
+/** @brief Maximum title length accepted from a display_message command. */
+#define DEVICE_MQTT_MESSAGE_TITLE_SIZE 128
+
+/** @brief Maximum body length accepted from a display_message command. */
+#define DEVICE_MQTT_MESSAGE_BODY_SIZE 512
+
+/** @brief Maximum severity length accepted from a display_message command. */
+#define DEVICE_MQTT_MESSAGE_SEVERITY_SIZE 16
+
+/** @brief Maximum category length accepted from a display_message command. */
+#define DEVICE_MQTT_MESSAGE_CATEGORY_SIZE 32
+
 /** @brief Parsed command envelope from `device.command`. */
 typedef struct {
     char device_id[DEVICE_MQTT_DEVICE_ID_SIZE];
@@ -59,6 +71,24 @@ typedef struct {
     char data[DEVICE_MQTT_COMMAND_DATA_SIZE];
     size_t data_length;
 } device_mqtt_command_t;
+
+/** @brief Parsed `display_message` payload ready for the presenter. */
+typedef struct {
+    char notification_id[DEVICE_MQTT_COMMAND_ID_SIZE];
+    char title[DEVICE_MQTT_MESSAGE_TITLE_SIZE];
+    char body[DEVICE_MQTT_MESSAGE_BODY_SIZE];
+    char severity[DEVICE_MQTT_MESSAGE_SEVERITY_SIZE];
+    char category[DEVICE_MQTT_MESSAGE_CATEGORY_SIZE];
+    uint32_t duration_seconds;
+} device_mqtt_display_message_t;
+
+/** @brief Parsed `sync_privacy_consent` payload ready for the privacy guard. */
+typedef struct {
+    bool audio_upload_consent;
+    bool image_upload_consent;
+    bool conversation_history_consent;
+    bool usage_analytics_consent;
+} device_mqtt_privacy_consent_t;
 
 /** @brief Stable command disposition for execution and acknowledgement. */
 typedef enum {
@@ -80,6 +110,8 @@ typedef enum {
     DEVICE_MQTT_ERR_FIELD_TOO_LONG,
     DEVICE_MQTT_ERR_NOT_INITIALIZED,
     DEVICE_MQTT_ERR_STORAGE,
+    DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND,
+    DEVICE_MQTT_ERR_INVALID_PAYLOAD,
 } device_mqtt_error_t;
 
 /**
@@ -126,6 +158,29 @@ bool device_mqtt_is_duplicate(const char *command_id);
 
 /** @brief Clear the in-memory deduplication ledger. */
 void device_mqtt_reset_state(void);
+
+/**
+ * @brief Parse a `display_message` command's verbatim data object.
+ *
+ * The returned presenter fields are bounded and zeroed on failure. The caller
+ * must not execute the command unless this returns DEVICE_MQTT_OK.
+ */
+device_mqtt_error_t device_mqtt_parse_display_message(
+    const device_mqtt_command_t *command,
+    device_mqtt_display_message_t *message_out
+);
+
+/**
+ * @brief Parse a `sync_privacy_consent` command's verbatim data object.
+ *
+ * The platform sends one complete consent snapshot. A payload missing any of
+ * the four booleans is rejected so a partial delivery cannot leave a
+ * withdrawn class enabled.
+ */
+device_mqtt_error_t device_mqtt_parse_privacy_consent(
+    const device_mqtt_command_t *command,
+    device_mqtt_privacy_consent_t *consent_out
+);
 
 /**
  * @brief Build the acknowledgement envelope for one executed command.

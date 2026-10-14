@@ -287,6 +287,184 @@ void test_ack_envelope_is_contract_complete() {
     assert(std::strstr(ack, "\"request_id\":\"request_demo_001\"") != nullptr);
 }
 
+void test_display_message_adapter_parses_escaped_text() {
+    const char *command_json =
+        "{\"schema_version\":\"1.0.0\",\"event_type\":\"device.command\","
+        "\"subject\":{\"type\":\"device\",\"id\":\"device_demo_001\"},"
+        "\"request_id\":\"request_demo_001\","
+        "\"payload\":{\"command_id\":\"" "11111111-2222-3333-4444-555555555555" "\","
+        "\"command_type\":\"display_message\","
+        "\"request_id\":\"request_demo_001\","
+        "\"data\":{\"notification_id\":\"notification_demo_001\","
+        "\"title\":\"\\u665a\\u5b89\",\"body\":\"Line 1\\nLine 2\","
+        "\"severity\":\"info\",\"category\":\"message\","
+        "\"duration_seconds\":20}}}";
+    device_mqtt_command_t command = {};
+    assert(
+        device_mqtt_parse_command(
+            DEVICE_ID,
+            command_json,
+            std::strlen(command_json),
+            &command
+        ) == DEVICE_MQTT_OK
+    );
+    device_mqtt_display_message_t message = {};
+    assert(
+        device_mqtt_parse_display_message(&command, &message) ==
+        DEVICE_MQTT_OK
+    );
+    assert(
+        std::strcmp(message.notification_id, "notification_demo_001") == 0
+    );
+    assert(std::strcmp(message.title, "\xe6\x99\x9a\xe5\xae\x89") == 0);
+    assert(std::strcmp(message.body, "Line 1\nLine 2") == 0);
+    assert(std::strcmp(message.severity, "info") == 0);
+    assert(std::strcmp(message.category, "message") == 0);
+    assert(message.duration_seconds == 20);
+}
+
+void test_display_message_requires_identity_and_title() {
+    device_mqtt_command_t command = {};
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "display_message"
+    );
+    const char *missing_title =
+        "{\"notification_id\":\"notification_demo_001\"}";
+    std::snprintf(
+        command.data,
+        sizeof(command.data),
+        "%s",
+        missing_title
+    );
+    command.data_length = std::strlen(command.data);
+    device_mqtt_display_message_t message = {};
+    assert(
+        device_mqtt_parse_display_message(&command, &message) ==
+        DEVICE_MQTT_ERR_INVALID_PAYLOAD
+    );
+    assert(message.title[0] == '\0');
+}
+
+void test_display_message_rejects_wrong_types() {
+    device_mqtt_command_t command = {};
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "display_message"
+    );
+    const char *wrong_duration =
+        "{\"notification_id\":\"notification_demo_001\","
+        "\"title\":\"Title\",\"duration_seconds\":\"20\"}";
+    std::snprintf(
+        command.data,
+        sizeof(command.data),
+        "%s",
+        wrong_duration
+    );
+    command.data_length = std::strlen(command.data);
+    device_mqtt_display_message_t message = {};
+    assert(
+        device_mqtt_parse_display_message(&command, &message) ==
+        DEVICE_MQTT_ERR_INVALID_PAYLOAD
+    );
+}
+
+void test_privacy_consent_requires_all_four_booleans() {
+    device_mqtt_command_t command = {};
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "sync_privacy_consent"
+    );
+    const char *complete =
+        "{\"audio_upload\":true,\"image_upload\":false,"
+        "\"conversation_history\":true,\"usage_analytics\":false}";
+    std::snprintf(command.data, sizeof(command.data), "%s", complete);
+    command.data_length = std::strlen(command.data);
+    device_mqtt_privacy_consent_t consent = {};
+    assert(
+        device_mqtt_parse_privacy_consent(&command, &consent) ==
+        DEVICE_MQTT_OK
+    );
+    assert(consent.audio_upload_consent);
+    assert(!consent.image_upload_consent);
+    assert(consent.conversation_history_consent);
+    assert(!consent.usage_analytics_consent);
+
+    const char *partial =
+        "{\"audio_upload\":true,\"image_upload\":false,"
+        "\"conversation_history\":true}";
+    std::snprintf(command.data, sizeof(command.data), "%s", partial);
+    command.data_length = std::strlen(command.data);
+    assert(
+        device_mqtt_parse_privacy_consent(&command, &consent) ==
+        DEVICE_MQTT_ERR_INVALID_PAYLOAD
+    );
+}
+
+void test_adapter_rejects_wrong_command_type() {
+    device_mqtt_command_t command = {};
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "resync_time"
+    );
+    std::snprintf(command.data, sizeof(command.data), "%s", "{}");
+    command.data_length = std::strlen(command.data);
+    device_mqtt_display_message_t message = {};
+    device_mqtt_privacy_consent_t consent = {};
+    assert(
+        device_mqtt_parse_display_message(&command, &message) ==
+        DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND
+    );
+    assert(
+        device_mqtt_parse_privacy_consent(&command, &consent) ==
+        DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND
+    );
+}
+
+void test_adapter_rejects_trailing_and_partial_data() {
+    device_mqtt_command_t command = {};
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "sync_privacy_consent"
+    );
+    const char *trailing =
+        "{\"audio_upload\":true,\"image_upload\":false,"
+        "\"conversation_history\":true,\"usage_analytics\":false} trailing";
+    std::snprintf(command.data, sizeof(command.data), "%s", trailing);
+    command.data_length = std::strlen(trailing);
+    device_mqtt_privacy_consent_t consent = {};
+    assert(
+        device_mqtt_parse_privacy_consent(&command, &consent) ==
+        DEVICE_MQTT_ERR_INVALID_PAYLOAD
+    );
+
+    std::snprintf(
+        command.command_type,
+        sizeof(command.command_type),
+        "%s",
+        "display_message"
+    );
+    const char *partial =
+        "{\"notification_id\":\"notification_demo_001\"}";
+    std::snprintf(command.data, sizeof(command.data), "%s", partial);
+    command.data_length = std::strlen(partial);
+    device_mqtt_display_message_t message = {};
+    assert(
+        device_mqtt_parse_display_message(&command, &message) ==
+        DEVICE_MQTT_ERR_INVALID_PAYLOAD
+    );
+}
+
 }  // namespace
 
 int main() {
@@ -300,5 +478,11 @@ int main() {
     test_duplicate_delivery_is_suppressed();
     test_ledger_is_bounded();
     test_ack_envelope_is_contract_complete();
+    test_display_message_adapter_parses_escaped_text();
+    test_display_message_requires_identity_and_title();
+    test_display_message_rejects_wrong_types();
+    test_privacy_consent_requires_all_four_booleans();
+    test_adapter_rejects_wrong_command_type();
+    test_adapter_rejects_trailing_and_partial_data();
     return 0;
 }

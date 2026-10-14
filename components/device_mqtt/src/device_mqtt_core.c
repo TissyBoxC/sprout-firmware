@@ -229,6 +229,217 @@ static bool device_mqtt_skip_json_value(const char **cursor) {
     }
 }
 
+static bool device_mqtt_read_hex4(const char **cursor, uint32_t *value_out) {
+    uint32_t value = 0;
+    for (int index = 0; index < 4; ++index) {
+        const unsigned char current = (unsigned char)**cursor;
+        uint32_t digit = 0;
+        if (current >= '0' && current <= '9') {
+            digit = (uint32_t)(current - '0');
+        } else if (current >= 'a' && current <= 'f') {
+            digit = (uint32_t)(current - 'a') + 10;
+        } else if (current >= 'A' && current <= 'F') {
+            digit = (uint32_t)(current - 'A') + 10;
+        } else {
+            return false;
+        }
+        value = (value << 4) | digit;
+        *cursor += 1;
+    }
+    *value_out = value;
+    return true;
+}
+
+static bool device_mqtt_append_utf8(
+    uint32_t codepoint,
+    char *destination,
+    size_t destination_size,
+    size_t *length_out
+) {
+    size_t length = 0;
+    if (codepoint <= 0x7f) {
+        length = 1;
+    } else if (codepoint <= 0x7ff) {
+        length = 2;
+    } else if (codepoint <= 0xffff) {
+        if (codepoint >= 0xd800 && codepoint <= 0xdfff) {
+            return false;
+        }
+        length = 3;
+    } else if (codepoint <= 0x10ffff) {
+        length = 4;
+    } else {
+        return false;
+    }
+    if (destination == NULL || *length_out > destination_size ||
+        length > destination_size - *length_out - 1) {
+        return false;
+    }
+    char *output = destination + *length_out;
+    switch (length) {
+        case 1:
+            output[0] = (char)codepoint;
+            break;
+        case 2:
+            output[0] = (char)(0xc0 | (codepoint >> 6));
+            output[1] = (char)(0x80 | (codepoint & 0x3f));
+            break;
+        case 3:
+            output[0] = (char)(0xe0 | (codepoint >> 12));
+            output[1] = (char)(0x80 | ((codepoint >> 6) & 0x3f));
+            output[2] = (char)(0x80 | (codepoint & 0x3f));
+            break;
+        case 4:
+            output[0] = (char)(0xf0 | (codepoint >> 18));
+            output[1] = (char)(0x80 | ((codepoint >> 12) & 0x3f));
+            output[2] = (char)(0x80 | ((codepoint >> 6) & 0x3f));
+            output[3] = (char)(0x80 | (codepoint & 0x3f));
+            break;
+        default:
+            return false;
+    }
+    *length_out += length;
+    return true;
+}
+
+static bool device_mqtt_read_decoded_json_string(
+    const char **cursor,
+    char *destination,
+    size_t destination_size
+) {
+    if (**cursor != '"' || destination == NULL || destination_size == 0) {
+        return false;
+    }
+    const char *current = *cursor + 1;
+    size_t length = 0;
+    while (*current != '\0' && *current != '"') {
+        const unsigned char byte = (unsigned char)*current;
+        if (byte < 0x20) {
+            return false;
+        }
+        if (byte != '\\') {
+            if (length >= destination_size - 1) {
+                return false;
+            }
+            destination[length++] = (char)byte;
+            current += 1;
+            continue;
+        }
+        current += 1;
+        switch (*current) {
+            case '"':
+            case '\\':
+            case '/':
+                if (length >= destination_size - 1) {
+                    return false;
+                }
+                destination[length++] = *current;
+                current += 1;
+                break;
+            case 'b':
+            case 'f':
+            case 'n':
+            case 'r':
+            case 't': {
+                if (length >= destination_size - 1) {
+                    return false;
+                }
+                const char escaped =
+                    *current == 'b'
+                        ? '\b'
+                        : *current == 'f'
+                            ? '\f'
+                            : *current == 'n'
+                                ? '\n'
+                                : *current == 'r' ? '\r' : '\t';
+                destination[length++] = escaped;
+                current += 1;
+                break;
+            }
+            case 'u': {
+                current += 1;
+                uint32_t codepoint = 0;
+                if (!device_mqtt_read_hex4(&current, &codepoint)) {
+                    return false;
+                }
+                if (codepoint >= 0xd800 && codepoint <= 0xdbff) {
+                    if (current[0] != '\\' || current[1] != 'u') {
+                        return false;
+                    }
+                    current += 2;
+                    uint32_t low_surrogate = 0;
+                    if (!device_mqtt_read_hex4(
+                            &current,
+                            &low_surrogate
+                        ) ||
+                        low_surrogate < 0xdc00 ||
+                        low_surrogate > 0xdfff) {
+                        return false;
+                    }
+                    codepoint = 0x10000 +
+                        ((codepoint - 0xd800) << 10) +
+                        (low_surrogate - 0xdc00);
+                } else if (codepoint >= 0xdc00 && codepoint <= 0xdfff) {
+                    return false;
+                }
+                if (!device_mqtt_append_utf8(
+                        codepoint,
+                        destination,
+                        destination_size,
+                        &length
+                    )) {
+                    return false;
+                }
+                break;
+            }
+            default:
+                return false;
+        }
+    }
+    if (*current != '"' || length >= destination_size) {
+        return false;
+    }
+    destination[length] = '\0';
+    *cursor = current + 1;
+    return true;
+}
+
+static bool device_mqtt_read_bool_value(const char **cursor, bool *value_out) {
+    if (value_out == NULL) {
+        return false;
+    }
+    if (strncmp(*cursor, "true", 4) == 0) {
+        *value_out = true;
+        *cursor += 4;
+        return true;
+    }
+    if (strncmp(*cursor, "false", 5) == 0) {
+        *value_out = false;
+        *cursor += 5;
+        return true;
+    }
+    return false;
+}
+
+static bool device_mqtt_read_u32_value(const char **cursor, uint32_t *value_out) {
+    if (value_out == NULL || **cursor < '0' || **cursor > '9') {
+        return false;
+    }
+    uint32_t value = 0;
+    const char *current = *cursor;
+    while (*current >= '0' && *current <= '9') {
+        const uint32_t digit = (uint32_t)(*current - '0');
+        if (value > (UINT32_MAX - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
+        current += 1;
+    }
+    *value_out = value;
+    *cursor = current;
+    return true;
+}
+
 static bool device_mqtt_parse_payload(
     const char **cursor,
     device_mqtt_envelope_fields_t *fields
@@ -743,6 +954,268 @@ device_mqtt_error_t device_mqtt_parse_command(
 
 void device_mqtt_reset_state(void) {
     memset(&device_mqtt_ledger, 0, sizeof(device_mqtt_ledger));
+}
+
+static bool device_mqtt_data_object(
+    const device_mqtt_command_t *command,
+    const char **cursor_out
+) {
+    if (command == NULL || command->data_length == 0) {
+        return false;
+    }
+    if (command->data_length >= sizeof(command->data) ||
+        command->data[command->data_length] != '\0') {
+        return false;
+    }
+    const char *cursor = command->data;
+    device_mqtt_skip_whitespace(&cursor);
+    if (*cursor != '{') {
+        return false;
+    }
+    *cursor_out = cursor;
+    return true;
+}
+
+static bool device_mqtt_next_data_key(
+    const char **cursor,
+    const char **key_out,
+    size_t *key_length_out
+) {
+    device_mqtt_skip_whitespace(cursor);
+    if (**cursor != '"') {
+        return false;
+    }
+    const char *key = NULL;
+    size_t key_length = 0;
+    if (!device_mqtt_read_json_string(cursor, &key, &key_length)) {
+        return false;
+    }
+    device_mqtt_skip_whitespace(cursor);
+    if (**cursor != ':') {
+        return false;
+    }
+    *cursor += 1;
+    device_mqtt_skip_whitespace(cursor);
+    *key_out = key;
+    *key_length_out = key_length;
+    return true;
+}
+
+static bool device_mqtt_advance_data_object(
+    const char **cursor,
+    bool *done_out
+) {
+    device_mqtt_skip_whitespace(cursor);
+    if (**cursor == ',') {
+        *cursor += 1;
+        *done_out = false;
+        return true;
+    }
+    if (**cursor != '}') {
+        return false;
+    }
+    *cursor += 1;
+    device_mqtt_skip_whitespace(cursor);
+    if (**cursor != '\0') {
+        return false;
+    }
+    *done_out = true;
+    return true;
+}
+
+device_mqtt_error_t device_mqtt_parse_display_message(
+    const device_mqtt_command_t *command,
+    device_mqtt_display_message_t *message_out
+) {
+    if (command == NULL || message_out == NULL) {
+        return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (strcmp(command->command_type, "display_message") != 0) {
+        return DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND;
+    }
+    memset(message_out, 0, sizeof(*message_out));
+
+    const char *cursor = NULL;
+    if (!device_mqtt_data_object(command, &cursor)) {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    cursor += 1;
+    device_mqtt_skip_whitespace(&cursor);
+    if (*cursor == '}') {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    bool has_notification_id = false;
+    bool has_title = false;
+    bool has_body = false;
+    bool has_severity = false;
+    bool has_category = false;
+    bool has_duration = false;
+    bool done = false;
+    while (*cursor != '\0') {
+        const char *key = NULL;
+        size_t key_length = 0;
+        if (!device_mqtt_next_data_key(&cursor, &key, &key_length)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (key_length == 15 &&
+            memcmp(key, "notification_id", 15) == 0) {
+            if (!device_mqtt_read_decoded_json_string(
+                    &cursor,
+                    message_out->notification_id,
+                    sizeof(message_out->notification_id)
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_notification_id = true;
+        } else if (key_length == 5 && memcmp(key, "title", 5) == 0) {
+            if (!device_mqtt_read_decoded_json_string(
+                    &cursor,
+                    message_out->title,
+                    sizeof(message_out->title)
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_title = true;
+        } else if (key_length == 4 && memcmp(key, "body", 4) == 0) {
+            if (!device_mqtt_read_decoded_json_string(
+                    &cursor,
+                    message_out->body,
+                    sizeof(message_out->body)
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_body = true;
+        } else if (key_length == 8 && memcmp(key, "severity", 8) == 0) {
+            if (!device_mqtt_read_decoded_json_string(
+                    &cursor,
+                    message_out->severity,
+                    sizeof(message_out->severity)
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_severity = true;
+        } else if (key_length == 8 && memcmp(key, "category", 8) == 0) {
+            if (!device_mqtt_read_decoded_json_string(
+                    &cursor,
+                    message_out->category,
+                    sizeof(message_out->category)
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_category = true;
+        } else if (key_length == 16 &&
+                   memcmp(key, "duration_seconds", 16) == 0) {
+            if (!device_mqtt_read_u32_value(
+                    &cursor,
+                    &message_out->duration_seconds
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_duration = true;
+        } else if (!device_mqtt_skip_json_value(&cursor)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (!device_mqtt_advance_data_object(&cursor, &done)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (done) {
+            break;
+        }
+    }
+    if (!has_notification_id || !has_title ||
+        message_out->notification_id[0] == '\0' ||
+        message_out->title[0] == '\0') {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    (void)has_body;
+    (void)has_severity;
+    (void)has_category;
+    (void)has_duration;
+    return DEVICE_MQTT_OK;
+}
+
+device_mqtt_error_t device_mqtt_parse_privacy_consent(
+    const device_mqtt_command_t *command,
+    device_mqtt_privacy_consent_t *consent_out
+) {
+    if (command == NULL || consent_out == NULL) {
+        return DEVICE_MQTT_ERR_NULL_ARGUMENT;
+    }
+    if (strcmp(command->command_type, "sync_privacy_consent") != 0) {
+        return DEVICE_MQTT_ERR_UNSUPPORTED_COMMAND;
+    }
+    memset(consent_out, 0, sizeof(*consent_out));
+
+    const char *cursor = NULL;
+    if (!device_mqtt_data_object(command, &cursor)) {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    cursor += 1;
+    device_mqtt_skip_whitespace(&cursor);
+    if (*cursor == '}') {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    bool has_audio_upload = false;
+    bool has_image_upload = false;
+    bool has_conversation_history = false;
+    bool has_usage_analytics = false;
+    bool done = false;
+    while (*cursor != '\0') {
+        const char *key = NULL;
+        size_t key_length = 0;
+        if (!device_mqtt_next_data_key(&cursor, &key, &key_length)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (key_length == 12 && memcmp(key, "audio_upload", 12) == 0) {
+            if (!device_mqtt_read_bool_value(
+                    &cursor,
+                    &consent_out->audio_upload_consent
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_audio_upload = true;
+        } else if (key_length == 12 &&
+                   memcmp(key, "image_upload", 12) == 0) {
+            if (!device_mqtt_read_bool_value(
+                    &cursor,
+                    &consent_out->image_upload_consent
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_image_upload = true;
+        } else if (key_length == 20 &&
+                   memcmp(key, "conversation_history", 20) == 0) {
+            if (!device_mqtt_read_bool_value(
+                    &cursor,
+                    &consent_out->conversation_history_consent
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_conversation_history = true;
+        } else if (key_length == 15 &&
+                   memcmp(key, "usage_analytics", 15) == 0) {
+            if (!device_mqtt_read_bool_value(
+                    &cursor,
+                    &consent_out->usage_analytics_consent
+                )) {
+                return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+            }
+            has_usage_analytics = true;
+        } else if (!device_mqtt_skip_json_value(&cursor)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (!device_mqtt_advance_data_object(&cursor, &done)) {
+            return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+        }
+        if (done) {
+            break;
+        }
+    }
+    if (!has_audio_upload || !has_image_upload ||
+        !has_conversation_history || !has_usage_analytics) {
+        return DEVICE_MQTT_ERR_INVALID_PAYLOAD;
+    }
+    return DEVICE_MQTT_OK;
 }
 
 bool device_mqtt_is_duplicate(const char *command_id) {
