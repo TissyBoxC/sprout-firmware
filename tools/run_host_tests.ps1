@@ -124,6 +124,25 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$deviceCapabilitiesRoot = Join-Path $firmwareRoot 'components/device_capabilities'
+Invoke-HostTest `
+    -Name 'device_capabilities_contract' `
+    -Sources @(
+        (Join-Path $deviceCapabilitiesRoot 'src/device_capabilities.c')
+        (Join-Path $deviceCapabilitiesRoot 'test/test_device_capabilities.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceCapabilitiesRoot 'include')
+        (Join-Path $deviceCapabilitiesRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_CAPABILITY_AUDIO_INPUT=1'
+        '-DCONFIG_CAPABILITY_AUDIO_OUTPUT=1'
+        '-DCONFIG_CAPABILITY_WIFI=1'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
