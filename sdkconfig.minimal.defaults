@@ -1,0 +1,4 @@
+# Minimal image overlay. Disable optional feature modules through Kconfig so
+# generated sdkconfig headers stay consistent with the build configuration.
+# CONFIG_FEATURE_UI_TEXT is not set
+# CONFIG_FEATURE_UI_TEXT_SYNC is not set
