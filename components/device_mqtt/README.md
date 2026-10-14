@@ -16,6 +16,11 @@ root.
   routing fields must agree with the topic device id.
 - `command_id`, `command_type`, and `request_id` are required and bounded.
   The envelope `request_id` must match `payload.request_id`.
+- The `payload.data` object is retained verbatim (bounded by
+  `DEVICE_MQTT_COMMAND_DATA_SIZE`) because the envelope is command-agnostic:
+  the executing module parses the fields its command type defines. An absent
+  `data` object yields an empty string, and a `data` object over the bound is
+  rejected as a contract violation.
 - The deduplication ledger keeps the most recent `DEVICE_MQTT_DEDUPE_CAPACITY`
   (16) command ids so a QoS 1 redelivery cannot execute an operator command
   twice. The ledger resets on reboot.

@@ -71,6 +71,76 @@ void test_valid_command_parses() {
     assert(std::strcmp(command.command_id, UUID_COMMAND_ID) == 0);
     assert(std::strcmp(command.command_type, "display_message") == 0);
     assert(std::strcmp(command.request_id, "request_demo_001") == 0);
+    // The verbatim data object is retained so the executing module can parse
+    // the fields its command type defines.
+    assert(
+        std::strcmp(
+            command.data,
+            "{\"notification_id\":\"notification_demo_001\"}"
+        ) == 0
+    );
+    assert(command.data_length == std::strlen(command.data));
+}
+
+void test_command_without_data_keeps_empty_object() {
+    const char *command_without_data =
+        "{\"schema_version\":\"1.0.0\",\"event_type\":\"device.command\","
+        "\"subject\":{\"type\":\"device\",\"id\":\"device_demo_001\"},"
+        "\"request_id\":\"request_demo_001\","
+        "\"payload\":{\"command_id\":\"" "11111111-2222-3333-4444-555555555555" "\","
+        "\"command_type\":\"resync_time\","
+        "\"request_id\":\"request_demo_001\"}}";
+    device_mqtt_command_t command = {};
+    assert(
+        device_mqtt_parse_command(
+            DEVICE_ID,
+            command_without_data,
+            std::strlen(command_without_data),
+            &command
+        ) == DEVICE_MQTT_OK
+    );
+    assert(command.data[0] == '\0');
+    assert(command.data_length == 0);
+}
+
+void test_oversized_command_data_is_rejected() {
+    // The data bound is tighter than the 2 KiB envelope bound, so keep the
+    // whole event under the envelope limit to prove the data check fires.
+    static char oversized[DEVICE_MQTT_COMMAND_DATA_SIZE + 512];
+    int offset = std::snprintf(
+        oversized,
+        sizeof(oversized),
+        "{\"schema_version\":\"1.0.0\",\"event_type\":\"device.command\","
+        "\"subject\":{\"type\":\"device\",\"id\":\"device_demo_001\"},"
+        "\"request_id\":\"request_demo_001\","
+        "\"payload\":{\"command_id\":\"" "11111111-2222-3333-4444-555555555555" "\","
+        "\"command_type\":\"display_message\","
+        "\"request_id\":\"request_demo_001\",\"data\":{\"blob\":\""
+    );
+    assert(offset > 0 && (size_t)offset < sizeof(oversized));
+    // Fill past the data bound measured from the start of the data object, so
+    // the retained object itself is over length while the whole event stays
+    // under the 2 KiB envelope bound.
+    int filled = 0;
+    while (filled < DEVICE_MQTT_COMMAND_DATA_SIZE + 64) {
+        oversized[offset++] = 'a';
+        ++filled;
+    }
+    oversized[offset++] = '"';
+    oversized[offset++] = '}';
+    oversized[offset++] = '}';
+    oversized[offset++] = '}';
+    oversized[offset] = '\0';
+
+    device_mqtt_command_t command = {};
+    assert(
+        device_mqtt_parse_command(
+            DEVICE_ID,
+            oversized,
+            std::strlen(oversized),
+            &command
+        ) == DEVICE_MQTT_ERR_FIELD_TOO_LONG
+    );
 }
 
 void test_identity_mismatch_is_rejected() {
@@ -222,6 +292,8 @@ void test_ack_envelope_is_contract_complete() {
 int main() {
     test_topic_identity_is_derived();
     test_valid_command_parses();
+    test_command_without_data_keeps_empty_object();
+    test_oversized_command_data_is_rejected();
     test_identity_mismatch_is_rejected();
     test_wrong_schema_or_event_is_rejected();
     test_missing_or_mismatched_request_id_is_rejected();

@@ -23,6 +23,16 @@ extern "C" {
 /** @brief Maximum request id length accepted from a command event. */
 #define DEVICE_MQTT_REQUEST_ID_SIZE 128
 
+/**
+ * @brief Maximum raw `data` object length retained from a command event.
+ *
+ * The command envelope is type-agnostic, so the component keeps the verbatim
+ * `data` object and lets the executing module parse the fields its command
+ * type actually defines. The bound still caps what a hostile broker payload
+ * can force the device to buffer.
+ */
+#define DEVICE_MQTT_COMMAND_DATA_SIZE 1024
+
 /** @brief Number of recent command ids retained for duplicate detection. */
 #define DEVICE_MQTT_DEDUPE_CAPACITY 16
 
@@ -41,6 +51,13 @@ typedef struct {
     char command_id[DEVICE_MQTT_COMMAND_ID_SIZE];
     char command_type[DEVICE_MQTT_COMMAND_TYPE_SIZE];
     char request_id[DEVICE_MQTT_REQUEST_ID_SIZE];
+    /**
+     * Verbatim `payload.data` JSON object. Empty when the command carries no
+     * data object; the executing module parses the fields its command type
+     * defines.
+     */
+    char data[DEVICE_MQTT_COMMAND_DATA_SIZE];
+    size_t data_length;
 } device_mqtt_command_t;
 
 /** @brief Stable command disposition for execution and acknowledgement. */

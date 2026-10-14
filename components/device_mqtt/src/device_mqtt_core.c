@@ -21,6 +21,8 @@ typedef struct {
     size_t command_type_length;
     const char *payload_request_id;
     size_t payload_request_id_length;
+    const char *data;
+    size_t data_length;
 } device_mqtt_envelope_fields_t;
 
 typedef struct {
@@ -272,15 +274,30 @@ static bool device_mqtt_parse_payload(
                 )) {
                 return false;
             }
-        } else {
-            // `data` is the only nested object in the command payload. Skip
-            // the whole value so keys inside it never leak into envelope
-            // field matching.
-            if (**cursor == '{') {
+        } else if (key_length == 4 && memcmp(key, "data", 4) == 0) {
+            // Keep the verbatim object: the command envelope is
+            // type-agnostic and the executing module parses the fields its
+            // command type defines.
+            if (**cursor != '{') {
+                if (!device_mqtt_skip_json_value(cursor)) {
+                    return false;
+                }
+            } else {
+                const char *data_start = *cursor;
                 if (!device_mqtt_skip_json_object(cursor)) {
                     return false;
                 }
-            } else if (!device_mqtt_skip_json_value(cursor)) {
+                if (fields->data != NULL) {
+                    return false;
+                }
+                fields->data = data_start;
+                fields->data_length =
+                    (size_t)(*cursor - data_start);
+            }
+        } else {
+            // Unknown payload keys are skipped so their nested keys never
+            // leak into envelope field matching.
+            if (!device_mqtt_skip_json_value(cursor)) {
                 return false;
             }
         }
@@ -684,6 +701,9 @@ device_mqtt_error_t device_mqtt_parse_command(
         ) != 0) {
         return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
     }
+    if (fields.data_length >= DEVICE_MQTT_COMMAND_DATA_SIZE) {
+        return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
+    }
     memset(command_out, 0, sizeof(*command_out));
     snprintf(command_out->device_id, sizeof(command_out->device_id), "%s",
              device_id);
@@ -706,6 +726,17 @@ device_mqtt_error_t device_mqtt_parse_command(
             sizeof(command_out->request_id)
         ) != DEVICE_MQTT_OK) {
         return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
+    }
+    if (fields.data != NULL) {
+        if (device_mqtt_copy_checked(
+                fields.data,
+                fields.data_length,
+                command_out->data,
+                sizeof(command_out->data)
+            ) != DEVICE_MQTT_OK) {
+            return DEVICE_MQTT_ERR_FIELD_TOO_LONG;
+        }
+        command_out->data_length = fields.data_length;
     }
     return DEVICE_MQTT_OK;
 }
