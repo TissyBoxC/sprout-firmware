@@ -143,6 +143,21 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$provisioningPayloadRoot = Join-Path $firmwareRoot 'components/provisioning_payload'
+Invoke-HostTest `
+    -Name 'provisioning_payload_qr' `
+    -Sources @(
+        (Join-Path $provisioningPayloadRoot 'src/provisioning_payload.c')
+        (Join-Path $provisioningPayloadRoot 'test/test_provisioning_payload.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $provisioningPayloadRoot 'include')
+        (Join-Path $provisioningPayloadRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
