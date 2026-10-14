@@ -189,6 +189,23 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$errorRecoveryRoot = Join-Path $firmwareRoot 'components/error_recovery'
+Invoke-HostTest `
+    -Name 'error_recovery_transitions' `
+    -Sources @(
+        (Join-Path $errorRecoveryRoot 'src/error_recovery.c')
+        (Join-Path $errorRecoveryRoot 'test/stubs/error_recovery_host_stubs.c')
+        (Join-Path $errorRecoveryRoot 'test/test_error_recovery.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $errorRecoveryRoot 'include')
+        (Join-Path $errorRecoveryRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_ERROR_RECOVERY_RESTART_DELAY_MS=2000'
+    ) `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
