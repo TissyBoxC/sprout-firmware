@@ -2291,6 +2291,33 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$audioOutputRoot = Join-Path $firmwareRoot 'components/audio_output'
+Invoke-HostTest `
+    -Name 'audio_output_mixer' `
+    -Sources @(
+        (Join-Path $audioOutputRoot 'src/audio_output.c')
+        (Join-Path $audioOutputRoot 'test/stubs/audio_output_deps.c')
+        (Join-Path $audioOutputRoot 'test/test_audio_output.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioOutputRoot 'include')
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioOutputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DAUDIO_OUTPUT_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_VOLUME_CONTROL=1'
+        '-DCONFIG_AUDIO_OUTPUT_QUEUE_FRAMES=4'
+        '-DCONFIG_AUDIO_OUTPUT_TASK_STACK_SIZE=6144'
+        '-DCONFIG_AUDIO_OUTPUT_TASK_PRIORITY=8'
+        '-DCONFIG_AUDIO_OUTPUT_FALLBACK_VOLUME_PERCENT=70'
+        '-DCONFIG_AUDIO_OUTPUT_SAFETY_MIN_PERCENT=60'
+        '-DCONFIG_AUDIO_OUTPUT_SUBMIT_TIMEOUT_MS=0'
+        '-DCONFIG_AUDIO_OUTPUT_RENDER_TIMEOUT_MS=1000'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(

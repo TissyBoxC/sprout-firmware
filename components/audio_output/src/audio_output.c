@@ -178,9 +178,11 @@ static void audio_output_render_frame(
     mixed_out->pcm_size = AUDIO_CODEC_FRAME_PCM_BYTES;
     memset(mixed_out->pcm, 0, sizeof(mixed_out->pcm));
 
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         if (!has_source[priority]) {
             continue;
         }
@@ -221,9 +223,11 @@ static bool audio_output_mix_next_frame(void) {
         return false;
     }
 
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         if (audio_output_queue_pop_locked(priority, &source[priority])) {
             has_source[priority] = true;
             completed_sequences[priority] =
@@ -232,9 +236,11 @@ static bool audio_output_mix_next_frame(void) {
             source_count++;
         }
     }
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         if (has_source[priority]) {
             audio_output_lanes[priority].completed_sequence =
                 completed_sequences[priority];
@@ -303,9 +309,11 @@ static void audio_output_task(void *argument) {
 }
 
 static void audio_output_free_lanes(void) {
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         if (audio_output_lanes[priority].frames != NULL) {
             free(audio_output_lanes[priority].frames);
             audio_output_lanes[priority].frames = NULL;
@@ -323,15 +331,18 @@ static esp_err_t audio_output_allocate_lanes(void) {
     const size_t allocation_size =
         AUDIO_OUTPUT_QUEUE_CAPACITY * sizeof(audio_codec_pcm_frame_t);
 
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
-        audio_output_lanes[priority].frames = heap_caps_malloc_prefer(
-            allocation_size,
-            2,
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-            MALLOC_CAP_8BIT
-        );
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
+        audio_output_lanes[priority].frames =
+            (audio_codec_pcm_frame_t *)heap_caps_malloc_prefer(
+                allocation_size,
+                2,
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                MALLOC_CAP_8BIT
+            );
         if (audio_output_lanes[priority].frames == NULL) {
             audio_output_free_lanes();
             return ESP_ERR_NO_MEM;
@@ -400,9 +411,11 @@ void audio_output_shutdown(void) {
         audio_output_mutex != NULL ||
         audio_output_signal != NULL ||
         audio_output_task_exit != NULL;
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         !has_resources && priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         !has_resources && priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         has_resources = audio_output_lanes[priority].frames != NULL;
     }
     if (!has_resources) {
@@ -592,9 +605,11 @@ audio_output_error_t audio_output_flush(
     }
 
     size_t discarded = 0;
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority <= max_priority;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index <= (int)max_priority;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         if (priority == AUDIO_OUTPUT_PRIORITY_SAFETY && !include_safety) {
             continue;
         }
@@ -610,16 +625,19 @@ audio_output_error_t audio_output_flush(
 }
 
 audio_output_snapshot_t audio_output_get_snapshot(void) {
-    audio_output_snapshot_t snapshot = {0};
+    audio_output_snapshot_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
     if (!audio_output_ready ||
         xSemaphoreTake(audio_output_mutex, portMAX_DELAY) != pdTRUE) {
         return snapshot;
     }
 
     snapshot = audio_output_snapshot;
-    for (audio_output_priority_t priority = AUDIO_OUTPUT_PRIORITY_AMBIENT;
-         priority < AUDIO_OUTPUT_PRIORITY_COUNT;
-         ++priority) {
+    for (int priority_index = AUDIO_OUTPUT_PRIORITY_AMBIENT;
+         priority_index < AUDIO_OUTPUT_PRIORITY_COUNT;
+         ++priority_index) {
+        const audio_output_priority_t priority =
+            (audio_output_priority_t)priority_index;
         snapshot.pending_frames[priority] =
             (uint32_t)audio_output_lanes[priority].count;
     }
@@ -676,3 +694,10 @@ const module_descriptor_t *audio_output_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef AUDIO_OUTPUT_HOST_TESTS
+/* Host tests drive one mixer iteration without creating an RTOS task. */
+bool audio_output_host_mix_one_frame(void) {
+    return audio_output_mix_next_frame();
+}
+#endif
