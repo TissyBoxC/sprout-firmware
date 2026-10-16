@@ -2082,6 +2082,31 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$ledIndicatorRoot = Join-Path $firmwareRoot 'components/led_indicator'
+Invoke-HostTest `
+    -Name 'led_indicator_state' `
+    -Sources @(
+        (Join-Path $ledIndicatorRoot 'src/led_indicator.c')
+        (Join-Path $ledIndicatorRoot 'test/stubs/led_indicator_deps.c')
+        (Join-Path $ledIndicatorRoot 'test/test_led_indicator.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $ledIndicatorRoot 'include')
+        (Join-Path $ledIndicatorRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_LED_INDICATOR=1'
+        '-DCONFIG_LED_INDICATOR_GPIO=38'
+        '-DCONFIG_LED_INDICATOR_ACTIVE_LOW=0'
+        '-DCONFIG_LED_INDICATOR_PWM_FREQUENCY_HZ=1000'
+        '-DCONFIG_LED_INDICATOR_BRIGHTNESS_PERCENT=50'
+        '-DCONFIG_LED_INDICATOR_TASK_STACK_SIZE=3072'
+        '-DCONFIG_LED_INDICATOR_TASK_PRIORITY=2'
+        '-DCONFIG_LED_INDICATOR_POLL_INTERVAL_MS=20'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $promptToneRoot = Join-Path $firmwareRoot 'components/prompt_tone'
 Invoke-HostTest `
     -Name 'prompt_tone_cues' `

@@ -506,22 +506,25 @@ esp_err_t led_indicator_set_enabled(bool is_enabled) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (led_indicator_enabled != is_enabled) {
-        led_indicator_enabled = is_enabled;
-        led_indicator_active_pattern = LED_INDICATOR_PATTERN_OFF;
-        led_indicator_active_state = LED_INDICATOR_STATE_COUNT;
-        led_indicator_pattern_started_ms = 0U;
-        led_indicator_pattern_phase_ms = 0U;
-    }
     if (!is_enabled) {
         // The guardian state must take effect even if the task is between
         // pattern updates, so force the physical output off synchronously.
+        // The enabled flag is only committed once the output accepted the
+        // write; otherwise a failed disable would be unrecoverable because
+        // later calls would see the module as already disabled.
         const esp_err_t result = led_indicator_write_duty_locked(0U);
         if (result != ESP_OK) {
             led_indicator_record_error_locked(result);
             xSemaphoreGive(led_indicator_mutex);
             return result;
         }
+    }
+    if (led_indicator_enabled != is_enabled) {
+        led_indicator_enabled = is_enabled;
+        led_indicator_active_pattern = LED_INDICATOR_PATTERN_OFF;
+        led_indicator_active_state = LED_INDICATOR_STATE_COUNT;
+        led_indicator_pattern_started_ms = 0U;
+        led_indicator_pattern_phase_ms = 0U;
     }
     xSemaphoreGive(led_indicator_mutex);
 
