@@ -436,18 +436,22 @@ static TickType_t button_input_next_delay(TickType_t now) {
     return next_delay;
 }
 
+static void button_input_process_pending_buttons(void) {
+    const TickType_t now = xTaskGetTickCount();
+    for (size_t index = 0; index < button_input_button_count; ++index) {
+        button_input_update_button(
+            (uint8_t)index,
+            &button_input_buttons[index],
+            now
+        );
+    }
+}
+
 static void button_input_task(void *argument) {
     (void)argument;
 
     while (button_input_running) {
-        const TickType_t now = xTaskGetTickCount();
-        for (size_t index = 0; index < button_input_button_count; ++index) {
-            button_input_update_button(
-                (uint8_t)index,
-                &button_input_buttons[index],
-                now
-            );
-        }
+        button_input_process_pending_buttons();
 
         const TickType_t delay = button_input_next_delay(
             xTaskGetTickCount()
@@ -465,6 +469,24 @@ static void button_input_task(void *argument) {
     }
     vTaskDelete(NULL);
 }
+
+#ifdef BUTTON_INPUT_HOST_TESTS
+void button_input_host_reset_state(void) {
+    memset(button_input_buttons, 0, sizeof(button_input_buttons));
+    button_input_button_count = 0;
+    button_input_handler = NULL;
+    button_input_lock = NULL;
+    button_input_task_exit = NULL;
+    button_input_task_handle = NULL;
+    button_input_ready = false;
+    button_input_running = false;
+    button_input_isr_service_installed_by_us = false;
+}
+
+void button_input_host_step(void) {
+    button_input_process_pending_buttons();
+}
+#endif
 
 static void IRAM_ATTR button_input_gpio_isr(void *argument) {
     (void)argument;

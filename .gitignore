@@ -1,5 +1,6 @@
 # PlatformIO build and package caches
 .pio/
+.platformio/
 .pioenvs/
 .piolibdeps/
 bgen/

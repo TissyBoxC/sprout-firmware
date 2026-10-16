@@ -2381,6 +2381,37 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$buttonInputRoot = Join-Path $firmwareRoot 'components/button_input'
+Invoke-HostTest `
+    -Name 'button_input_contract' `
+    -Sources @(
+        (Join-Path $buttonInputRoot 'src/button_input.c')
+        (Join-Path $buttonInputRoot 'test/stubs/button_input_deps.c')
+        (Join-Path $buttonInputRoot 'test/test_button_input.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $buttonInputRoot 'include')
+        (Join-Path $buttonInputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DBUTTON_INPUT_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_BUTTON_INPUT=1'
+        '-DCONFIG_BUTTON_INPUT_PRIMARY_GPIO=0'
+        '-DCONFIG_BUTTON_INPUT_PRIMARY_ACTIVE_LOW=1'
+        '-DCONFIG_BUTTON_INPUT_SECONDARY_ENABLED=1'
+        '-DCONFIG_BUTTON_INPUT_SECONDARY_GPIO=1'
+        '-DCONFIG_BUTTON_INPUT_SECONDARY_ACTIVE_LOW=1'
+        '-DCONFIG_BUTTON_INPUT_SHORT_PRESS_MS=50'
+        '-DCONFIG_BUTTON_INPUT_DEBOUNCE_MS=25'
+        '-DCONFIG_BUTTON_INPUT_LONG_PRESS_MS=1200'
+        '-DCONFIG_BUTTON_INPUT_VERY_LONG_PRESS_MS=5000'
+        '-DCONFIG_BUTTON_INPUT_DOUBLE_PRESS_MS=350'
+        '-DCONFIG_BUTTON_INPUT_TASK_STACK_SIZE=3072'
+        '-DCONFIG_BUTTON_INPUT_TASK_PRIORITY=4'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(
