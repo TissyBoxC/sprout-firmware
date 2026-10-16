@@ -33,6 +33,22 @@ static audio_pipeline_snapshot_t audio_pipeline_snapshot = {
     .state = AUDIO_PIPELINE_STATE_STOPPED,
 };
 
+#ifdef AUDIO_PIPELINE_HOST_TESTS
+void audio_pipeline_host_reset_state(void) {
+    audio_pipeline_tx_handle = NULL;
+    audio_pipeline_rx_handle = NULL;
+    audio_pipeline_mutex = NULL;
+    audio_pipeline_ready = false;
+    audio_pipeline_is_capture_active = false;
+    audio_pipeline_is_playback_active = false;
+    audio_pipeline_capture_owner = AUDIO_PIPELINE_CAPTURE_OWNER_NONE;
+    audio_pipeline_reference_sink = NULL;
+    audio_pipeline_reference_context = NULL;
+    memset(&audio_pipeline_snapshot, 0, sizeof(audio_pipeline_snapshot));
+    audio_pipeline_snapshot.state = AUDIO_PIPELINE_STATE_STOPPED;
+}
+#endif
+
 static bool audio_pipeline_capture_owner_is_valid(
     audio_pipeline_capture_owner_t owner
 ) {

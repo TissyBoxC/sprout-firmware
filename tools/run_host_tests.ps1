@@ -2318,6 +2318,37 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$audioPipelineRoot = Join-Path $firmwareRoot 'components/audio_pipeline'
+Invoke-HostTest `
+    -Name 'audio_pipeline_contract' `
+    -Sources @(
+        (Join-Path $audioPipelineRoot 'src/audio_pipeline.c')
+        (Join-Path $audioPipelineRoot 'test/stubs/audio_pipeline_deps.c')
+        (Join-Path $audioPipelineRoot 'test/test_audio_pipeline.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioPipelineRoot 'include')
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioPipelineRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DAUDIO_PIPELINE_HOST_TESTS=1'
+        '-DCONFIG_AUDIO_PIPELINE_INPUT_ENABLED=1'
+        '-DCONFIG_AUDIO_PIPELINE_OUTPUT_ENABLED=1'
+        '-DCONFIG_AUDIO_PIPELINE_I2S_PORT=0'
+        '-DCONFIG_AUDIO_PIPELINE_BCLK_GPIO=5'
+        '-DCONFIG_AUDIO_PIPELINE_WS_GPIO=4'
+        '-DCONFIG_AUDIO_PIPELINE_DATA_IN_GPIO=6'
+        '-DCONFIG_AUDIO_PIPELINE_DATA_OUT_GPIO=7'
+        '-DCONFIG_AUDIO_PIPELINE_MCLK_GPIO=-1'
+        '-DCONFIG_AUDIO_PIPELINE_DMA_DESCRIPTOR_COUNT=6'
+        '-DCONFIG_AUDIO_PIPELINE_DMA_FRAME_COUNT=128'
+        '-DCONFIG_AUDIO_PIPELINE_CAPTURE_TIMEOUT_MS=200'
+        '-DCONFIG_AUDIO_PIPELINE_PLAYBACK_TIMEOUT_MS=500'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(
