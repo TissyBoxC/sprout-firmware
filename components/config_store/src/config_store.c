@@ -204,8 +204,11 @@ esp_err_t config_store_get_blob(
         return ESP_ERR_INVALID_ARG;
     }
 
+    const size_t requested_size = *value_size_in_out;
+    const bool use_large =
+        config_store_uses_large_partition(requested_size);
     nvs_handle_t handle = 0;
-    esp_err_t result = config_store_uses_large_partition(*value_size_in_out)
+    esp_err_t result = use_large
                            ? config_store_open_large(NVS_READONLY, &handle)
                            : config_store_open(NVS_READONLY, &handle);
     if (result != ESP_OK) {
@@ -218,10 +221,12 @@ esp_err_t config_store_get_blob(
         value_size_in_out
     );
     nvs_close(handle);
-    if (result == ESP_ERR_NVS_NOT_FOUND &&
-        config_store_uses_large_partition(*value_size_in_out)) {
-        result = config_store_open(NVS_READONLY, &handle);
+    if (result == ESP_ERR_NVS_NOT_FOUND && config_store_large_ready) {
+        result = use_large
+                     ? config_store_open(NVS_READONLY, &handle)
+                     : config_store_open_large(NVS_READONLY, &handle);
         if (result == ESP_OK) {
+            *value_size_in_out = requested_size;
             result = nvs_get_blob(handle, key, output, value_size_in_out);
             nvs_close(handle);
         }
@@ -280,6 +285,9 @@ esp_err_t config_store_get_string(
     nvs_close(handle);
     if (result == ESP_ERR_NVS_NOT_FOUND) {
         return CONFIG_STORE_ERR_NOT_FOUND;
+    }
+    if (result == ESP_ERR_NVS_INVALID_LENGTH) {
+        return ESP_ERR_INVALID_SIZE;
     }
     return result;
 }
@@ -382,3 +390,10 @@ const module_descriptor_t *config_store_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef CONFIG_STORE_HOST_TESTS
+void config_store_host_reset_state(void) {
+    config_store_ready = false;
+    config_store_large_ready = false;
+}
+#endif

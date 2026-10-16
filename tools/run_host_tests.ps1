@@ -2412,6 +2412,27 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$configStoreRoot = Join-Path $firmwareRoot 'components/config_store'
+Invoke-HostTest `
+    -Name 'config_store_contract' `
+    -Sources @(
+        (Join-Path $configStoreRoot 'src/config_store.c')
+        (Join-Path $configStoreRoot 'test/stubs/config_store_deps.c')
+        (Join-Path $configStoreRoot 'test/test_config_store.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $configStoreRoot 'include')
+        (Join-Path $configStoreRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_STORE_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_CONFIG_STORE_LARGE_PARTITION=\"nvs_data\"'
+        '-DCONFIG_NVS_ENCRYPTION=0'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(
