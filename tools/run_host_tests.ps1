@@ -2082,6 +2082,21 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$networkManagerRoot = Join-Path $firmwareRoot 'components/network_manager'
+Invoke-HostTest `
+    -Name 'network_manager_station' `
+    -Sources @(
+        (Join-Path $networkManagerRoot 'src/network_manager.c')
+        (Join-Path $networkManagerRoot 'test/stubs/network_manager_deps.c')
+        (Join-Path $networkManagerRoot 'test/test_network_manager.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $networkManagerRoot 'include')
+        (Join-Path $networkManagerRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $factoryResetRoot = Join-Path $firmwareRoot 'components/factory_reset'
 Invoke-HostTest `
     -Name 'factory_reset_guard' `

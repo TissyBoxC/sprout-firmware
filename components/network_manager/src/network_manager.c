@@ -191,7 +191,8 @@ esp_err_t network_manager_connect(const char *ssid, const char *password) {
         return result;
     }
 
-    wifi_config_t wifi_config = {0};
+    wifi_config_t wifi_config;
+    memset(&wifi_config, 0, sizeof(wifi_config));
     memcpy(
         wifi_config.sta.ssid,
         ssid,
@@ -205,7 +206,6 @@ esp_err_t network_manager_connect(const char *ssid, const char *password) {
         );
     }
     wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
-
     network_manager_publish_state(NETWORK_MANAGER_STATE_CONNECTING);
     result = esp_wifi_disconnect();
     if (result != ESP_OK && result != ESP_ERR_WIFI_NOT_CONNECT) {
