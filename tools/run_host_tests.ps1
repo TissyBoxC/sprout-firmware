@@ -306,6 +306,26 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$networkQualityRoot = Join-Path $firmwareRoot 'components/network_quality'
+Invoke-HostTest `
+    -Name 'network_quality_classification' `
+    -Sources @(
+        (Join-Path $networkQualityRoot 'src/network_quality.c')
+        (Join-Path $networkQualityRoot 'test/stubs/network_quality_deps.c')
+        (Join-Path $networkQualityRoot 'test/test_network_quality.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $networkQualityRoot 'include')
+        (Join-Path $networkQualityRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_NETWORK_QUALITY_POOR_RSSI=-80'
+        '-DCONFIG_NETWORK_QUALITY_GOOD_RSSI=-65'
+        '-DCONFIG_NETWORK_QUALITY_EXCELLENT_RSSI=-50'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
