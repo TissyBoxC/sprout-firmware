@@ -1093,6 +1093,40 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$bluetoothAudioSyncRoot = Join-Path $firmwareRoot 'components/bluetooth_audio_sync'
+Invoke-HostTest `
+    -Name 'bluetooth_audio_sync_runtime' `
+    -Sources @(
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_core.c')
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_audio_sync_core.c')
+        (Join-Path $bluetoothAudioRoot 'src/bluetooth_audio.c')
+        (Join-Path $bluetoothAudioRoot 'test/stubs/config_store.c')
+        (Join-Path $bluetoothAudioSyncRoot 'src/bluetooth_audio_sync.cpp')
+        (Join-Path $bluetoothAudioSyncRoot 'test/stubs/bluetooth_audio_sync_deps.cpp')
+        (Join-Path $bluetoothAudioSyncRoot 'test/test_bluetooth_audio_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $bluetoothAudioRoot 'include')
+        (Join-Path $bluetoothAudioRoot 'src')
+        (Join-Path $bluetoothAudioRoot 'test/stubs')
+        (Join-Path $bluetoothAudioSyncRoot 'include')
+        (Join-Path $bluetoothAudioSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DBLUETOOTH_AUDIO_HOST_TESTS=1'
+        '-DBLUETOOTH_AUDIO_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_BLUETOOTH_AUDIO_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $learningVisualizationRoot = Join-Path $firmwareRoot 'components/learning_visualization'
 Invoke-HostTest `
     -Name 'learning_core' `

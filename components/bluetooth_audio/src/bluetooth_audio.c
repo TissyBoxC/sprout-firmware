@@ -343,3 +343,17 @@ const module_descriptor_t *bluetooth_audio_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef BLUETOOTH_AUDIO_HOST_TESTS
+void bluetooth_audio_host_reset_state(void) {
+    s_policy = bluetooth_default();
+    s_adapter_state = BLUETOOTH_ADAPTER_OFF;
+    s_active_codec = BLUETOOTH_ACTIVE_CODEC_UNKNOWN;
+    s_disconnect_reason = BLUETOOTH_DISCONNECT_NONE;
+    s_volume_percent = 0u;
+    s_paired_device_count = 0u;
+    s_connected_device_count = 0u;
+    s_speaker_mode = false;
+    s_ready = false;
+}
+#endif

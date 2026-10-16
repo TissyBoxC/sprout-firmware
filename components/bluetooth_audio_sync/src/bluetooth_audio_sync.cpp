@@ -337,6 +337,9 @@ static void bluetooth_audio_sync_report_status(void) {
     esp_http_client_cleanup(client);
     memset(authorization, 0, sizeof(authorization));
     memset(session_token, 0, sizeof(session_token));
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+    }
     if (transport_result != ESP_OK ||
         status_code < 200 || status_code >= 300) {
         ESP_LOGW(
@@ -426,3 +429,23 @@ const module_descriptor_t *bluetooth_audio_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef BLUETOOTH_AUDIO_SYNC_HOST_TESTS
+extern "C" {
+
+void bluetooth_audio_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void bluetooth_audio_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+bool bluetooth_audio_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+}  // extern "C"
+#endif

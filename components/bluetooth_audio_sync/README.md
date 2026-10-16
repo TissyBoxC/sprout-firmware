@@ -35,3 +35,9 @@ the next request re-authenticates instead of retrying a revoked credential.
 
 `bluetooth_audio_sync_core` runs under `tools/run_host_tests.ps1` and covers the
 codec mapping, clamping, and the disabled-policy derived-flag rules.
+
+`bluetooth_audio_sync_runtime` exercises the real HTTP and worker paths with
+host stubs. It covers policy fetch/apply, status reporting, `401`/`403` token
+clearing for both requests, malformed payloads, transport and HTTP failures,
+the best-effort report path, worker offline retries, and idempotent
+initialization.

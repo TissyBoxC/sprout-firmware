@@ -275,6 +275,11 @@ bluetooth_audio_status_t bluetooth_audio_status(void);
 /** @brief Return the removable-module descriptor for bluetooth_audio. */
 const module_descriptor_t *bluetooth_audio_module_descriptor(void);
 
+#ifdef BLUETOOTH_AUDIO_HOST_TESTS
+/** @brief Reset the in-memory store to an uninitialized state for host tests. */
+void bluetooth_audio_host_reset_state(void);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
