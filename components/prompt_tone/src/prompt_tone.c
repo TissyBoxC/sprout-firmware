@@ -323,7 +323,11 @@ esp_err_t prompt_tone_init(void) {
             return ESP_ERR_NO_MEM;
         }
     }
-    prompt_tone_snapshot = (prompt_tone_snapshot_t){0};
+    prompt_tone_snapshot = (prompt_tone_snapshot_t){
+        .tones_played = 0,
+        .tones_rejected = 0,
+        .safety_tones_played = 0,
+    };
     prompt_tone_ready = true;
     return ESP_OK;
 }

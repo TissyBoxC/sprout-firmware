@@ -2082,6 +2082,25 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$promptToneRoot = Join-Path $firmwareRoot 'components/prompt_tone'
+Invoke-HostTest `
+    -Name 'prompt_tone_cues' `
+    -Sources @(
+        (Join-Path $promptToneRoot 'src/prompt_tone.c')
+        (Join-Path $promptToneRoot 'test/stubs/prompt_tone_deps.c')
+        (Join-Path $promptToneRoot 'test/test_prompt_tone.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $promptToneRoot 'include')
+        (Join-Path $promptToneRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/audio_codec/include')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_PLAYBACK_QUEUE=0'
+        '-DCONFIG_FEATURE_AUDIO_OUTPUT=0'
+    ) `
+    -Compiler $compiler
+
 $audioCodecRoot = Join-Path $firmwareRoot 'components/audio_codec'
 Invoke-HostTest `
     -Name 'audio_codec_profile' `
