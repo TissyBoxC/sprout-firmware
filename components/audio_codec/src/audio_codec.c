@@ -183,6 +183,7 @@ audio_codec_error_t audio_codec_decode_packet(
     esp_audio_dec_in_raw_t raw = {
         .buffer = (uint8_t *)(uintptr_t)packet,
         .len = (uint32_t)packet_size,
+        .consumed = 0,
         // An empty payload is an explicit packet-loss signal, so the decoder
         // conceals the gap instead of producing silence with a broken timeline.
         .frame_recover = packet_size == 0

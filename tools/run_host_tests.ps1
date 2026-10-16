@@ -2082,6 +2082,43 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$audioCodecRoot = Join-Path $firmwareRoot 'components/audio_codec'
+Invoke-HostTest `
+    -Name 'audio_codec_profile' `
+    -Sources @(
+        (Join-Path $audioCodecRoot 'src/audio_codec.c')
+        (Join-Path $audioCodecRoot 'test/stubs/audio_codec_deps.c')
+        (Join-Path $audioCodecRoot 'test/test_audio_codec_profile.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioCodecRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_AUDIO_CODEC_BITRATE=24000'
+        '-DCONFIG_AUDIO_CODEC_COMPLEXITY=3'
+        '-DCONFIG_AUDIO_CODEC_ENABLE_DTX=0'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'audio_codec_runtime' `
+    -Sources @(
+        (Join-Path $audioCodecRoot 'src/audio_codec.c')
+        (Join-Path $audioCodecRoot 'test/stubs/audio_codec_deps.c')
+        (Join-Path $audioCodecRoot 'test/test_audio_codec_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioCodecRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_AUDIO_CODEC_BITRATE=24000'
+        '-DCONFIG_AUDIO_CODEC_COMPLEXITY=3'
+        '-DCONFIG_AUDIO_CODEC_ENABLE_DTX=1'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(
