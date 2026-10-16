@@ -2082,6 +2082,25 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$factoryResetRoot = Join-Path $firmwareRoot 'components/factory_reset'
+Invoke-HostTest `
+    -Name 'factory_reset_guard' `
+    -Sources @(
+        (Join-Path $factoryResetRoot 'src/factory_reset.c')
+        (Join-Path $factoryResetRoot 'test/stubs/factory_reset_deps.c')
+        (Join-Path $factoryResetRoot 'test/test_factory_reset.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $factoryResetRoot 'include')
+        (Join-Path $factoryResetRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONFIG_STORE=1'
+        '-DCONFIG_FACTORY_RESET_PENDING_TIMEOUT_SECONDS=10'
+        '-DCONFIG_FACTORY_RESET_NVS_PARTITION=\"nvs\"'
+    ) `
+    -Compiler $compiler
+
 $ledIndicatorRoot = Join-Path $firmwareRoot 'components/led_indicator'
 Invoke-HostTest `
     -Name 'led_indicator_state' `
