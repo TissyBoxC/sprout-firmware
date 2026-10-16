@@ -2433,6 +2433,26 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$deviceIdentityRoot = Join-Path $firmwareRoot 'components/device_identity'
+Invoke-HostTest `
+    -Name 'device_identity_contract' `
+    -Sources @(
+        (Join-Path $deviceIdentityRoot 'src/device_identity.c')
+        (Join-Path $deviceIdentityRoot 'test/stubs/device_identity_deps.c')
+        (Join-Path $deviceIdentityRoot 'test/test_device_identity.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceIdentityRoot 'include')
+        (Join-Path $deviceIdentityRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DDEVICE_IDENTITY_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_DEVICE_IDENTITY=1'
+        '-DCONFIG_DEVICE_IDENTITY_NVS_PARTITION=\"nvs\"'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(

@@ -1,9 +1,11 @@
 #include "device_identity.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "esp_mac.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "psa/crypto.h"
 
@@ -361,3 +363,12 @@ const module_descriptor_t *device_identity_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef DEVICE_IDENTITY_HOST_TESTS
+void device_identity_host_reset_state(void) {
+    identity_is_initialized = false;
+    memset(&identity_snapshot, 0, sizeof(identity_snapshot));
+    memset(identity_private_key, 0, sizeof(identity_private_key));
+    memset(identity_public_key, 0, sizeof(identity_public_key));
+}
+#endif
