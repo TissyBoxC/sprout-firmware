@@ -288,6 +288,24 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$offlineFallbackRoot = Join-Path $firmwareRoot 'components/offline_fallback'
+Invoke-HostTest `
+    -Name 'offline_fallback_state' `
+    -Sources @(
+        (Join-Path $offlineFallbackRoot 'src/offline_fallback.c')
+        (Join-Path $offlineFallbackRoot 'test/stubs/offline_fallback_deps.c')
+        (Join-Path $offlineFallbackRoot 'test/test_offline_fallback.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlineFallbackRoot 'include')
+        (Join-Path $offlineFallbackRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_TIME_SYNC=1'
+        '-DCONFIG_OFFLINE_FALLBACK_GRACE_SECONDS=15'
+    ) `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
