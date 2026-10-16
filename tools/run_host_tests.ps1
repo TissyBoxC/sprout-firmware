@@ -998,6 +998,54 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$alarmReminderSyncRoot = Join-Path $firmwareRoot 'components/alarm_reminder_sync'
+$arduinoJsonPath = Get-ChildItem `
+    -Path (Join-Path $firmwareRoot '.pio/libdeps') `
+    -Filter 'ArduinoJson' `
+    -Directory `
+    -Recurse `
+    -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'src' } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'ArduinoJson.h') } |
+    Select-Object -First 1
+if ($null -eq $arduinoJsonPath) {
+    throw (
+        'ArduinoJson was not found under .pio/libdeps. Run ' +
+        '`pio run -e esp32-s3-n16r8 -t compiledb` first.'
+    )
+}
+Invoke-HostTest `
+    -Name 'alarm_reminder_sync_runtime' `
+    -Sources @(
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder.c')
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder_core.c')
+        (Join-Path $alarmReminderRoot 'src/alarm_reminder_sync_core.c')
+        (Join-Path $alarmReminderSyncRoot 'src/alarm_reminder_sync.cpp')
+        (Join-Path $alarmReminderSyncRoot 'test/stubs/alarm_reminder_sync_deps.cpp')
+        (Join-Path $alarmReminderSyncRoot 'test/test_alarm_reminder_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $alarmReminderRoot 'include')
+        (Join-Path $alarmReminderRoot 'src')
+        (Join-Path $alarmReminderSyncRoot 'include')
+        (Join-Path $alarmReminderSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/config_store/include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/config_store/test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DALARM_REMINDER_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_ALARM_REMINDER_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $bluetoothAudioRoot = Join-Path $firmwareRoot 'components/bluetooth_audio'
 Invoke-HostTest `
     -Name 'bluetooth_core' `

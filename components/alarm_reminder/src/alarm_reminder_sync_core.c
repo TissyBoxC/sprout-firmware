@@ -39,7 +39,12 @@ alarm_reminder_error_t alarm_reminder_sync_core_replace_schedule(
         return ALARM_REMINDER_ERR_INVALID_ARGUMENT;
     }
     if (schedule_count == 0) {
-        alarm_reminder_core_init(core);
+        // An empty remote snapshot is authoritative for the schedule, but the
+        // pending firing outcomes are local history that still has to reach
+        // the platform. Clear only the alarm list so an accepted empty
+        // schedule cannot drop unacknowledged events.
+        memset(core->alarms, 0, sizeof(core->alarms));
+        core->count = 0;
         return ALARM_REMINDER_OK;
     }
 

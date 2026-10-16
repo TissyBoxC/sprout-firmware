@@ -58,10 +58,22 @@ int main() {
 
     // An empty valid remote snapshot is authoritative and clears the schedule.
     assert(
+        alarm_reminder_core_record_event(
+            &core,
+            "alarm_morning",
+            20261014,
+            ALARM_REMINDER_STATE_DISMISSED
+        ) == ALARM_REMINDER_OK
+    );
+    assert(core.pending_event_count == 1);
+    assert(
         alarm_reminder_sync_core_replace_schedule(&core, nullptr, 0) ==
         ALARM_REMINDER_OK
     );
     assert(core.count == 0);
+    // Clearing the schedule must not discard unacknowledged firing outcomes.
+    assert(core.pending_event_count == 1);
+    assert(std::strcmp(core.pending_events[0].alarm_id, "alarm_morning") == 0);
 
     // Invalid-only snapshots are rejected without touching the schedule.
     const alarm_reminder_t valid = make_alarm(

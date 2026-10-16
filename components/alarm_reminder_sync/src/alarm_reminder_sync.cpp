@@ -593,3 +593,23 @@ const module_descriptor_t *alarm_reminder_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef ALARM_REMINDER_SYNC_HOST_TESTS
+extern "C" {
+
+void alarm_reminder_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void alarm_reminder_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+bool alarm_reminder_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+}  // extern "C"
+#endif
