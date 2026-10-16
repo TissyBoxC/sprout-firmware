@@ -2082,6 +2082,30 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $volumeControlRoot = Join-Path $firmwareRoot 'components/volume_control'
+$playbackQueueRoot = Join-Path $firmwareRoot 'components/playback_queue'
+Invoke-HostTest `
+    -Name 'playback_queue_policy' `
+    -Sources @(
+        (Join-Path $playbackQueueRoot 'src/playback_queue.c')
+        (Join-Path $playbackQueueRoot 'test/stubs/playback_queue_deps.c')
+        (Join-Path $playbackQueueRoot 'test/test_playback_queue.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackQueueRoot 'include')
+        (Join-Path $playbackQueueRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/audio_codec/include')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_PLAYBACK_QUEUE_CAPACITY=4'
+        '-DCONFIG_PLAYBACK_QUEUE_TASK_STACK_SIZE=4096'
+        '-DCONFIG_PLAYBACK_QUEUE_TASK_PRIORITY=6'
+        '-DCONFIG_FEATURE_AUDIO_OUTPUT=0'
+        '-DCONFIG_FEATURE_VOLUME_CONTROL=0'
+        '-DCONFIG_FEATURE_PARENT_CONTROL_RUNTIME=0'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 $networkManagerRoot = Join-Path $firmwareRoot 'components/network_manager'
 Invoke-HostTest `
     -Name 'network_manager_station' `

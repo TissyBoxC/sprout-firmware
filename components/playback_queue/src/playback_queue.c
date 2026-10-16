@@ -1,5 +1,6 @@
 #include "playback_queue.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -481,7 +482,13 @@ void playback_queue_shutdown(void) {
         vSemaphoreDelete(playback_queue_task_exit);
         playback_queue_task_exit = NULL;
     }
-    playback_queue_snapshot = (playback_queue_snapshot_t){0};
+    playback_queue_snapshot = (playback_queue_snapshot_t){
+        .active_priority = PLAYBACK_PRIORITY_AMBIENT,
+        .has_active_item = false,
+        .is_paused = false,
+        .pending_items = 0,
+        .dropped_items = 0,
+    };
 }
 
 playback_queue_error_t playback_queue_enqueue(
