@@ -2221,6 +2221,76 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$audioInputRoot = Join-Path $firmwareRoot 'components/audio_input'
+Invoke-HostTest `
+    -Name 'audio_input_dsp' `
+    -Sources @(
+        (Join-Path $audioInputRoot 'src/audio_input_dsp.c')
+        (Join-Path $audioInputRoot 'test/test_audio_input_dsp.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioInputRoot 'src')
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioInputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_AUDIO_INPUT_AEC_FILTER_TAPS=512'
+        '-DCONFIG_AUDIO_INPUT_AEC_STEP_PERMILLE=300'
+        '-DCONFIG_AUDIO_INPUT_AEC_LEAKAGE_PERMILLE=2'
+        '-DCONFIG_AUDIO_INPUT_AEC_DOUBLE_TALK_FACTOR_MILLI=1500'
+        '-DCONFIG_AUDIO_INPUT_NS_NOISE_DOWNWARD_PERMILLE=100'
+        '-DCONFIG_AUDIO_INPUT_NS_NOISE_UPWARD_PERMILLE=980'
+        '-DCONFIG_AUDIO_INPUT_NS_GAIN_SMOOTHING_PERMILLE=700'
+        '-DCONFIG_AUDIO_INPUT_NS_FLOOR_GAIN_PERCENT=12'
+        '-DCONFIG_AUDIO_INPUT_AGC_TARGET_RMS=1200'
+        '-DCONFIG_AUDIO_INPUT_AGC_MIN_GAIN_PERCENT=25'
+        '-DCONFIG_AUDIO_INPUT_AGC_MAX_GAIN_PERCENT=600'
+        '-DCONFIG_AUDIO_INPUT_AGC_ATTACK_PERMILLE=700'
+        '-DCONFIG_AUDIO_INPUT_AGC_RELEASE_PERMILLE=50'
+        '-DCONFIG_AUDIO_INPUT_VAD_SNR_THRESHOLD_MILLI=3500'
+        '-DCONFIG_AUDIO_INPUT_VAD_MIN_SPEECH_FRAMES=2'
+        '-DCONFIG_AUDIO_INPUT_VAD_HANGOVER_FRAMES=12'
+        '-DCONFIG_AUDIO_INPUT_VAD_NOISE_DOWNWARD_PERMILLE=150'
+        '-DCONFIG_AUDIO_INPUT_VAD_NOISE_UPWARD_PERMILLE=980'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
+Invoke-HostTest `
+    -Name 'audio_input_dsp_leakage' `
+    -Sources @(
+        (Join-Path $audioInputRoot 'src/audio_input_dsp.c')
+        (Join-Path $audioInputRoot 'test/test_audio_input_dsp.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $audioInputRoot 'src')
+        (Join-Path $audioCodecRoot 'include')
+        (Join-Path $audioInputRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DAUDIO_INPUT_LEAKAGE_TEST=1'
+        '-DCONFIG_AUDIO_INPUT_AEC_FILTER_TAPS=512'
+        '-DCONFIG_AUDIO_INPUT_AEC_STEP_PERMILLE=300'
+        '-DCONFIG_AUDIO_INPUT_AEC_LEAKAGE_PERMILLE=100'
+        '-DCONFIG_AUDIO_INPUT_AEC_DOUBLE_TALK_FACTOR_MILLI=1500'
+        '-DCONFIG_AUDIO_INPUT_NS_NOISE_DOWNWARD_PERMILLE=100'
+        '-DCONFIG_AUDIO_INPUT_NS_NOISE_UPWARD_PERMILLE=980'
+        '-DCONFIG_AUDIO_INPUT_NS_GAIN_SMOOTHING_PERMILLE=700'
+        '-DCONFIG_AUDIO_INPUT_NS_FLOOR_GAIN_PERCENT=12'
+        '-DCONFIG_AUDIO_INPUT_AGC_TARGET_RMS=1200'
+        '-DCONFIG_AUDIO_INPUT_AGC_MIN_GAIN_PERCENT=25'
+        '-DCONFIG_AUDIO_INPUT_AGC_MAX_GAIN_PERCENT=600'
+        '-DCONFIG_AUDIO_INPUT_AGC_ATTACK_PERMILLE=700'
+        '-DCONFIG_AUDIO_INPUT_AGC_RELEASE_PERMILLE=50'
+        '-DCONFIG_AUDIO_INPUT_VAD_SNR_THRESHOLD_MILLI=3500'
+        '-DCONFIG_AUDIO_INPUT_VAD_MIN_SPEECH_FRAMES=2'
+        '-DCONFIG_AUDIO_INPUT_VAD_HANGOVER_FRAMES=12'
+        '-DCONFIG_AUDIO_INPUT_VAD_NOISE_DOWNWARD_PERMILLE=150'
+        '-DCONFIG_AUDIO_INPUT_VAD_NOISE_UPWARD_PERMILLE=980'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(

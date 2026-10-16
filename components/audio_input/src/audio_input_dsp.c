@@ -225,7 +225,13 @@ static void audio_input_aec_process(
             float weight = dsp->aec_weights[coefficient] +
                 delta * dsp->aec_history[tap];
             // Leakage keeps the filter from drifting during long silence.
-            dsp->aec_weights[coefficient] = weight * 0.9999f;
+            /*
+             * Apply the configured leakage coefficient. Hard-coding the
+             * default here made CONFIG_AUDIO_INPUT_AEC_LEAKAGE_PERMILLE
+             * appear tunable while having no runtime effect.
+             */
+            dsp->aec_weights[coefficient] =
+                weight * (1.0f - dsp->aec_leakage);
             tap = (tap == 0) ? filter_length - 1 : tap - 1;
         }
         dsp->aec_adapted_samples++;
