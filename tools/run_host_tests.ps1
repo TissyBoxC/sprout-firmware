@@ -2453,6 +2453,31 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$deviceProvisioningRoot = Join-Path $firmwareRoot 'components/device_provisioning'
+Invoke-HostTest `
+    -Name 'device_provisioning_contract' `
+    -Sources @(
+        (Join-Path $deviceProvisioningRoot 'src/device_provisioning.cpp')
+        (Join-Path $deviceProvisioningRoot 'test/stubs/device_provisioning_deps.cpp')
+        (Join-Path $deviceProvisioningRoot 'test/test_device_provisioning.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceProvisioningRoot 'include')
+        (Join-Path $deviceProvisioningRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/config_store/include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/provisioning_payload/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @(
+        '-DDEVICE_PROVISIONING_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_DEVICE_PROVISIONING=1'
+        '-DCONFIG_DEVICE_PROVISIONING_SERVICE_PREFIX=\"SPROUT\"'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(

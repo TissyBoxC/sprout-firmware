@@ -1,0 +1,8 @@
+#pragma once
+
+#include <stdio.h>
+
+#define ESP_LOGW(tag, format, ...) \
+    printf("[W:%s] " format "\n", tag, ##__VA_ARGS__)
+#define ESP_LOGE(tag, format, ...) \
+    printf("[E:%s] " format "\n", tag, ##__VA_ARGS__)

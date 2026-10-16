@@ -7,7 +7,9 @@ extern "C" {
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "config_store.h"
 #include "device_binding_client.h"
@@ -25,6 +27,7 @@ extern "C" {
 #include "network_provisioning/scheme_ble.h"
 #include "esp_srp.h"
 #include "provisioning_payload.h"
+#include "sdkconfig.h"
 
 #define DEVICE_PROVISIONING_SERVICE_NAME_SIZE 32
 #define DEVICE_PROVISIONING_BINDING_URI_SIZE PROVISIONING_PAYLOAD_SIZE
@@ -44,6 +47,11 @@ CONFIG_STORE_KEY_ASSERT(DEVICE_PROVISIONING_POP_KEY);
 
 static const char *const TAG = "device_provisioning";
 static const char *const DEVICE_PROVISIONING_CUSTOM_ENDPOINT = "custom-data";
+
+typedef struct {
+    bool is_binding_uri_ready;
+    esp_err_t last_auth_error;
+} device_provisioning_work_state_t;
 
 static bool device_provisioning_is_ready;
 static bool device_provisioning_is_service_active;
@@ -380,152 +388,135 @@ static void device_provisioning_event_handler(
  * before BLE is torn down. network_manager reconnects the saved network only
  * after the provisioning manager has released Wi-Fi ownership.
  */
-static void device_provisioning_work_task_entry(void *argument) {
-    (void)argument;
-    bool is_binding_uri_ready = false;
-    esp_err_t last_auth_error = ESP_OK;
-
-    while (!device_binding_client_is_bound()) {
-        bool should_prepare_binding = false;
-        if (device_provisioning_state_mutex != nullptr &&
-            xSemaphoreTake(
-                device_provisioning_state_mutex,
-                portMAX_DELAY) == pdTRUE) {
-            should_prepare_binding =
-                device_provisioning_should_prepare_binding;
-            xSemaphoreGive(device_provisioning_state_mutex);
-        }
-
-        char pending_ssid[CONFIG_STORE_SSID_SIZE + 1] = {0};
-        char pending_password[CONFIG_STORE_PASSWORD_SIZE + 1] = {0};
-        bool has_pending_credentials = false;
-        if (device_provisioning_state_mutex != nullptr &&
-            xSemaphoreTake(
-                device_provisioning_state_mutex,
-                portMAX_DELAY) == pdTRUE) {
-            has_pending_credentials =
-                device_provisioning_has_pending_credentials;
-            if (has_pending_credentials) {
-                memcpy(
-                    pending_ssid,
-                    device_provisioning_pending_ssid,
-                    sizeof(pending_ssid)
-                );
-                memcpy(
-                    pending_password,
-                    device_provisioning_pending_password,
-                    sizeof(pending_password)
-                );
-                device_provisioning_has_pending_credentials = false;
-                memset(
-                    device_provisioning_pending_password,
-                    0,
-                    sizeof(device_provisioning_pending_password)
-                );
-            }
-            xSemaphoreGive(device_provisioning_state_mutex);
-        }
-        if (has_pending_credentials) {
-            const esp_err_t store_result =
-                network_manager_store_credentials(
-                    pending_ssid,
-                    pending_password
-                );
-            if (store_result != ESP_OK) {
-                ESP_LOGW(
-                    TAG,
-                    "credential persistence failed: %s",
-                    esp_err_to_name(store_result)
-                );
-                // Keep the pending copy so a transient NVS failure does not
-                // discard the guardian's network settings.
-                if (device_provisioning_state_mutex != nullptr &&
-                    xSemaphoreTake(
-                        device_provisioning_state_mutex,
-                        portMAX_DELAY) == pdTRUE) {
-                    memcpy(
-                        device_provisioning_pending_ssid,
-                        pending_ssid,
-                        sizeof(device_provisioning_pending_ssid)
-                    );
-                    memcpy(
-                        device_provisioning_pending_password,
-                        pending_password,
-                        sizeof(device_provisioning_pending_password)
-                    );
-                    device_provisioning_has_pending_credentials = true;
-                    xSemaphoreGive(device_provisioning_state_mutex);
-                }
-                vTaskDelay(
-                    pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS)
-                );
-            }
-            memset(pending_password, 0, sizeof(pending_password));
-            if (store_result != ESP_OK) {
-                continue;
-            }
-        }
-
-        if (!is_binding_uri_ready && should_prepare_binding) {
-            esp_err_t auth_result = ESP_OK;
-            if (!device_binding_client_is_registered()) {
-                auth_result = device_binding_client_register_pending();
-            }
-            if (auth_result == ESP_OK) {
-                auth_result = device_binding_client_authenticate();
-            }
-            if (auth_result == ESP_OK) {
-                const esp_err_t uri_result =
-                    device_provisioning_build_binding_uri(
-                        device_provisioning_service_name
-                    );
-                if (uri_result == ESP_OK) {
-                    is_binding_uri_ready = true;
-                } else {
-                    ESP_LOGW(
-                        TAG,
-                        "binding URI unavailable: %s",
-                        esp_err_to_name(uri_result)
-                    );
-                }
-            } else {
-                if (auth_result != last_auth_error) {
-                    ESP_LOGW(
-                        TAG,
-                        "device authentication failed: %s",
-                        esp_err_to_name(auth_result)
-                    );
-                    last_auth_error = auth_result;
-                }
-            }
-        }
-
-        if (is_binding_uri_ready) {
-            bool is_bound = false;
-            const esp_err_t binding_result =
-                device_binding_client_check_binding(&is_bound);
-            if (binding_result != ESP_OK &&
-                binding_result != ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(
-                    TAG,
-                    "binding status check failed: %s",
-                    esp_err_to_name(binding_result)
-                );
-            }
-            if (is_bound) {
-                break;
-            }
-        }
-
-        if (!is_binding_uri_ready && !has_pending_credentials) {
-            vTaskDelay(
-                pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS)
-            );
-            continue;
-        }
-        vTaskDelay(pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS));
+static bool device_provisioning_work_step(
+    device_provisioning_work_state_t *state
+) {
+    bool should_prepare_binding = false;
+    if (device_provisioning_state_mutex != nullptr &&
+        xSemaphoreTake(
+            device_provisioning_state_mutex,
+            portMAX_DELAY) == pdTRUE) {
+        should_prepare_binding =
+            device_provisioning_should_prepare_binding;
+        xSemaphoreGive(device_provisioning_state_mutex);
     }
 
+    char pending_ssid[CONFIG_STORE_SSID_SIZE + 1] = {0};
+    char pending_password[CONFIG_STORE_PASSWORD_SIZE + 1] = {0};
+    bool has_pending_credentials = false;
+    if (device_provisioning_state_mutex != nullptr &&
+        xSemaphoreTake(
+            device_provisioning_state_mutex,
+            portMAX_DELAY) == pdTRUE) {
+        has_pending_credentials =
+            device_provisioning_has_pending_credentials;
+        if (has_pending_credentials) {
+            memcpy(
+                pending_ssid,
+                device_provisioning_pending_ssid,
+                sizeof(pending_ssid)
+            );
+            memcpy(
+                pending_password,
+                device_provisioning_pending_password,
+                sizeof(pending_password)
+            );
+            device_provisioning_has_pending_credentials = false;
+            memset(
+                device_provisioning_pending_password,
+                0,
+                sizeof(device_provisioning_pending_password)
+            );
+        }
+        xSemaphoreGive(device_provisioning_state_mutex);
+    }
+    if (has_pending_credentials) {
+        const esp_err_t store_result =
+            network_manager_store_credentials(
+                pending_ssid,
+                pending_password
+            );
+        if (store_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "credential persistence failed: %s",
+                esp_err_to_name(store_result)
+            );
+            if (device_provisioning_state_mutex != nullptr &&
+                xSemaphoreTake(
+                    device_provisioning_state_mutex,
+                    portMAX_DELAY) == pdTRUE) {
+                memcpy(
+                    device_provisioning_pending_ssid,
+                    pending_ssid,
+                    sizeof(device_provisioning_pending_ssid)
+                );
+                memcpy(
+                    device_provisioning_pending_password,
+                    pending_password,
+                    sizeof(device_provisioning_pending_password)
+                );
+                device_provisioning_has_pending_credentials = true;
+                xSemaphoreGive(device_provisioning_state_mutex);
+            }
+            memset(pending_password, 0, sizeof(pending_password));
+            return false;
+        }
+        memset(pending_password, 0, sizeof(pending_password));
+    }
+
+    if (!state->is_binding_uri_ready && should_prepare_binding) {
+        esp_err_t auth_result = ESP_OK;
+        if (!device_binding_client_is_registered()) {
+            auth_result = device_binding_client_register_pending();
+        }
+        if (auth_result == ESP_OK) {
+            auth_result = device_binding_client_authenticate();
+        }
+        if (auth_result == ESP_OK) {
+            const esp_err_t uri_result =
+                device_provisioning_build_binding_uri(
+                    device_provisioning_service_name
+                );
+            if (uri_result == ESP_OK) {
+                state->is_binding_uri_ready = true;
+            } else {
+                ESP_LOGW(
+                    TAG,
+                    "binding URI unavailable: %s",
+                    esp_err_to_name(uri_result)
+                );
+            }
+        } else if (auth_result != state->last_auth_error) {
+            ESP_LOGW(
+                TAG,
+                "device authentication failed: %s",
+                esp_err_to_name(auth_result)
+            );
+            state->last_auth_error = auth_result;
+        }
+    }
+
+    if (state->is_binding_uri_ready) {
+        bool is_bound = false;
+        const esp_err_t binding_result =
+            device_binding_client_check_binding(&is_bound);
+        if (binding_result != ESP_OK &&
+            binding_result != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(
+                TAG,
+                "binding status check failed: %s",
+                esp_err_to_name(binding_result)
+            );
+        }
+        if (is_bound) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void device_provisioning_finish_task(void) {
     device_provisioning_rotate_security_credentials();
     network_prov_mgr_stop_provisioning();
     network_prov_mgr_wait();
@@ -545,6 +536,37 @@ static void device_provisioning_work_task_entry(void *argument) {
             esp_err_to_name(reconnect_result)
         );
     }
+}
+
+static void device_provisioning_work_task_entry(void *argument) {
+    (void)argument;
+    device_provisioning_work_state_t state = {
+        .is_binding_uri_ready = false,
+        .last_auth_error = ESP_OK,
+    };
+
+    while (!device_binding_client_is_bound() &&
+           !device_provisioning_work_step(&state)) {
+        bool should_prepare_binding = false;
+        if (device_provisioning_state_mutex != nullptr &&
+            xSemaphoreTake(
+                device_provisioning_state_mutex,
+                portMAX_DELAY) == pdTRUE) {
+            should_prepare_binding =
+                device_provisioning_should_prepare_binding;
+            xSemaphoreGive(device_provisioning_state_mutex);
+        }
+        if (!should_prepare_binding &&
+            !device_provisioning_has_pending_credentials) {
+            vTaskDelay(
+                pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS)
+            );
+            continue;
+        }
+        vTaskDelay(pdMS_TO_TICKS(DEVICE_PROVISIONING_POLL_INTERVAL_MS));
+    }
+
+    device_provisioning_finish_task();
     vTaskDelete(nullptr);
 }
 
@@ -808,5 +830,147 @@ const module_descriptor_t *device_provisioning_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef DEVICE_PROVISIONING_HOST_TESTS
+static device_provisioning_work_state_t device_provisioning_test_work_state;
+
+void device_provisioning_host_reset_state(void) {
+    if (device_provisioning_state_mutex != nullptr) {
+        vSemaphoreDelete(device_provisioning_state_mutex);
+        device_provisioning_state_mutex = nullptr;
+    }
+    device_provisioning_is_ready = false;
+    device_provisioning_is_service_active = false;
+    device_provisioning_has_pending_credentials = false;
+    device_provisioning_should_prepare_binding = false;
+    device_provisioning_has_security_credentials = false;
+    memset(device_provisioning_binding_uri, 0, sizeof(device_provisioning_binding_uri));
+    memset(device_provisioning_setup_uri, 0, sizeof(device_provisioning_setup_uri));
+    memset(device_provisioning_service_name, 0, sizeof(device_provisioning_service_name));
+    memset(device_provisioning_pending_ssid, 0, sizeof(device_provisioning_pending_ssid));
+    memset(
+        device_provisioning_pending_password,
+        0,
+        sizeof(device_provisioning_pending_password)
+    );
+    memset(device_provisioning_salt, 0, sizeof(device_provisioning_salt));
+    memset(
+        device_provisioning_verifier,
+        0,
+        sizeof(device_provisioning_verifier)
+    );
+    memset(
+        device_provisioning_proof_of_possession,
+        0,
+        sizeof(device_provisioning_proof_of_possession)
+    );
+    memset(
+        &device_provisioning_security_parameters,
+        0,
+        sizeof(device_provisioning_security_parameters)
+    );
+    device_provisioning_event_callback = nullptr;
+    device_provisioning_event_context = nullptr;
+    memset(
+        &device_provisioning_test_work_state,
+        0,
+        sizeof(device_provisioning_test_work_state)
+    );
+}
+
+void device_provisioning_host_handle_event(
+    network_prov_cb_event_t event,
+    void *event_data
+) {
+    device_provisioning_event_handler(nullptr, event, event_data);
+}
+
+void device_provisioning_host_reset_event_callback(void) {
+    device_provisioning_event_callback = nullptr;
+    device_provisioning_event_context = nullptr;
+}
+
+void device_provisioning_host_set_event_callback(
+    device_provisioning_event_callback_t callback,
+    void *context
+) {
+    device_provisioning_event_callback = callback;
+    device_provisioning_event_context = context;
+}
+
+device_provisioning_event_callback_t
+device_provisioning_host_get_event_callback(void) {
+    return device_provisioning_event_callback;
+}
+
+bool device_provisioning_host_should_prepare_binding(void) {
+    return device_provisioning_should_prepare_binding;
+}
+
+esp_err_t device_provisioning_host_custom_data(
+    uint8_t **output,
+    ssize_t *output_length
+) {
+    return device_provisioning_custom_data_handler(
+        0,
+        nullptr,
+        0,
+        output,
+        output_length,
+        nullptr
+    );
+}
+
+void device_provisioning_host_run_work_task(void) {
+    device_provisioning_work_task_entry(nullptr);
+}
+
+void device_provisioning_host_step_work_task(void) {
+    const bool should_finish = device_provisioning_work_step(
+        &device_provisioning_test_work_state
+    );
+    if (should_finish) {
+        device_provisioning_finish_task();
+    }
+}
+
+const char *device_provisioning_host_pending_ssid(void) {
+    return device_provisioning_pending_ssid;
+}
+
+const char *device_provisioning_host_pending_password(void) {
+    return device_provisioning_pending_password;
+}
+
+const char *device_provisioning_host_service_name(void) {
+    return device_provisioning_service_name;
+}
+
+const char *device_provisioning_host_setup_uri(void) {
+    return device_provisioning_setup_uri;
+}
+
+const char *device_provisioning_host_binding_uri(void) {
+    return device_provisioning_binding_uri;
+}
+
+const char *device_provisioning_host_salt(size_t *size_out) {
+    if (size_out != nullptr) {
+        *size_out = device_provisioning_security_parameters.salt_len;
+    }
+    return device_provisioning_salt;
+}
+
+const char *device_provisioning_host_verifier(size_t *size_out) {
+    if (size_out != nullptr) {
+        *size_out = device_provisioning_security_parameters.verifier_len;
+    }
+    return device_provisioning_verifier;
+}
+
+const char *device_provisioning_host_proof_of_possession(void) {
+    return device_provisioning_proof_of_possession;
+}
+#endif
 
 }  // extern "C"
