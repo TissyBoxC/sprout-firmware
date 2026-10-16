@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -90,17 +91,51 @@ static voice_wake_context_t voice_wake_state;
 static portMUX_TYPE voice_wake_handler_lock =
     portMUX_INITIALIZER_UNLOCKED;
 
+#ifdef VOICE_WAKE_HOST_TESTS
+void voice_wake_host_reset_state(void) {
+    voice_wake_state.lifecycle_mutex = NULL;
+    voice_wake_state.task_exit_semaphore = NULL;
+    voice_wake_state.task_handle = NULL;
+    voice_wake_state.handler = NULL;
+    voice_wake_state.handler_context = NULL;
+    voice_wake_state.feed_buffer = NULL;
+    voice_wake_state.feed_sample_capacity = 0;
+    voice_wake_state.feed_samples_pending = 0;
+    atomic_store(&voice_wake_state.is_ready, false);
+    atomic_store(&voice_wake_state.is_armed, false);
+    atomic_store(&voice_wake_state.is_suspended, false);
+    atomic_store(&voice_wake_state.frames_processed, 0);
+    atomic_store(&voice_wake_state.detections, 0);
+    atomic_store(&voice_wake_state.rejected_frames, 0);
+    atomic_store(&voice_wake_state.false_wake_rejections, 0);
+    atomic_store(&voice_wake_state.last_confidence_milli, 0);
+    atomic_store(&voice_wake_state.last_detected_at_ms, 0);
+    atomic_store(&voice_wake_state.session_nonce, 0);
+    atomic_store(&voice_wake_state.playback_stopped_at_ms, 0);
+    atomic_store(&voice_wake_state.cooldown_until_ms, 0);
+    atomic_store(&voice_wake_state.deterministic_run_frames, 0);
+    atomic_store(&voice_wake_state.task_stop_requested, false);
+    atomic_store(&voice_wake_state.is_running, false);
+    for (size_t reason = 0;
+         reason < VOICE_WAKE_REJECTION_COUNT;
+         ++reason) {
+        atomic_store(
+            &voice_wake_state.rejection_event_allowed_at_ms[reason],
+            0
+        );
+    }
+}
+#endif
+
 static uint64_t voice_wake_now_ms(void) {
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
-static uint32_t voice_wake_confidence_milli(void) {
 #if CONFIG_VOICE_WAKE_BACKEND_ESP_SR
+static uint32_t voice_wake_confidence_milli(void) {
     return (uint32_t)CONFIG_VOICE_WAKE_WAKENET_THRESHOLD_MILLI;
-#else
-    return 1000u;
-#endif
 }
+#endif
 
 #if VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER
 static const char *voice_wake_rejection_reason_code(
@@ -157,6 +192,9 @@ static void voice_wake_report_rejection(
     uint32_t wake_word_id,
     uint32_t confidence_milli
 ) {
+    (void)reason;
+    (void)wake_word_id;
+    (void)confidence_milli;
     atomic_fetch_add(&voice_wake_state.false_wake_rejections, 1u);
 #if VOICE_WAKE_HAS_DIAGNOSTIC_REPORTER
     if (reason < 0 || reason >= VOICE_WAKE_REJECTION_COUNT) {
@@ -617,9 +655,39 @@ static void voice_wake_deterministic_feed(
 
 #endif
 
+static void voice_wake_process_next_frame(void) {
+    audio_codec_pcm_frame_t frame;
+    if (audio_pipeline_capture_frame(
+            AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE,
+            &frame
+        ) != AUDIO_CODEC_OK) {
+        voice_wake_increment_rejected_frame();
+        return;
+    }
+    atomic_fetch_add(&voice_wake_state.frames_processed, 1u);
+
+    const uint64_t now_ms = voice_wake_now_ms();
+    const bool detection_allowed =
+        voice_wake_is_suppressed(now_ms) == false;
+
+#if CONFIG_VOICE_WAKE_BACKEND_ESP_SR
+    voice_wake_esp_sr_feed(
+        frame.pcm,
+        frame.pcm_size / sizeof(int16_t),
+        detection_allowed
+    );
+#else
+    if (detection_allowed) {
+        voice_wake_deterministic_feed(
+            frame.pcm,
+            frame.pcm_size / sizeof(int16_t)
+        );
+    }
+#endif
+}
+
 static void voice_wake_task(void *argument) {
     (void)argument;
-    audio_codec_pcm_frame_t frame;
 
     while (atomic_load(&voice_wake_state.task_stop_requested) == false) {
         if (atomic_load(&voice_wake_state.is_running) == false ||
@@ -628,33 +696,7 @@ static void voice_wake_task(void *argument) {
             continue;
         }
 
-        if (audio_pipeline_capture_frame(
-                AUDIO_PIPELINE_CAPTURE_OWNER_VOICE_WAKE,
-                &frame
-            ) != AUDIO_CODEC_OK) {
-            voice_wake_increment_rejected_frame();
-            continue;
-        }
-        atomic_fetch_add(&voice_wake_state.frames_processed, 1u);
-
-        const uint64_t now_ms = voice_wake_now_ms();
-        const bool detection_allowed =
-            voice_wake_is_suppressed(now_ms) == false;
-
-#if CONFIG_VOICE_WAKE_BACKEND_ESP_SR
-        voice_wake_esp_sr_feed(
-            frame.pcm,
-            frame.pcm_size / sizeof(int16_t),
-            detection_allowed
-        );
-#else
-        if (detection_allowed) {
-            voice_wake_deterministic_feed(
-                frame.pcm,
-                frame.pcm_size / sizeof(int16_t)
-            );
-        }
-#endif
+        voice_wake_process_next_frame();
     }
 
     if (voice_wake_state.task_exit_semaphore != NULL) {
@@ -662,6 +704,12 @@ static void voice_wake_task(void *argument) {
     }
     vTaskDelete(NULL);
 }
+
+#ifdef VOICE_WAKE_HOST_TESTS
+void voice_wake_host_process_one_frame(void) {
+    voice_wake_process_next_frame();
+}
+#endif
 
 esp_err_t voice_wake_init(void) {
     if (voice_wake_state.lifecycle_mutex == NULL) {

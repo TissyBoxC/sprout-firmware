@@ -2349,6 +2349,38 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$voiceWakeRoot = Join-Path $firmwareRoot 'components/voice_wake'
+Invoke-HostTest `
+    -Name 'voice_wake_contract' `
+    -Sources @(
+        (Join-Path $voiceWakeRoot 'src/voice_wake.c')
+        (Join-Path $voiceWakeRoot 'test/stubs/voice_wake_deps.c')
+        (Join-Path $voiceWakeRoot 'test/test_voice_wake.c')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceWakeRoot 'include')
+        (Join-Path $voiceWakeRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DVOICE_WAKE_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_VOICE_WAKE=1'
+        '-DCONFIG_VOICE_WAKE_BACKEND_ESP_SR=0'
+        '-DCONFIG_VOICE_WAKE_BACKEND_DETERMINISTIC=1'
+        '-DCONFIG_FEATURE_DIAGNOSTIC_REPORTER=0'
+        '-DCONFIG_FEATURE_PARENT_CONTROL_RUNTIME=0'
+        '-DCONFIG_VOICE_WAKE_MIN_CONFIDENCE_MILLI=600'
+        '-DCONFIG_VOICE_WAKE_COOLDOWN_MS=2000'
+        '-DCONFIG_VOICE_WAKE_PLAYBACK_IGNORE_MS=300'
+        '-DCONFIG_VOICE_WAKE_REJECTION_EVENT_INTERVAL_MS=60000'
+        '-DCONFIG_VOICE_WAKE_TASK_STACK_SIZE=8192'
+        '-DCONFIG_VOICE_WAKE_TASK_PRIORITY=7'
+        '-DCONFIG_VOICE_WAKE_FRAME_TIMEOUT_MS=200'
+        '-DCONFIG_VOICE_WAKE_DETERMINISTIC_RMS_THRESHOLD=900'
+        '-DCONFIG_VOICE_WAKE_DETERMINISTIC_MIN_RUN_FRAMES=4'
+    ) `
+    -Language 'c' `
+    -Compiler $cCompiler
+
 Invoke-HostTest `
     -Name 'volume_control_runtime' `
     -Sources @(
