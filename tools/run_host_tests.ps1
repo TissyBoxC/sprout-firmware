@@ -259,6 +259,35 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$systemCoreRoot = Join-Path $firmwareRoot 'components/system_core'
+Invoke-HostTest `
+    -Name 'system_core_event_loop' `
+    -Sources @(
+        (Join-Path $systemCoreRoot 'src/system_core.c')
+        (Join-Path $systemCoreRoot 'test/stubs/system_core_deps.c')
+        (Join-Path $systemCoreRoot 'test/test_system_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $systemCoreRoot 'include')
+        (Join-Path $systemCoreRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'system_core_creation_failure' `
+    -Sources @(
+        (Join-Path $systemCoreRoot 'src/system_core.c')
+        (Join-Path $systemCoreRoot 'test/stubs/system_core_deps.c')
+        (Join-Path $systemCoreRoot 'test/test_system_core_failure.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $systemCoreRoot 'include')
+        (Join-Path $systemCoreRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $securityPostureRoot = Join-Path $firmwareRoot 'components/security_posture'
 Invoke-HostTest `
     -Name 'security_posture_core' `
