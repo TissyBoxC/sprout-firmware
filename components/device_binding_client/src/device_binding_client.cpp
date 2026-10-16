@@ -810,4 +810,25 @@ const module_descriptor_t *device_binding_client_module_descriptor(void) {
     return &descriptor;
 }
 
+#ifdef DEVICE_BINDING_CLIENT_HOST_TESTS
+bool device_binding_client_host_is_ready(void) {
+    return device_binding_is_ready;
+}
+
+void device_binding_client_host_reset_module(void) {
+    device_binding_is_ready = false;
+    device_binding_is_registered = false;
+    device_binding_is_bound = false;
+    memset(
+        device_binding_session_token,
+        0,
+        sizeof(device_binding_session_token)
+    );
+    device_binding_completed_callback = NULL;
+    device_binding_completed_context = NULL;
+    device_binding_state_callback = NULL;
+    device_binding_state_context = NULL;
+}
+#endif
+
 }  // extern "C"

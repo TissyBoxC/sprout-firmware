@@ -2535,6 +2535,32 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
+$deviceBindingRoot = Join-Path $firmwareRoot 'components/device_binding_client'
+Invoke-HostTest `
+    -Name 'device_binding_client_runtime' `
+    -Sources @(
+        (Join-Path $deviceBindingRoot 'src/device_binding_client.cpp')
+        (Join-Path $deviceBindingRoot 'test/stubs/device_binding_client_deps.cpp')
+        (Join-Path $deviceBindingRoot 'test/test_device_binding_client.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $deviceBindingRoot 'include')
+        (Join-Path $deviceBindingRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/config_store/include')
+        (Join-Path $firmwareRoot 'components/device_capabilities/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DDEVICE_BINDING_CLIENT_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_DEVICE_BINDING_CLIENT=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $deviceProvisioningRoot = Join-Path $firmwareRoot 'components/device_provisioning'
 Invoke-HostTest `
     -Name 'device_provisioning_contract' `

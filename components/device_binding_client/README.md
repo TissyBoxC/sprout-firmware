@@ -20,3 +20,12 @@ ESP-IDF, so no migration is required.
 
 `CONFIG_FEATURE_DEVICE_BINDING_CLIENT` controls source inclusion. Delete the
 component, its Kconfig entry, and the `main.c` registration to remove it.
+
+## Host tests
+
+`device_binding_client_runtime` runs the production client against stubbed
+`config_store`, identity, HTTP, capability, and transport-security dependencies.
+It covers initialization and descriptor contracts, platform URL persistence and
+bounds, registration payloads and grant cleanup, challenge signing and session
+persistence, provisioning-token authorization, binding-state transitions and
+callbacks, malformed responses, and transport or timeout failures.
