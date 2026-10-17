@@ -2303,6 +2303,27 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'connectivity_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $connectivityPolicySyncRoot 'src/connectivity_policy_sync_core.c')
+        (Join-Path $connectivityPolicySyncRoot 'src/connectivity_policy_sync.cpp')
+        (Join-Path $connectivityPolicySyncRoot 'test/stubs/connectivity_policy_sync_deps.cpp')
+        (Join-Path $connectivityPolicySyncRoot 'test/test_connectivity_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $connectivityPolicySyncRoot 'include')
+        (Join-Path $connectivityPolicySyncRoot 'src')
+        (Join-Path $connectivityPolicySyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_CONNECTIVITY_POLICY_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $powerReportRoot = Join-Path $firmwareRoot 'components/power_report'
 $batteryPowerRoot = Join-Path $firmwareRoot 'components/battery_power'
 Invoke-HostTest `
