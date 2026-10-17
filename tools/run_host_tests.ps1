@@ -390,17 +390,67 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $otaValidateRoot = Join-Path $firmwareRoot 'components/ota_validate'
+$ed25519VerifyRoot = Join-Path $firmwareRoot 'components/ed25519_verify'
+Invoke-HostTest `
+    -Name 'ed25519_verify' `
+    -Sources @(
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
+        (Join-Path $ed25519VerifyRoot 'test/test_ed25519_verify.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $ed25519VerifyRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'src')
+    ) `
+    -AdditionalArguments @() `
+    -CCompiledSources @(
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
+    ) `
+    -CCompiler $cCompiler `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'ota_manifest' `
     -Sources @(
         (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
         (Join-Path $otaValidateRoot 'test/test_ota_manifest.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $otaValidateRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'src')
     ) `
     -AdditionalArguments @() `
+    -CCompiledSources @(
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+    ) `
+    -CCompiler $cCompiler `
     -Compiler $compiler
+
+$repositoryRoot = Split-Path -Parent $firmwareRoot
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($null -ne $python) {
+    Push-Location $repositoryRoot
+    try {
+        & $python.Source -m unittest tools.test_ota_signing_firmware_verify -v
+        if ($LASTEXITCODE -ne 0) {
+            throw 'OTA signing-to-firmware verification failed.'
+        }
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Host 'Skipping OTA signing-to-firmware verification: python was not found.'
+}
 
 $otaDownloadRoot = Join-Path $firmwareRoot 'components/ota_download'
 Invoke-HostTest `
@@ -408,13 +458,26 @@ Invoke-HostTest `
     -Sources @(
         (Join-Path $otaDownloadRoot 'src/ota_download_core.c')
         (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
         (Join-Path $otaDownloadRoot 'test/test_ota_download_core.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $otaDownloadRoot 'include')
         (Join-Path $otaValidateRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'src')
     ) `
     -AdditionalArguments @() `
+    -CCompiledSources @(
+        (Join-Path $otaDownloadRoot 'src/ota_download_core.c')
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
+    ) `
+    -CCompiler $cCompiler `
     -Compiler $compiler
 
 $otaManagerRoot = Join-Path $firmwareRoot 'components/ota_manager'
@@ -448,13 +511,26 @@ Invoke-HostTest `
     -Sources @(
         (Join-Path $otaRollbackRoot 'src/ota_rollback_policy.c')
         (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
         (Join-Path $otaRollbackRoot 'test/test_ota_rollback_policy.cpp')
     ) `
     -IncludeDirectories @(
         (Join-Path $otaRollbackRoot 'include')
         (Join-Path $otaValidateRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'include')
+        (Join-Path $ed25519VerifyRoot 'src')
     ) `
     -AdditionalArguments @() `
+    -CCompiledSources @(
+        (Join-Path $otaRollbackRoot 'src/ota_rollback_policy.c')
+        (Join-Path $otaValidateRoot 'src/ota_manifest.c')
+        (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
+        (Join-Path $ed25519VerifyRoot 'src/monocypher-ed25519.c')
+    ) `
+    -CCompiler $cCompiler `
     -Compiler $compiler
 
 $diagnosticRoot = Join-Path $firmwareRoot 'components/diagnostic_reporter'
