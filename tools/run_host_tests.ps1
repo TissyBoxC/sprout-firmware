@@ -1949,6 +1949,31 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'display_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $displayPolicyRoot 'src/display_policy_core.c')
+        (Join-Path $displayPolicyRoot 'src/display_policy.c')
+        (Join-Path $displayPolicySyncRoot 'src/display_policy_sync_core.c')
+        (Join-Path $displayPolicySyncRoot 'src/display_policy_sync.cpp')
+        (Join-Path $displayPolicySyncRoot 'test/stubs/display_policy_sync_deps.cpp')
+        (Join-Path $displayPolicySyncRoot 'test/test_display_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $displayPolicySyncRoot 'include')
+        (Join-Path $displayPolicySyncRoot 'src')
+        (Join-Path $displayPolicySyncRoot 'test/stubs')
+        (Join-Path $displayPolicyRoot 'include')
+        (Join-Path $displayPolicyRoot 'src')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_DISPLAY_POLICY_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $touchInputRoot = Join-Path $firmwareRoot 'components/touch_input'
 Invoke-HostTest `
     -Name 'touch_input_core' `
