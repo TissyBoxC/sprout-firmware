@@ -1174,6 +1174,39 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$learningVisualizationSyncRoot = Join-Path $firmwareRoot 'components/learning_visualization_sync'
+Invoke-HostTest `
+    -Name 'learning_visualization_sync_runtime' `
+    -Sources @(
+        (Join-Path $learningVisualizationRoot 'src/learning_core.c')
+        (Join-Path $learningVisualizationRoot 'src/learning_visualization_sync_core.c')
+        (Join-Path $learningVisualizationRoot 'src/learning_visualization.c')
+        (Join-Path $learningVisualizationSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $learningVisualizationSyncRoot 'src/learning_visualization_sync.cpp')
+        (Join-Path $learningVisualizationSyncRoot 'test/stubs/learning_visualization_sync_deps.cpp')
+        (Join-Path $learningVisualizationSyncRoot 'test/test_learning_visualization_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $learningVisualizationRoot 'include')
+        (Join-Path $learningVisualizationRoot 'src')
+        (Join-Path $learningVisualizationSyncRoot 'include')
+        (Join-Path $learningVisualizationSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DLEARNING_VISUALIZATION_HOST_TESTS=1'
+        '-DLEARNING_VISUALIZATION_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_LEARNING_VISUALIZATION_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $imagePrivacyRoot = Join-Path $firmwareRoot 'components/image_privacy'
 Invoke-HostTest `
     -Name 'image_core' `

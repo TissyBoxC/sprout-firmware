@@ -135,15 +135,16 @@ static esp_err_t learning_visualization_sync_fetch(JsonDocument *document) {
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[LEARNING_VISUALIZATION_SYNC_URL_SIZE] = {0};
-    if (learning_visualization_sync_prepare(
-            session_token,
-            sizeof(session_token),
-            device_id,
-            sizeof(device_id),
-            base_url,
-            sizeof(base_url)
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+    const esp_err_t prepared = learning_visualization_sync_prepare(
+        session_token,
+        sizeof(session_token),
+        device_id,
+        sizeof(device_id),
+        base_url,
+        sizeof(base_url)
+    );
+    if (prepared != ESP_OK) {
+        return prepared;
     }
     char url[LEARNING_VISUALIZATION_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -431,3 +432,23 @@ const module_descriptor_t *learning_visualization_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef LEARNING_VISUALIZATION_SYNC_HOST_TESTS
+extern "C" {
+
+bool learning_visualization_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void learning_visualization_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void learning_visualization_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif

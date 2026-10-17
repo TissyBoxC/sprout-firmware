@@ -1,0 +1,3 @@
+#pragma once
+
+#define CONFIG_FEATURE_TRANSPORT_SECURITY 1

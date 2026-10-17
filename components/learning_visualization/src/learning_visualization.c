@@ -297,3 +297,17 @@ const module_descriptor_t *learning_visualization_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef LEARNING_VISUALIZATION_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void learning_visualization_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif
