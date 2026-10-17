@@ -226,14 +226,27 @@ esp_err_t motion_policy_sync_now(void) {
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!data["enabled"].is<bool>() ||
+        !data["require_stop_ack"].is<bool>() ||
+        !data["allow_locomotion"].is<bool>() ||
+        !data["max_speed_percent"].is<int>() ||
+        !data["max_runtime_ms"].is<int>() ||
+        !data["stop_grace_ms"].is<int>() ||
+        !data["revision"].is<int>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int revision = data["revision"].as<int>();
+    if (revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const motion_policy_t policy = motion_policy_sync_core_build(
-        data["enabled"] | false,
-        data["require_stop_ack"] | false,
-        data["allow_locomotion"] | false,
-        data["max_speed_percent"] | 0,
-        data["max_runtime_ms"] | 0,
-        data["stop_grace_ms"] | 0,
-        data["revision"] | 0
+        data["enabled"].as<bool>(),
+        data["require_stop_ack"].as<bool>(),
+        data["allow_locomotion"].as<bool>(),
+        data["max_speed_percent"].as<int>(),
+        data["max_runtime_ms"].as<int>(),
+        data["stop_grace_ms"].as<int>(),
+        revision
     );
     return motion_set(&policy);
 }
