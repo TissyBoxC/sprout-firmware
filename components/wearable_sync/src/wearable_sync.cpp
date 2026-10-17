@@ -56,6 +56,19 @@ typedef struct {
     bool overflowed;
 } wearable_sync_response_t;
 
+static bool wearable_sync_policy_equal(
+    const location_policy_t *left,
+    const location_policy_t *right
+) {
+    return left->schema_version == right->schema_version &&
+        left->enabled == right->enabled &&
+        left->permission_granted == right->permission_granted &&
+        left->precision == right->precision &&
+        left->upload_interval_seconds == right->upload_interval_seconds &&
+        left->retention_days == right->retention_days &&
+        left->geofence_radius_meters == right->geofence_radius_meters;
+}
+
 static esp_err_t wearable_sync_response_init(wearable_sync_response_t *response) {
     response->body = (char *)malloc(WEARABLE_SYNC_RESPONSE_SIZE);
     if (response->body == NULL) {
@@ -299,6 +312,13 @@ static esp_err_t wearable_sync_apply_policy(
         return ESP_ERR_INVALID_ARG;
     }
     if (!policy.permission_granted) {
+        const location_policy_t current = wearable_get();
+        if (!current.permission_granted) {
+            s_location_reported = false;
+            s_last_location_upload_ms = 0;
+            s_last_sos_attempt_ms = 0;
+            return ESP_OK;
+        }
         const esp_err_t revoke_result = wearable_revoke_permission();
         s_location_reported = false;
         s_last_location_upload_ms = 0;
@@ -306,6 +326,10 @@ static esp_err_t wearable_sync_apply_policy(
         return revoke_result == ESP_OK
             ? ESP_OK
             : ESP_ERR_INVALID_STATE;
+    }
+    const location_policy_t current = wearable_get();
+    if (wearable_sync_policy_equal(&policy, &current)) {
+        return ESP_OK;
     }
     const esp_err_t apply_result = wearable_set(&policy);
     return apply_result == ESP_OK ? ESP_OK : ESP_ERR_INVALID_STATE;

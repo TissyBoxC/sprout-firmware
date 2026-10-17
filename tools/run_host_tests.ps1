@@ -2656,6 +2656,38 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'wearable_sync_runtime' `
+    -Sources @(
+        (Join-Path $wearableSyncRoot 'src/wearable_sync.cpp')
+        (Join-Path $wearableSyncRoot 'src/wearable_sync_core.c')
+        (Join-Path $wearableRoot 'src/wearable_core.c')
+        (Join-Path $wearableRoot 'src/wearable_location.c')
+        (Join-Path $wearableSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $wearableSyncRoot 'test/stubs/wearable_sync_deps.cpp')
+        (Join-Path $wearableSyncRoot 'test/test_wearable_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $wearableSyncRoot 'include')
+        (Join-Path $wearableSyncRoot 'src')
+        (Join-Path $wearableSyncRoot 'test/stubs')
+        (Join-Path $wearableRoot 'include')
+        (Join-Path $wearableRoot 'src')
+        (Join-Path $wearableRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DWEARABLE_SYNC_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $familyRoot = Join-Path $firmwareRoot 'components/family_linkage'
 Invoke-HostTest `
     -Name 'family_core' `
