@@ -424,6 +424,38 @@ void test_worker_syncs_then_uses_regular_interval() {
     assert(playback_request_sync_host_task_delete_calls() == 1);
 }
 
+void test_worker_uses_regular_interval_for_server_failure() {
+    reset_all();
+    const module_descriptor_t *const descriptor =
+        playback_request_sync_module_descriptor();
+    const int statuses[] = {500};
+    const char *bodies[] = {"{}"};
+    playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+    playback_request_sync_host_set_stop_after_delays(0);
+    assert(descriptor->initialize() == ESP_OK);
+
+    playback_request_sync_host_run_pending_task();
+    assert(playback_request_sync_host_request_count() == 1);
+    assert(playback_request_sync_host_last_delay_ticks() == 60000u);
+    assert(playback_request_sync_host_task_delete_calls() == 1);
+}
+
+void test_worker_uses_regular_interval_for_rejected_snapshot() {
+    reset_all();
+    const module_descriptor_t *const descriptor =
+        playback_request_sync_module_descriptor();
+    const int statuses[] = {200};
+    const char *bodies[] = {"{\"data\":{}}"};
+    playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+    playback_request_sync_host_set_stop_after_delays(0);
+    assert(descriptor->initialize() == ESP_OK);
+
+    playback_request_sync_host_run_pending_task();
+    assert(playback_request_sync_host_request_count() == 1);
+    assert(playback_request_sync_host_last_delay_ticks() == 60000u);
+    assert(playback_request_sync_host_task_delete_calls() == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -445,5 +477,7 @@ int main() {
     test_initialize_requires_cache_and_is_idempotent();
     test_worker_retries_offline_with_short_interval();
     test_worker_syncs_then_uses_regular_interval();
+    test_worker_uses_regular_interval_for_server_failure();
+    test_worker_uses_regular_interval_for_rejected_snapshot();
     return 0;
 }

@@ -549,7 +549,12 @@ static void playback_request_sync_worker(void *argument) {
                 );
             }
         }
-        const uint32_t delay_seconds = result == ESP_ERR_INVALID_STATE
+        // Only a temporarily unavailable runtime is worth a short retry.
+        // A rejected snapshot or a server-side failure should wait for the
+        // regular interval instead of hammering the platform every 15s.
+        const bool retry_soon = result == ESP_ERR_INVALID_STATE ||
+            result == ESP_ERR_TIMEOUT;
+        const uint32_t delay_seconds = retry_soon
             ? CONFIG_PLAYBACK_REQUEST_SYNC_RETRY_INTERVAL_SECONDS
             : CONFIG_PLAYBACK_REQUEST_SYNC_INTERVAL_SECONDS;
         vTaskDelay(pdMS_TO_TICKS(delay_seconds * 1000));
