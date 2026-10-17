@@ -1637,6 +1637,38 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$offlinePolicySyncRoot = Join-Path $firmwareRoot 'components/offline_policy_sync'
+Invoke-HostTest `
+    -Name 'offline_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $offlinePolicyRoot 'src/offline_policy_core.c')
+        (Join-Path $offlinePolicyRoot 'src/offline_policy.c')
+        (Join-Path $offlinePolicySyncRoot 'test/stubs/config_store.c')
+        (Join-Path $offlinePolicySyncRoot 'src/offline_policy_sync.cpp')
+        (Join-Path $offlinePolicySyncRoot 'test/stubs/offline_policy_sync_deps.cpp')
+        (Join-Path $offlinePolicySyncRoot 'test/test_offline_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $offlinePolicyRoot 'include')
+        (Join-Path $offlinePolicyRoot 'src')
+        (Join-Path $offlinePolicySyncRoot 'include')
+        (Join-Path $offlinePolicySyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DOFFLINE_POLICY_HOST_TESTS=1'
+        '-DOFFLINE_POLICY_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_OFFLINE_POLICY_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $timeSyncRoot = Join-Path $firmwareRoot 'components/time_sync'
 Invoke-HostTest `
     -Name 'time_sync_timezone_boundaries' `

@@ -131,3 +131,17 @@ const module_descriptor_t *offline_policy_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef OFFLINE_POLICY_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void offline_policy_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif
