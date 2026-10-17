@@ -2424,6 +2424,38 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'power_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $batteryPowerRoot 'src/battery_core.c')
+        (Join-Path $batteryPowerRoot 'src/battery_power.c')
+        (Join-Path $powerPolicySyncRoot 'src/power_policy_sync_core.c')
+        (Join-Path $powerPolicySyncRoot 'src/power_policy_sync.cpp')
+        (Join-Path $powerPolicySyncRoot 'test/stubs/power_policy_sync_deps.cpp')
+        (Join-Path $powerPolicySyncRoot 'test/test_power_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $batteryPowerRoot 'include')
+        (Join-Path $batteryPowerRoot 'src')
+        (Join-Path $batteryPowerRoot 'test/stubs')
+        (Join-Path $powerPolicySyncRoot 'include')
+        (Join-Path $powerPolicySyncRoot 'src')
+        (Join-Path $powerPolicySyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_POWER_POLICY_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -CCompiledSources @(
+        (Join-Path $batteryPowerRoot 'src/battery_core.c')
+        (Join-Path $batteryPowerRoot 'src/battery_power.c')
+        (Join-Path $powerPolicySyncRoot 'src/power_policy_sync_core.c')
+    ) `
+    -CCompiler $cCompiler `
+    -Compiler $compiler
+
 $videoSessionRoot = Join-Path $firmwareRoot 'components/video_session'
 Invoke-HostTest `
     -Name 'video_core' `
