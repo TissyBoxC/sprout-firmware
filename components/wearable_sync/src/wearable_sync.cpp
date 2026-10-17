@@ -99,26 +99,39 @@ static esp_err_t wearable_sync_prepare(
     char *base_url,
     size_t base_url_size
 ) {
+    memset(session_token, 0, session_token_size);
+    memset(device_id, 0, device_id_size);
+    memset(base_url, 0, base_url_size);
     if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
         !time_sync_is_synchronized() ||
         !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (device_binding_client_copy_session_token(
+    const esp_err_t session_result = device_binding_client_copy_session_token(
             session_token,
             session_token_size
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (session_result != ESP_OK) {
+        return session_result;
     }
-    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+    const esp_err_t identity_result = device_identity_copy(
+        device_id,
+        device_id_size
+    );
+    if (identity_result != ESP_OK) {
         memset(session_token, 0, session_token_size);
-        return ESP_ERR_INVALID_STATE;
+        return identity_result;
     }
-    if (device_binding_client_get_platform_base_url(
+    const esp_err_t base_url_result =
+        device_binding_client_get_platform_base_url(
             base_url,
             base_url_size
-        ) != ESP_OK ||
-        strncmp(base_url, "https://", 8) != 0) {
+        );
+    if (base_url_result != ESP_OK) {
+        memset(session_token, 0, session_token_size);
+        return base_url_result;
+    }
+    if (strncmp(base_url, "https://", 8) != 0) {
         memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
     }
@@ -161,15 +174,39 @@ static esp_err_t wearable_sync_request(
         "Bearer %s",
         session_token
     );
-    esp_http_client_set_header(client, "Authorization", authorization);
-    esp_http_client_set_header(client, "Accept", "application/json");
-    if (request_body != nullptr) {
-        esp_http_client_set_header(client, "Content-Type", "application/json");
-        esp_http_client_set_post_field(
+    esp_err_t header_result = esp_http_client_set_header(
+        client,
+        "Authorization",
+        authorization
+    );
+    if (header_result == ESP_OK) {
+        header_result = esp_http_client_set_header(
             client,
-            request_body,
-            (int)strlen(request_body)
+            "Accept",
+            "application/json"
         );
+    }
+    if (request_body != nullptr) {
+        if (header_result == ESP_OK) {
+            header_result = esp_http_client_set_header(
+                client,
+                "Content-Type",
+                "application/json"
+            );
+        }
+        if (header_result == ESP_OK) {
+            header_result = esp_http_client_set_post_field(
+                client,
+                request_body,
+                (int)strlen(request_body)
+            );
+        }
+    }
+    if (header_result != ESP_OK) {
+        esp_http_client_cleanup(client);
+        wearable_sync_response_destroy(response);
+        memset(authorization, 0, sizeof(authorization));
+        return ESP_ERR_INVALID_STATE;
     }
     const esp_err_t transport_result = esp_http_client_perform(client);
     const int status_code = esp_http_client_get_status_code(client);
@@ -235,6 +272,15 @@ static esp_err_t wearable_sync_apply_policy(
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!data["schema_version"].is<uint32_t>() ||
+        !data["enabled"].is<bool>() ||
+        !data["permission_granted"].is<bool>() ||
+        !data["precision"].is<const char *>() ||
+        !data["upload_interval_seconds"].is<uint32_t>() ||
+        !data["retention_days"].is<uint32_t>() ||
+        !data["geofence_radius_meters"].is<uint32_t>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
     location_policy_t policy = {};
     if (!wearable_sync_core_parse_policy(
             data["schema_version"] | 0u,
@@ -249,10 +295,13 @@ static esp_err_t wearable_sync_apply_policy(
         return ESP_ERR_INVALID_ARG;
     }
     if (!policy.permission_granted) {
-        (void)wearable_revoke_permission();
-        return ESP_OK;
+        const esp_err_t revoke_result = wearable_revoke_permission();
+        return revoke_result == ESP_OK
+            ? ESP_OK
+            : ESP_ERR_INVALID_STATE;
     }
-    return wearable_apply(&policy);
+    const esp_err_t apply_result = wearable_set(&policy);
+    return apply_result == ESP_OK ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 static esp_err_t wearable_sync_post(
