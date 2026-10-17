@@ -4,6 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ed25519_verify.h"
+
+#define OTA_MANIFEST_BASE64_DECODED_SIGNATURE_SIZE 64
+#define OTA_MANIFEST_BASE64_PUBLIC_KEY_SIZE 32
+#define OTA_MANIFEST_PUBLIC_KEY_TEXT_SIZE 48
+
+typedef struct {
+    char key_id[OTA_MANIFEST_KEY_ID_SIZE];
+    char public_key[OTA_MANIFEST_PUBLIC_KEY_TEXT_SIZE];
+} ota_manifest_keyring_entry_t;
+
 typedef struct {
     const char *cursor;
     const char *end;
@@ -223,15 +234,183 @@ static bool ota_manifest_copy_field(
     return true;
 }
 
+static int ota_manifest_base64_value(char value) {
+    if (value >= 'A' && value <= 'Z') {
+        return value - 'A';
+    }
+    if (value >= 'a' && value <= 'z') {
+        return value - 'a' + 26;
+    }
+    if (value >= '0' && value <= '9') {
+        return value - '0' + 52;
+    }
+    if (value == '=') {
+        return -2;
+    }
+    if (value == '+') {
+        return 62;
+    }
+    if (value == '/') {
+        return 63;
+    }
+    return -1;
+}
+
+static bool ota_manifest_base64_decode(
+    const char *encoded,
+    uint8_t *output,
+    size_t output_size,
+    size_t *decoded_size_out
+) {
+    if (encoded == NULL || output == NULL || decoded_size_out == NULL) {
+        return false;
+    }
+    const size_t encoded_size = strlen(encoded);
+    if (encoded_size == 0 || encoded_size % 4 != 0) {
+        return false;
+    }
+    size_t padding = 0;
+    if (encoded[encoded_size - 1] == '=') {
+        ++padding;
+    }
+    if (encoded[encoded_size - 2] == '=') {
+        ++padding;
+    }
+    if (padding > 2) {
+        return false;
+    }
+    const size_t decoded_size = encoded_size / 4 * 3 - padding;
+    if (decoded_size > output_size) {
+        return false;
+    }
+    size_t output_index = 0;
+    for (size_t input_index = 0;
+         input_index < encoded_size;
+         input_index += 4) {
+        const bool last_group = input_index + 4 == encoded_size;
+        const int first = ota_manifest_base64_value(encoded[input_index]);
+        const int second = ota_manifest_base64_value(encoded[input_index + 1]);
+        const char third_character = encoded[input_index + 2];
+        const char fourth_character = encoded[input_index + 3];
+        const int third = ota_manifest_base64_value(third_character);
+        const int fourth = ota_manifest_base64_value(fourth_character);
+        if (first < 0 || second < 0 ||
+            (third < 0 && !(last_group && third == -2)) ||
+            (fourth < 0 && !(last_group && fourth == -2))) {
+            return false;
+        }
+        if (third == -2 && fourth != -2) {
+            return false;
+        }
+        output[output_index++] = (uint8_t)(
+            ((unsigned)first << 2) | ((unsigned)second >> 4)
+        );
+        if (third != -2) {
+            if (output_index >= decoded_size + 1) {
+                return false;
+            }
+            output[output_index++] = (uint8_t)(
+                ((unsigned)second << 4) | ((unsigned)third >> 2)
+            );
+        }
+        if (fourth != -2) {
+            if (output_index >= decoded_size + 1) {
+                return false;
+            }
+            output[output_index++] = (uint8_t)(
+                ((unsigned)third << 6) | (unsigned)fourth
+            );
+        }
+    }
+    if (output_index != decoded_size) {
+        return false;
+    }
+    *decoded_size_out = decoded_size;
+    return true;
+}
+
+static bool ota_manifest_canonical_base64(
+    const char *encoded,
+    const uint8_t *decoded,
+    size_t decoded_size
+) {
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (encoded == NULL || decoded == NULL ||
+        strlen(encoded) != (decoded_size + 2) / 3 * 4) {
+        return false;
+    }
+    size_t encoded_index = 0;
+    for (size_t index = 0; index < decoded_size; index += 3) {
+        const size_t remaining = decoded_size - index;
+        const uint32_t block =
+            ((uint32_t)decoded[index] << 16) |
+            (remaining > 1 ? ((uint32_t)decoded[index + 1] << 8) : 0U) |
+            (remaining > 2 ? (uint32_t)decoded[index + 2] : 0U);
+        if (encoded[encoded_index++] != alphabet[(block >> 18) & 0x3FU] ||
+            encoded[encoded_index++] != alphabet[(block >> 12) & 0x3FU]) {
+            return false;
+        }
+        if (remaining > 1) {
+            if (encoded[encoded_index++] != alphabet[(block >> 6) & 0x3FU]) {
+                return false;
+            }
+        } else if (encoded[encoded_index++] != '=') {
+            return false;
+        }
+        if (remaining > 2) {
+            if (encoded[encoded_index++] != alphabet[block & 0x3FU]) {
+                return false;
+            }
+        } else if (encoded[encoded_index++] != '=') {
+            return false;
+        }
+    }
+    return encoded[encoded_index] == '\0';
+}
+
 static bool ota_manifest_channel_is_valid(const char *channel) {
     return strcmp(channel, "stable") == 0 ||
         strcmp(channel, "canary") == 0 ||
         strcmp(channel, "internal") == 0;
 }
 
+static bool ota_manifest_signature_algorithm_is_ed25519(
+    const char *algorithm
+) {
+    if (algorithm == NULL || strlen(algorithm) != strlen("ed25519")) {
+        return false;
+    }
+    for (size_t index = 0; index < strlen("ed25519"); ++index) {
+        if (tolower((unsigned char)algorithm[index]) != "ed25519"[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool ota_manifest_url_is_https(const char *url) {
     return url != NULL && strncmp(url, "https://", 8) == 0 &&
         strchr(url + 8, '/') != NULL;
+}
+
+static bool ota_manifest_signature_key_id_is_valid(const char *key_id) {
+    if (key_id == NULL || key_id[0] == '\0' ||
+        strlen(key_id) >= OTA_MANIFEST_KEY_ID_SIZE) {
+        return false;
+    }
+    for (const char *cursor = key_id; *cursor != '\0'; ++cursor) {
+        const bool is_alphanumeric =
+            (*cursor >= 'A' && *cursor <= 'Z') ||
+            (*cursor >= 'a' && *cursor <= 'z') ||
+            (*cursor >= '0' && *cursor <= '9');
+        if (!is_alphanumeric &&
+            *cursor != '.' && *cursor != '_' &&
+            *cursor != ':' && *cursor != '-') {
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool ota_manifest_time_is_valid(const char *value) {
@@ -387,6 +566,7 @@ ota_manifest_error_t ota_manifest_parse(
     bool seen_sha256 = false;
     bool seen_size_bytes = false;
     bool seen_signature_key_id = false;
+    bool seen_signature_algorithm = false;
     bool seen_signature = false;
     bool seen_rollback_allowed = false;
     bool seen_published_at = false;
@@ -426,6 +606,8 @@ ota_manifest_error_t ota_manifest_parse(
             seen = &seen_size_bytes;
         } else if (strcmp(field, "signature_key_id") == 0) {
             seen = &seen_signature_key_id;
+        } else if (strcmp(field, "signature_algorithm") == 0) {
+            seen = &seen_signature_algorithm;
         } else if (strcmp(field, "signature") == 0) {
             seen = &seen_signature;
         } else if (strcmp(field, "rollback_allowed") == 0) {
@@ -506,6 +688,12 @@ ota_manifest_error_t ota_manifest_parse(
                     sizeof(manifest_out->signature_key_id),
                     value
                 );
+            } else if (seen == &seen_signature_algorithm) {
+                (void)ota_manifest_copy_field(
+                    manifest_out->signature_algorithm,
+                    sizeof(manifest_out->signature_algorithm),
+                    value
+                );
             } else if (seen == &seen_signature) {
                 (void)ota_manifest_copy_field(
                     manifest_out->signature,
@@ -543,7 +731,8 @@ ota_manifest_error_t ota_manifest_parse(
     if (!seen_schema_version || !seen_release_id ||
         !seen_firmware_version || !seen_hardware_revision ||
         !seen_channel || !seen_artifact_url || !seen_sha256 ||
-        !seen_size_bytes || !seen_signature_key_id || !seen_signature ||
+        !seen_size_bytes || !seen_signature_key_id ||
+        !seen_signature_algorithm || !seen_signature ||
         !seen_rollback_allowed || !seen_published_at ||
         !seen_min_source_version) {
         return OTA_MANIFEST_ERR_MISSING_FIELD;
@@ -583,9 +772,11 @@ ota_manifest_error_t ota_manifest_parse(
     if (manifest_out->size_bytes == 0) {
         return OTA_MANIFEST_ERR_SIZE;
     }
-    if (!ota_manifest_validate_string_field(
-            manifest_out->signature_key_id,
-            OTA_MANIFEST_KEY_ID_SIZE - 1
+    if (!ota_manifest_signature_key_id_is_valid(
+            manifest_out->signature_key_id
+        ) ||
+        !ota_manifest_signature_algorithm_is_ed25519(
+            manifest_out->signature_algorithm
         ) ||
         !ota_manifest_validate_string_field(
             manifest_out->signature,
@@ -644,7 +835,7 @@ ota_manifest_error_t ota_manifest_from_platform_release(
     const char *fallback_published_at,
     ota_manifest_t *manifest_out
 ) {
-    if (release == NULL || manifest_out == NULL) {
+    if (release == NULL) {
         return OTA_MANIFEST_ERR_NULL_ARGUMENT;
     }
     memset(manifest_out, 0, sizeof(*manifest_out));
@@ -687,6 +878,11 @@ ota_manifest_error_t ota_manifest_from_platform_release(
             manifest_out->signature_key_id,
             sizeof(manifest_out->signature_key_id),
             release->signature_key_id
+        ) ||
+        !ota_manifest_copy_field(
+            manifest_out->signature_algorithm,
+            sizeof(manifest_out->signature_algorithm),
+            release->signature_algorithm
         )) {
         return OTA_MANIFEST_ERR_MISSING_FIELD;
     }
@@ -694,11 +890,15 @@ ota_manifest_error_t ota_manifest_from_platform_release(
     if (!ota_manifest_semver_is_valid(firmware_version)) {
         return OTA_MANIFEST_ERR_FIRMWARE_VERSION;
     }
-    if (!ota_manifest_validate_string_field(
-            manifest_out->signature_key_id,
-            OTA_MANIFEST_KEY_ID_SIZE - 1
+    if (!ota_manifest_signature_key_id_is_valid(
+            manifest_out->signature_key_id
         )) {
         return OTA_MANIFEST_ERR_MISSING_FIELD;
+    }
+    if (!ota_manifest_signature_algorithm_is_ed25519(
+            manifest_out->signature_algorithm
+        )) {
+        return OTA_MANIFEST_ERR_SIGNATURE;
     }
     if (!ota_manifest_channel_is_valid(manifest_out->channel)) {
         return OTA_MANIFEST_ERR_CHANNEL;
@@ -757,6 +957,212 @@ ota_manifest_error_t ota_manifest_from_platform_release(
         return OTA_MANIFEST_ERR_SIGNATURE;
     }
     return OTA_MANIFEST_OK;
+}
+
+static bool ota_manifest_json_read_string(
+    const char **cursor_out,
+    char *output,
+    size_t output_size
+) {
+    if (cursor_out == NULL || *cursor_out == NULL || output == NULL ||
+        output_size == 0) {
+        return false;
+    }
+    const char *cursor = *cursor_out + 1;
+    size_t output_length = 0;
+    while (*cursor != '\0') {
+        const unsigned char value = (unsigned char)*cursor;
+        ++cursor;
+        if (value == '"') {
+            output[output_length] = '\0';
+            *cursor_out = cursor;
+            return true;
+        }
+        if (value < 0x20 || value == '\\' ||
+            output_length + 1 >= output_size) {
+            return false;
+        }
+        output[output_length++] = (char)value;
+    }
+    return false;
+}
+
+static void ota_manifest_json_skip_whitespace(const char **cursor) {
+    while (**cursor == ' ' || **cursor == '\t' ||
+           **cursor == '\r' || **cursor == '\n') {
+        ++*cursor;
+    }
+}
+
+static bool ota_manifest_keyring_parse(
+    const char *json,
+    const char *target_key_id,
+    ota_manifest_keyring_entry_t *selected_out
+) {
+    if (json == NULL || target_key_id == NULL || selected_out == NULL) {
+        return false;
+    }
+    memset(selected_out, 0, sizeof(*selected_out));
+    bool target_found = false;
+    const char *cursor = json;
+    ota_manifest_json_skip_whitespace(&cursor);
+    if (*cursor++ != '{') {
+        return false;
+    }
+    ota_manifest_json_skip_whitespace(&cursor);
+    if (*cursor == '}') {
+        ++cursor;
+        ota_manifest_json_skip_whitespace(&cursor);
+        return *cursor == '\0';
+    }
+    while (*cursor != '\0') {
+        ota_manifest_keyring_entry_t entry;
+        memset(&entry, 0, sizeof(entry));
+        if (*cursor != '"' ||
+            !ota_manifest_json_read_string(
+                &cursor,
+                entry.key_id,
+                sizeof(entry.key_id)
+            )) {
+            return false;
+        }
+        if (!ota_manifest_signature_key_id_is_valid(entry.key_id)) {
+            return false;
+        }
+        ota_manifest_json_skip_whitespace(&cursor);
+        if (*cursor++ != ':') {
+            return false;
+        }
+        ota_manifest_json_skip_whitespace(&cursor);
+        if (*cursor != '"' ||
+            !ota_manifest_json_read_string(
+                &cursor,
+                entry.public_key,
+                sizeof(entry.public_key)
+            )) {
+            return false;
+        }
+        uint8_t decoded[OTA_MANIFEST_BASE64_PUBLIC_KEY_SIZE] = {0};
+        size_t decoded_size = 0;
+        const bool public_key_is_valid =
+            ota_manifest_base64_decode(
+                entry.public_key,
+                decoded,
+                sizeof(decoded),
+                &decoded_size
+            ) &&
+            decoded_size == sizeof(decoded) &&
+            ota_manifest_canonical_base64(
+                entry.public_key,
+                decoded,
+                decoded_size
+            );
+        memset(decoded, 0, sizeof(decoded));
+        if (!public_key_is_valid) {
+            return false;
+        }
+        if (strcmp(entry.key_id, target_key_id) == 0) {
+            if (target_found) {
+                return false;
+            }
+            target_found = true;
+            *selected_out = entry;
+        }
+        ota_manifest_json_skip_whitespace(&cursor);
+        if (*cursor == '}') {
+            ++cursor;
+            ota_manifest_json_skip_whitespace(&cursor);
+            return *cursor == '\0' && target_found;
+        }
+        if (*cursor++ != ',') {
+            return false;
+        }
+        ota_manifest_json_skip_whitespace(&cursor);
+    }
+    return false;
+}
+
+ota_manifest_error_t ota_manifest_verify_signature(
+    const ota_manifest_t *manifest,
+    const char *trusted_keyring_json
+) {
+    if (manifest == NULL || trusted_keyring_json == NULL) {
+        return OTA_MANIFEST_ERR_NULL_ARGUMENT;
+    }
+    if (!ota_manifest_signature_algorithm_is_ed25519(
+            manifest->signature_algorithm
+        ) ||
+        !ota_manifest_signature_key_id_is_valid(
+            manifest->signature_key_id
+        ) ||
+        !ota_manifest_sha256_is_valid(manifest->sha256)) {
+        return OTA_MANIFEST_ERR_SIGNATURE;
+    }
+    ota_manifest_keyring_entry_t trusted_key;
+    memset(&trusted_key, 0, sizeof(trusted_key));
+    const bool trusted_key_is_valid = ota_manifest_keyring_parse(
+        trusted_keyring_json,
+        manifest->signature_key_id,
+        &trusted_key
+    );
+    if (!trusted_key_is_valid) {
+        memset(&trusted_key, 0, sizeof(trusted_key));
+        return OTA_MANIFEST_ERR_SIGNATURE;
+    }
+    uint8_t public_key[OTA_MANIFEST_BASE64_PUBLIC_KEY_SIZE];
+    memset(public_key, 0, sizeof(public_key));
+    size_t public_key_size = 0;
+    const bool public_key_is_valid =
+        ota_manifest_base64_decode(
+            trusted_key.public_key,
+            public_key,
+            sizeof(public_key),
+            &public_key_size
+        ) &&
+        public_key_size == sizeof(public_key) &&
+        ota_manifest_canonical_base64(
+            trusted_key.public_key,
+            public_key,
+            public_key_size
+        );
+    if (!public_key_is_valid) {
+        memset(&trusted_key, 0, sizeof(trusted_key));
+        return OTA_MANIFEST_ERR_SIGNATURE;
+    }
+    uint8_t signature[OTA_MANIFEST_BASE64_DECODED_SIGNATURE_SIZE];
+    memset(signature, 0, sizeof(signature));
+    size_t signature_size = 0;
+    if (!ota_manifest_base64_decode(
+            manifest->signature,
+            signature,
+            sizeof(signature),
+            &signature_size
+        ) ||
+        signature_size != sizeof(signature) ||
+        !ota_manifest_canonical_base64(
+            manifest->signature,
+            signature,
+            signature_size
+        )) {
+        memset(&trusted_key, 0, sizeof(trusted_key));
+        return OTA_MANIFEST_ERR_SIGNATURE;
+    }
+    char digest[OTA_MANIFEST_HASH_SIZE];
+    memset(digest, 0, sizeof(digest));
+    for (size_t index = 0; index < 64; ++index) {
+        digest[index] = (char)tolower((unsigned char)manifest->sha256[index]);
+    }
+    const bool verified = ed25519_verify(
+        public_key,
+        signature,
+        (const uint8_t *)digest,
+        64
+    );
+    memset(public_key, 0, sizeof(public_key));
+    memset(signature, 0, sizeof(signature));
+    memset(digest, 0, sizeof(digest));
+    memset(&trusted_key, 0, sizeof(trusted_key));
+    return verified ? OTA_MANIFEST_OK : OTA_MANIFEST_ERR_SIGNATURE;
 }
 
 const char *ota_manifest_error_name(ota_manifest_error_t error) {

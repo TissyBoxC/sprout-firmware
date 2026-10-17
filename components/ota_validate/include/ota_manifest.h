@@ -18,6 +18,7 @@ extern "C" {
 #define OTA_MANIFEST_KEY_ID_SIZE 65
 #define OTA_MANIFEST_SIGNATURE_SIZE 513
 #define OTA_MANIFEST_TIME_SIZE 32
+#define OTA_MANIFEST_SIGNATURE_ALGORITHM_SIZE 16
 
 /** @brief Stable validation errors shared by firmware OTA paths. */
 typedef enum {
@@ -58,6 +59,7 @@ typedef struct {
     char sha256[OTA_MANIFEST_HASH_SIZE];
     uint64_t size_bytes;
     char signature_key_id[OTA_MANIFEST_KEY_ID_SIZE];
+    char signature_algorithm[OTA_MANIFEST_SIGNATURE_ALGORITHM_SIZE];
     char signature[OTA_MANIFEST_SIGNATURE_SIZE];
     bool rollback_allowed;
     char published_at[OTA_MANIFEST_TIME_SIZE];
@@ -80,6 +82,7 @@ typedef struct {
     const char *sha256;
     uint64_t size_bytes;
     const char *signature_key_id;
+    const char *signature_algorithm;
     const char *signature;
     bool rollback_allowed;
     const char *published_at;
@@ -105,6 +108,19 @@ ota_manifest_error_t ota_manifest_from_platform_release(
     const ota_platform_release_t *release,
     const char *fallback_published_at,
     ota_manifest_t *manifest_out
+);
+
+/**
+ * @brief Verify one Ed25519 detached signature over the artifact digest.
+ *
+ * The keyring is a JSON object mapping key IDs to canonical standard Base64
+ * encoded 32-byte Ed25519 public keys. The signed message is the canonical
+ * lowercase SHA-256 hex digest encoded as 64 ASCII bytes. Unknown keys and
+ * malformed or non-canonical signatures fail closed.
+ */
+ota_manifest_error_t ota_manifest_verify_signature(
+    const ota_manifest_t *manifest,
+    const char *trusted_keyring_json
 );
 
 /** @brief Return the stable name for one manifest error. */

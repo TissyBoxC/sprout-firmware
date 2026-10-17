@@ -7,4 +7,13 @@ config FEATURE_OTA_VALIDATE
         Parses immutable firmware manifests and validates hardware, channel,
         source version, hashes, signatures, and ESP-IDF image metadata.
 
+config OTA_VALIDATE_TRUSTED_KEYS_JSON
+    string "Trusted OTA Ed25519 public keyring"
+    depends on FEATURE_OTA_VALIDATE
+    default ""
+    help
+        JSON object mapping signature key IDs to standard Base64 encoded
+        32-byte Ed25519 public keys. Empty disables OTA installation because
+        no manifest can be authenticated.
+
 endmenu

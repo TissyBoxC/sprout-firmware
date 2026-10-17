@@ -11,5 +11,5 @@ idf_component_register(
     SRCS ${ota_validate_sources}
     INCLUDE_DIRS "include"
     PRIV_REQUIRES esp_app_format bootloader_support
-    REQUIRES app_update esp_partition
+    REQUIRES app_update esp_partition ed25519_verify
 )

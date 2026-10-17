@@ -1,7 +1,9 @@
 #include "ota_manifest.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -25,6 +27,7 @@ const char *const VALID_MANIFEST =
     "\"sha256\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
     "\"size_bytes\":1048576,"
     "\"signature_key_id\":\"release-key-1\","
+    "\"signature_algorithm\":\"ed25519\","
     "\"signature\":\"base64-signature\","
     "\"rollback_allowed\":false,"
     "\"published_at\":\"2026-10-09T00:00:00Z\","
@@ -119,6 +122,43 @@ void test_sha256_validation() {
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"
         ),
         "non-hex SHA-256 must fail"
+    );
+}
+
+void test_signature_fields_fail_closed() {
+    ota_manifest_t manifest = {};
+    check(
+        ota_manifest_parse(
+            VALID_MANIFEST,
+            std::strlen(VALID_MANIFEST),
+            &manifest
+        ) == OTA_MANIFEST_OK,
+        "signed fixture must parse"
+    );
+    check(
+        std::strcmp(manifest.signature_algorithm, "ed25519") == 0,
+        "signature algorithm must round-trip"
+    );
+
+    char json[1024] = {};
+    std::strcpy(json, VALID_MANIFEST);
+    char *algorithm = std::strstr(json, "\"signature_algorithm\":\"ed25519\"");
+    check(algorithm != nullptr, "algorithm field must be present");
+    algorithm[26] = 'x';
+    check(
+        ota_manifest_parse(json, std::strlen(json), &manifest) ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "unsupported signature algorithm must fail closed"
+    );
+
+    std::strcpy(json, VALID_MANIFEST);
+    char *key_id = std::strstr(json, "\"signature_key_id\":\"release-key-1\"");
+    check(key_id != nullptr, "key field must be present");
+    key_id[26] = ' ';
+    check(
+        ota_manifest_parse(json, std::strlen(json), &manifest) ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "key ids with ambiguous whitespace must fail closed"
     );
 }
 
@@ -232,11 +272,13 @@ void test_version_comparison() {
 
 const char *const PLATFORM_SHA256 =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-// A detached ed25519 signature is 64 bytes; this is its representative
-// base64 encoding as returned by the platform publication pipeline.
 const char *const PLATFORM_SIGNATURE =
-    "uJ7Qr0m5mCq0dWc2xJ0oG3T2sV1pQ8sK6nA5dL9rF4bE7hM2c"
-    "Y1zX8wV3tR6pN0qS5kD4gJ9aH2mB7cF1eL8uT3xZ0oI5w=";
+    "LxWfXZtUvFcDy7TMZLlUQHu+HKdaN1W3r7mCYlbE4OqV0cBH1wp6Q2tlDr+tpZkM"
+    "ouKgUZQ5ryPnmjW6lyksCw==";
+const char *const PLATFORM_PUBLIC_KEY =
+    "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
+const char *const TRUSTED_KEYRING =
+    "{\"release-key-1\":\"A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\"}";
 
 void test_platform_release_adapter_maps_real_platform_shape() {
     // Mirrors the platform DeviceRelease projection: `version` instead of
@@ -250,6 +292,7 @@ void test_platform_release_adapter_maps_real_platform_shape() {
         .sha256 = PLATFORM_SHA256,
         .size_bytes = 1048576,
         .signature_key_id = "release-key-1",
+        .signature_algorithm = "ed25519",
         .signature = PLATFORM_SIGNATURE,
         .rollback_allowed = true,
         .published_at = NULL,
@@ -294,6 +337,11 @@ void test_platform_release_adapter_maps_real_platform_shape() {
         ) == OTA_MANIFEST_OK,
         "adapted manifest must pass device policy"
     );
+    check(
+        ota_manifest_verify_signature(&manifest, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_OK,
+        "platform digest signature must verify on device"
+    );
 }
 
 void test_platform_release_adapter_fails_closed() {
@@ -306,6 +354,7 @@ void test_platform_release_adapter_fails_closed() {
         .sha256 = PLATFORM_SHA256,
         .size_bytes = 1048576,
         .signature_key_id = "release-key-1",
+        .signature_algorithm = "ed25519",
         .signature = PLATFORM_SIGNATURE,
         .rollback_allowed = true,
         .published_at = "2026-10-09T00:00:00Z",
@@ -411,6 +460,145 @@ void test_platform_release_adapter_fails_closed() {
     );
 }
 
+void test_detached_signature_fails_closed() {
+    const ota_platform_release_t release = {
+        .release_id = "rel_2026_10_09_003",
+        .version = "0.10.0",
+        .hardware_revision = "esp32s3",
+        .channel = "stable",
+        .artifact_url = "https://download.clarkhub.cn/firmware/sprout.bin",
+        .sha256 = PLATFORM_SHA256,
+        .size_bytes = 1048576,
+        .signature_key_id = "release-key-1",
+        .signature_algorithm = "ed25519",
+        .signature = PLATFORM_SIGNATURE,
+        .rollback_allowed = true,
+        .published_at = "2026-10-09T00:00:00Z",
+        .min_source_version = "0.9.0",
+    };
+    ota_manifest_t manifest = {};
+    check(
+        ota_manifest_from_platform_release(
+            &release,
+            "2026-10-09T00:00:00Z",
+            &manifest
+        ) == OTA_MANIFEST_OK,
+        "signed fixture must adapt"
+    );
+    check(
+        ota_manifest_verify_signature(&manifest, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_OK,
+        "valid signature must pass"
+    );
+
+    ota_manifest_t tampered_digest = manifest;
+    tampered_digest.sha256[0] =
+        (tampered_digest.sha256[0] == '0') ? '1' : '0';
+    check(
+        ota_manifest_verify_signature(&tampered_digest, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "tampered digest must fail"
+    );
+
+    ota_manifest_t uppercase_digest = manifest;
+    for (size_t index = 0; index < 64; ++index) {
+        uppercase_digest.sha256[index] =
+            (char)std::toupper((unsigned char)uppercase_digest.sha256[index]);
+    }
+    check(
+        ota_manifest_verify_signature(&uppercase_digest, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_OK,
+        "digest case must normalize before verification"
+    );
+
+    ota_manifest_t tampered_signature = manifest;
+    tampered_signature.signature[0] =
+        (tampered_signature.signature[0] == 'B') ? 'C' : 'B';
+    check(
+        ota_manifest_verify_signature(&tampered_signature, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "tampered signature must fail"
+    );
+
+    ota_manifest_t unknown_key = manifest;
+    std::strcpy(unknown_key.signature_key_id, "release-key-2");
+    check(
+        ota_manifest_verify_signature(&unknown_key, TRUSTED_KEYRING) ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "unknown key id must fail"
+    );
+
+    check(
+        ota_manifest_verify_signature(&manifest, "{}") ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "empty keyring must fail closed"
+    );
+    check(
+        ota_manifest_verify_signature(&manifest, "") ==
+            OTA_MANIFEST_ERR_SIGNATURE,
+        "missing keyring must fail closed"
+    );
+
+    const std::string malformed_keyring =
+        "{\"release-key-1\":\"" +
+        std::string(PLATFORM_PUBLIC_KEY) +
+        "\",\"note\":\"}";
+    check(
+        ota_manifest_verify_signature(
+            &manifest,
+            malformed_keyring.c_str()
+        ) == OTA_MANIFEST_ERR_SIGNATURE,
+        "malformed keyring must fail closed"
+    );
+
+    const std::string embedded_keyring =
+        "{\"metadata\":\"release-key-1\",\"release-key-1\":\"" +
+        std::string(PLATFORM_PUBLIC_KEY) + "\"}";
+    check(
+        ota_manifest_verify_signature(
+            &manifest,
+            embedded_keyring.c_str()
+        ) == OTA_MANIFEST_ERR_SIGNATURE,
+        "key ids inside other fields must not be treated as entries"
+    );
+
+    const std::string duplicate_keyring =
+        "{\"release-key-1\":\"" +
+        std::string(PLATFORM_PUBLIC_KEY) +
+        "\",\"release-key-1\":\"" +
+        std::string(PLATFORM_PUBLIC_KEY) + "\"}";
+    check(
+        ota_manifest_verify_signature(
+            &manifest,
+            duplicate_keyring.c_str()
+        ) == OTA_MANIFEST_ERR_SIGNATURE,
+        "duplicate keyring entries must fail closed"
+    );
+
+    const std::string escaped_keyring =
+        "{\"release-key\\u002d1\":\"" +
+        std::string(PLATFORM_PUBLIC_KEY) + "\"}";
+    check(
+        ota_manifest_verify_signature(
+            &manifest,
+            escaped_keyring.c_str()
+        ) == OTA_MANIFEST_ERR_SIGNATURE,
+        "escaped key ids must fail closed"
+    );
+
+    ota_manifest_t unpadded_signature = manifest;
+    unpadded_signature.signature[
+        std::strlen(unpadded_signature.signature) - 1
+    ] = '\0';
+    check(
+        ota_manifest_verify_signature(
+            &unpadded_signature,
+            TRUSTED_KEYRING
+        ) == OTA_MANIFEST_ERR_SIGNATURE,
+        "non-canonical Base64 must fail"
+    );
+}
+
 }  // namespace
 
 int main() {
@@ -420,11 +608,13 @@ int main() {
     test_unsupported_schema_is_rejected();
     test_cleartext_artifact_is_rejected();
     test_sha256_validation();
+    test_signature_fields_fail_closed();
     test_device_policy_rejects_mismatches();
     test_anti_downgrade_and_rollback_policy();
     test_version_comparison();
     test_platform_release_adapter_maps_real_platform_shape();
     test_platform_release_adapter_fails_closed();
+    test_detached_signature_fails_closed();
     if (failures != 0) {
         std::fprintf(stderr, "%d test(s) failed\n", failures);
         return 1;
