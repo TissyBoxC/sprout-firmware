@@ -278,7 +278,7 @@ void test_transient_action_failure_stops_and_keeps_remaining() {
     };
     playback_request_sync_host_set_http_sequence(statuses, bodies, 3);
 
-    assert(playback_request_sync_now() == ESP_OK);
+    assert(playback_request_sync_now() == ESP_FAIL);
     assert(playback_request_sync_host_request_count() == 3);
     assert(playback_request_pending_outbound_count() == 1);
 }

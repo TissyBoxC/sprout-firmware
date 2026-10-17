@@ -39,6 +39,8 @@ and
 action is dropped from the queue; a `404` for a removed request is discarded
 rather than retried; a transient failure leaves the rest of the queue for the
 next cycle, so an offline device still reports every outcome once it reconnects.
+The sync result reports that failed upload; the already-applied request merge
+remains in effect and the queued action is retried on a later cycle.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
