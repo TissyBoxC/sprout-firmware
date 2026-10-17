@@ -68,7 +68,36 @@ function Invoke-HostTest {
         foreach ($includeDirectory in $IncludeDirectories) {
             $arguments += '-I' + $includeDirectory
         }
-        $arguments += $AdditionalArguments
+        $stringMacroPattern = '^-D([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|\\"[^"]*\\")$'
+        $stringMacros = @()
+        foreach ($argument in $AdditionalArguments) {
+            if ($argument -match $stringMacroPattern) {
+                $macroName = $Matches[1]
+                $macroValue = $argument.Substring($macroName.Length + 3)
+                if ($macroValue.StartsWith('\"') -and $macroValue.EndsWith('\"')) {
+                    $macroValue = '"' + $macroValue.Substring(2, $macroValue.Length - 4) + '"'
+                }
+                $stringMacros += '#define ' + $macroName + ' ' + $macroValue
+            } else {
+                $arguments += $argument
+            }
+        }
+        if ($stringMacros.Count -gt 0) {
+            $macroHeader = Join-Path $outputDirectory 'host_test_macros.h'
+            $macroSource = @(
+                '#ifndef SPROUT_HOST_TEST_MACROS_H'
+                '#define SPROUT_HOST_TEST_MACROS_H'
+                $stringMacros
+                '#endif'
+            ) -join "`n"
+            [System.IO.File]::WriteAllText(
+                $macroHeader,
+                $macroSource + "`n",
+                [System.Text.UTF8Encoding]::new($false)
+            )
+            $arguments += '-include'
+            $arguments += $macroHeader
+        }
         $objectFiles = @()
         foreach ($source in $Sources) {
             if ($CCompiledSources -contains $source) {
@@ -88,6 +117,10 @@ function Invoke-HostTest {
                     $cArguments += '-I' + $includeDirectory
                 }
                 $cArguments += $AdditionalArguments
+                if ($stringMacros.Count -gt 0) {
+                    $cArguments += '-include'
+                    $cArguments += $macroHeader
+                }
                 $cArguments += @('-c', $source, '-o', $objectFile)
                 & $CCompiler @cArguments
                 if ($LASTEXITCODE -ne 0) {
@@ -167,11 +200,9 @@ Invoke-HostTest `
         (Join-Path $versionInfoRoot 'test/stubs')
     ) `
     -AdditionalArguments @(
-        # PowerShell passes native arguments literally. Escaping the quotes for
-        # a POSIX shell leaves backslashes in gcc's argv on Windows.
-        '-DCONFIG_IDF_TARGET="esp32s3"'
-        '-DCONFIG_FIRMWARE_SCHEMA_VERSION="1.0.0"'
-        '-DCONFIG_FIRMWARE_PROTOCOL_VERSION="1.0.0"'
+        '-DCONFIG_IDF_TARGET=\"esp32s3\"'
+        '-DCONFIG_FIRMWARE_SCHEMA_VERSION=\"1.0.0\"'
+        '-DCONFIG_FIRMWARE_PROTOCOL_VERSION=\"1.0.0\"'
     ) `
     -Compiler $compiler
 
@@ -980,7 +1011,7 @@ Invoke-HostTest `
         '-DUITEXT_SYNC_RUNTIME_HOST_TESTS=1'
         '-DCONFIG_FEATURE_UI_TEXT_SYNC=1'
         '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
-        '-DCONFIG_UI_TEXT_SYNC_LANGUAGE="zh-CN"'
+        '-DCONFIG_UI_TEXT_SYNC_LANGUAGE=\"zh-CN\"'
     ) `
     -Compiler $compiler
 
@@ -3004,7 +3035,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DCONFIG_FEATURE_CONFIG_STORE=1'
         '-DCONFIG_FACTORY_RESET_PENDING_TIMEOUT_SECONDS=10'
-        '-DCONFIG_FACTORY_RESET_NVS_PARTITION="nvs"'
+        '-DCONFIG_FACTORY_RESET_NVS_PARTITION=\"nvs\"'
     ) `
     -Compiler $compiler
 
@@ -3295,7 +3326,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DCONFIG_STORE_HOST_TESTS=1'
         '-DCONFIG_FEATURE_CONFIG_STORE=1'
-        '-DCONFIG_CONFIG_STORE_LARGE_PARTITION="nvs_data"'
+        '-DCONFIG_CONFIG_STORE_LARGE_PARTITION=\"nvs_data\"'
         '-DCONFIG_NVS_ENCRYPTION=0'
     ) `
     -Language 'c' `
@@ -3316,7 +3347,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DDEVICE_IDENTITY_HOST_TESTS=1'
         '-DCONFIG_FEATURE_DEVICE_IDENTITY=1'
-        '-DCONFIG_DEVICE_IDENTITY_NVS_PARTITION="nvs"'
+        '-DCONFIG_DEVICE_IDENTITY_NVS_PARTITION=\"nvs\"'
     ) `
     -Language 'c' `
     -Compiler $cCompiler
@@ -3368,7 +3399,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DDEVICE_PROVISIONING_HOST_TESTS=1'
         '-DCONFIG_FEATURE_DEVICE_PROVISIONING=1'
-        '-DCONFIG_DEVICE_PROVISIONING_SERVICE_PREFIX="SPROUT"'
+        '-DCONFIG_DEVICE_PROVISIONING_SERVICE_PREFIX=\"SPROUT\"'
     ) `
     -Compiler $compiler
 
