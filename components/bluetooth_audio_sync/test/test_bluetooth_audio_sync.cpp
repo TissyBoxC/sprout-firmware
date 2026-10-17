@@ -218,17 +218,17 @@ void test_unauthorized_policy_fetch_clears_session() {
     assert(bluetooth_audio_sync_host_clear_session_calls() == 1);
 }
 
-void test_status_report_failure_is_best_effort() {
+void test_status_report_failure_is_propagated() {
     reset_all();
     set_policy_and_status_response(200, enabled_policy, 500, "{}");
-    assert(bluetooth_audio_sync_now() == ESP_OK);
+    assert(bluetooth_audio_sync_now() == ESP_FAIL);
     assert(bluetooth_audio_sync_host_request_count() == 2);
     assert(bluetooth_audio_get().revision == 12u);
 
     reset_all();
-    set_policy_and_status_response(200, enabled_policy, 500, "{}");
+    set_policy_and_status_response(200, enabled_policy, 200, "{}");
     bluetooth_audio_sync_host_set_perform_result_at(1, ESP_ERR_TIMEOUT);
-    assert(bluetooth_audio_sync_now() == ESP_OK);
+    assert(bluetooth_audio_sync_now() == ESP_ERR_TIMEOUT);
     assert(bluetooth_audio_sync_host_request_count() == 2);
     assert(bluetooth_audio_get().revision == 12u);
 }
@@ -236,13 +236,13 @@ void test_status_report_failure_is_best_effort() {
 void test_unauthorized_status_report_clears_session() {
     reset_all();
     set_policy_and_status_response(200, enabled_policy, 401, "{}");
-    assert(bluetooth_audio_sync_now() == ESP_OK);
+    assert(bluetooth_audio_sync_now() == ESP_ERR_INVALID_STATE);
     assert(bluetooth_audio_sync_host_clear_session_calls() == 1);
     assert(bluetooth_audio_get().revision == 12u);
 
     reset_all();
     set_policy_and_status_response(200, enabled_policy, 403, "{}");
-    assert(bluetooth_audio_sync_now() == ESP_OK);
+    assert(bluetooth_audio_sync_now() == ESP_ERR_INVALID_STATE);
     assert(bluetooth_audio_sync_host_clear_session_calls() == 1);
     assert(bluetooth_audio_get().revision == 12u);
 }
@@ -312,7 +312,7 @@ int main() {
     test_invalid_policy_leaves_local_policy_untouched();
     test_http_and_transport_failures_leave_policy_untouched();
     test_unauthorized_policy_fetch_clears_session();
-    test_status_report_failure_is_best_effort();
+    test_status_report_failure_is_propagated();
     test_unauthorized_status_report_clears_session();
     test_initialize_requires_audio_store_and_is_idempotent();
     test_worker_retries_offline_and_stops_cleanly();

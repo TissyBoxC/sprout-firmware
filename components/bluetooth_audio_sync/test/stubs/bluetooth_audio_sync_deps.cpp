@@ -100,7 +100,9 @@ void bluetooth_audio_sync_host_reset(void) {
     host_perform_result = ESP_OK;
     host_status_codes[0] = 200;
     host_bodies[0] = "{}";
-    host_perform_results[0] = ESP_OK;
+    for (size_t index = 0; index < HOST_RESPONSE_COUNT; ++index) {
+        host_perform_results[index] = ESP_OK;
+    }
     host_response_count = 1;
     host_client_init_fails = false;
     host_task_create_fails = false;

@@ -23,8 +23,9 @@ outside the catalog is rejected so the applied policy never silently changes.
 After a successful apply the worker reports the bounded adapter status to
 `POST /api/v1/devices/{device_id}/bluetooth-audio/status` so the platform and
 admin overview see the live adapter state, link counts, active codec, volume and
-the applied policy revision. The report is best effort: the policy is already
-applied, so a failed report is logged without delaying the sync cycle.
+the applied policy revision. The policy is already applied when the report
+fails; the error is returned to the worker and retried without losing the
+successful local update.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
@@ -39,5 +40,5 @@ codec mapping, clamping, and the disabled-policy derived-flag rules.
 `bluetooth_audio_sync_runtime` exercises the real HTTP and worker paths with
 host stubs. It covers policy fetch/apply, status reporting, `401`/`403` token
 clearing for both requests, malformed payloads, transport and HTTP failures,
-the best-effort report path, worker offline retries, and idempotent
+report error propagation, worker offline retries, and idempotent
 initialization.

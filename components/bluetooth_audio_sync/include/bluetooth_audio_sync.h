@@ -14,6 +14,8 @@ extern "C" {
  * `device_binding_client`; a 401/403 clears the token so the next request can
  * re-authenticate instead of retrying a revoked credential. The applied policy
  * is left untouched when the network, clock, or response payload is unusable.
+ * A status-report failure is returned after the policy is applied so the worker
+ * retries without losing the successful local update.
  */
 esp_err_t bluetooth_audio_sync_now(void);
 
