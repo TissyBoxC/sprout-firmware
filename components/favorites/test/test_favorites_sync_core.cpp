@@ -44,7 +44,7 @@ int main() {
     );
     assert(core.count == 1);
 
-    // Capacity is bounded without rejecting the whole snapshot.
+    // An oversized authoritative snapshot is rejected without truncation.
     const char *too_many[FAVORITES_CAPACITY + 2] = {};
     char ids[FAVORITES_CAPACITY + 2][CONTENT_LIBRARY_ID_SIZE] = {};
     for (int index = 0; index < FAVORITES_CAPACITY + 2; ++index) {
@@ -56,10 +56,10 @@ int main() {
             &core,
             too_many,
             FAVORITES_CAPACITY + 2
-        ) == FAVORITES_OK
+        ) == FAVORITES_ERR_FULL
     );
-    assert(core.count == FAVORITES_CAPACITY);
-    assert(std::strcmp(core.package_ids[0], "content_000") == 0);
+    assert(core.count == 1);
+    assert(std::strcmp(core.package_ids[0], "content_story_002") == 0);
 
     return 0;
 }

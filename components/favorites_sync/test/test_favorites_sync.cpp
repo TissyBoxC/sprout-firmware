@@ -1,6 +1,7 @@
 #include "favorites_sync.h"
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 
 #include "favorites.h"
@@ -146,6 +147,40 @@ void test_malformed_responses_leave_cache_untouched() {
     assert(favorites_count() == 1);
 }
 
+void test_oversized_snapshot_returns_full_and_leaves_cache_untouched() {
+    reset_all();
+    seed_favorite("content_local");
+
+    char body[4096] = {};
+    size_t used = 0;
+    const int prefix = snprintf(
+        body,
+        sizeof(body),
+        "{\"data\":{\"favorites\":["
+    );
+    assert(prefix > 0);
+    used = (size_t)prefix;
+    for (int index = 0; index < FAVORITES_CAPACITY + 1; ++index) {
+        const int written = snprintf(
+            body + used,
+            sizeof(body) - used,
+            "%s{\"package_id\":\"content_%03d\"}",
+            index == 0 ? "" : ",",
+            index
+        );
+        assert(written > 0);
+        used += (size_t)written;
+        assert(used < sizeof(body));
+    }
+    assert(used + 4 < sizeof(body));
+    snprintf(body + used, sizeof(body) - used, "]}}");
+
+    set_single_response(200, body);
+    assert(favorites_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(favorites_count() == 1);
+    assert(favorites_contains("content_local"));
+}
+
 void test_unauthorized_fetch_clears_session() {
     reset_all();
     set_single_response(401, "{}");
@@ -239,6 +274,7 @@ int main() {
     test_successful_fetch_replaces_favorites();
     test_empty_snapshot_clears_favorites();
     test_malformed_responses_leave_cache_untouched();
+    test_oversized_snapshot_returns_full_and_leaves_cache_untouched();
     test_unauthorized_fetch_clears_session();
     test_transport_failures_are_propagated();
     test_initialize_requires_store_and_is_idempotent();
