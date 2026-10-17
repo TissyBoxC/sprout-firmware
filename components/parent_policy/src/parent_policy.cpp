@@ -13,6 +13,10 @@ extern "C" {
 #include <string.h>
 #include <time.h>
 
+#ifdef PARENT_POLICY_HOST_TESTS
+#include "time_compat.h"
+#endif
+
 #include "cloud_auth.h"
 #include "config_store.h"
 #include "device_binding_client.h"
@@ -1019,7 +1023,6 @@ static esp_err_t parent_policy_request(
         free(response);
         return ESP_ERR_INVALID_RESPONSE;
     }
-    document->set(data);
     free(response);
     return ESP_OK;
 }
@@ -1187,7 +1190,7 @@ esp_err_t parent_policy_refresh(void) {
     if (result == ESP_OK) {
         parent_policy_snapshot_t parsed = {};
         const esp_err_t parse_result = parent_policy_parse_policy(
-            response.as<JsonVariantConst>(),
+            response["data"].as<JsonVariantConst>(),
             &parsed
         );
         if (parse_result != ESP_OK) {
@@ -1202,7 +1205,7 @@ esp_err_t parent_policy_refresh(void) {
                    parsed.policy_version < parent_policy_snapshot.policy_version) {
             parent_policy_set_status(
                 true,
-                true,
+                false,
                 PARENT_POLICY_REFRESH_REASON_VERSION,
                 ESP_ERR_INVALID_VERSION
             );
@@ -1489,5 +1492,39 @@ const module_descriptor_t *parent_policy_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef PARENT_POLICY_HOST_TESTS
+extern "C" {
+
+bool parent_policy_host_is_ready(void) {
+    return parent_policy_ready;
+}
+
+void parent_policy_host_reset_module(void) {
+    if (parent_policy_mutex != NULL) {
+        vSemaphoreDelete(parent_policy_mutex);
+        parent_policy_mutex = NULL;
+    }
+    parent_policy_ready = false;
+    parent_policy_has_cached_policy = false;
+    parent_policy_snapshot = {};
+    for (size_t index = 0; index < parent_policy_observer_count; ++index) {
+        parent_policy_observers[index].callback = NULL;
+        parent_policy_observers[index].context = NULL;
+    }
+    parent_policy_observer_count = 0;
+    parent_policy_reset_status();
+}
+
+void parent_policy_host_set_ready(bool ready) {
+    parent_policy_ready = ready;
+}
+
+void parent_policy_host_set_stop(bool stop) {
+    (void)stop;
+}
+
+}
+#endif
 
 }  // extern "C"

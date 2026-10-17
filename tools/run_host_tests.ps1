@@ -1014,6 +1014,27 @@ if ($null -eq $arduinoJsonPath) {
         '`pio run -e esp32-s3-n16r8 -t compiledb` first.'
     )
 }
+
+$parentPolicyRoot = Join-Path $firmwareRoot 'components/parent_policy'
+Invoke-HostTest `
+    -Name 'parent_policy_runtime' `
+    -Sources @(
+        (Join-Path $parentPolicyRoot 'src/parent_policy.cpp')
+        (Join-Path $parentPolicyRoot 'test/stubs/config_store.c')
+        (Join-Path $parentPolicyRoot 'test/stubs/parent_policy_deps.cpp')
+        (Join-Path $parentPolicyRoot 'test/test_parent_policy.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $parentPolicyRoot 'include')
+        (Join-Path $parentPolicyRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DPARENT_POLICY_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'alarm_reminder_sync_runtime' `
     -Sources @(
