@@ -226,15 +226,29 @@ esp_err_t power_policy_sync_now(void) {
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!data["enabled"].is<bool>() ||
+        !data["low_power_enabled"].is<bool>() ||
+        !data["deep_sleep_enabled"].is<bool>() ||
+        !data["charge_priority"].is<bool>() ||
+        !data["low_battery_warn_percent"].is<int>() ||
+        !data["low_power_enter_percent"].is<int>() ||
+        !data["sleep_after_seconds"].is<int>() ||
+        !data["revision"].is<int>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int revision = data["revision"].as<int>();
+    if (revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const battery_policy_t policy = power_policy_sync_core_build(
-        data["enabled"] | false,
-        data["low_power_enabled"] | false,
-        data["deep_sleep_enabled"] | false,
-        data["charge_priority"] | false,
-        data["low_battery_warn_percent"] | 0,
-        data["low_power_enter_percent"] | 0,
-        data["sleep_after_seconds"] | 0,
-        data["revision"] | 0
+        data["enabled"].as<bool>(),
+        data["low_power_enabled"].as<bool>(),
+        data["deep_sleep_enabled"].as<bool>(),
+        data["charge_priority"].as<bool>(),
+        data["low_battery_warn_percent"].as<int>(),
+        data["low_power_enter_percent"].as<int>(),
+        data["sleep_after_seconds"].as<int>(),
+        revision
     );
     return battery_set(&policy);
 }
