@@ -318,7 +318,7 @@ void test_event_failure_stops_draining_and_retries_next_cycle() {
         failing_bodies,
         2
     );
-    assert(alarm_reminder_sync_now() == ESP_OK);
+    assert(alarm_reminder_sync_now() == ESP_FAIL);
     assert(alarm_reminder_sync_host_request_count() == 2);
     assert(alarm_reminder_pending_event_count() == 2);
 

@@ -460,34 +460,37 @@ static esp_err_t alarm_reminder_sync_report_event(
 
 // Drain the queued firing events, stopping at the first failure so a transient
 // error leaves the rest of the queue intact for the next cycle.
-static void alarm_reminder_sync_report_events(void) {
+static esp_err_t alarm_reminder_sync_report_events(void) {
     if (alarm_reminder_pending_event_count() == 0) {
-        return;
+        return ESP_OK;
     }
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[ALARM_REMINDER_SYNC_URL_SIZE] = {0};
-    if (alarm_reminder_sync_prepare(
+    const esp_err_t prepare_result = alarm_reminder_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return;
+        );
+    if (prepare_result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return prepare_result;
     }
     alarm_reminder_pending_event_t events[
         ALARM_REMINDER_PENDING_EVENT_CAPACITY
     ] = {};
     size_t event_count = 0;
-    if (alarm_reminder_list_pending_events(
+    const esp_err_t list_result = alarm_reminder_list_pending_events(
             events,
             ALARM_REMINDER_PENDING_EVENT_CAPACITY,
             &event_count
-        ) != ESP_OK) {
+        );
+    if (list_result != ESP_OK) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return list_result;
     }
     for (size_t index = 0; index < event_count; ++index) {
         const esp_err_t report_result = alarm_reminder_sync_report_event(
@@ -499,10 +502,20 @@ static void alarm_reminder_sync_report_events(void) {
         if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
             // A stale event for a removed alarm is dropped rather than retried
             // forever.
-            (void)alarm_reminder_ack_event(
+            const esp_err_t ack_result = alarm_reminder_ack_event(
                 events[index].alarm_id,
                 events[index].alarm_date
             );
+            if (ack_result != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "alarm event ack failed for %s: %s",
+                    events[index].alarm_id,
+                    esp_err_to_name(ack_result)
+                );
+                memset(session_token, 0, sizeof(session_token));
+                return ack_result;
+            }
         } else {
             ESP_LOGW(
                 TAG,
@@ -510,10 +523,12 @@ static void alarm_reminder_sync_report_events(void) {
                 events[index].alarm_id,
                 esp_err_to_name(report_result)
             );
-            break;
+            memset(session_token, 0, sizeof(session_token));
+            return report_result;
         }
     }
     memset(session_token, 0, sizeof(session_token));
+    return ESP_OK;
 }
 
 esp_err_t alarm_reminder_sync_now(void) {
@@ -532,8 +547,7 @@ esp_err_t alarm_reminder_sync_now(void) {
                  esp_err_to_name(apply_result));
         return apply_result;
     }
-    alarm_reminder_sync_report_events();
-    return ESP_OK;
+    return alarm_reminder_sync_report_events();
 }
 
 static void alarm_reminder_sync_worker(void *argument) {

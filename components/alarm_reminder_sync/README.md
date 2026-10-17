@@ -26,7 +26,9 @@ refresh the worker drains the queue with
 `{"alarm_date": "YYYY-MM-DD", "state": "..."}`. An accepted event is dropped
 from the queue; a `404` for a removed alarm is discarded rather than retried; a
 transient failure leaves the event queued for the next cycle, so the guardian's
-firing history survives a reboot or an offline window.
+firing history survives a reboot or an offline window. The sync result reports
+that failed upload instead of returning success; a later cycle retries the same
+event while the already-applied schedule refresh remains in effect.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
