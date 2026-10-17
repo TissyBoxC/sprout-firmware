@@ -122,7 +122,9 @@ esp_err_t local_command_replace_remote(
     );
     if (result != LOCAL_COMMAND_OK) {
         xSemaphoreGive(s_lock);
-        return ESP_ERR_INVALID_ARG;
+        return result == LOCAL_COMMAND_ERR_FULL
+            ? ESP_ERR_INVALID_STATE
+            : ESP_ERR_INVALID_ARG;
     }
     const esp_err_t persisted = local_command_persist_core(&updated);
     if (persisted == ESP_OK) {

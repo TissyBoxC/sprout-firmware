@@ -59,7 +59,7 @@ local_command_error_t local_command_sync_core_replace(
             continue;
         }
         if (chosen_count >= LOCAL_COMMAND_CAPACITY) {
-            break;
+            return LOCAL_COMMAND_ERR_FULL;
         }
         memcpy(
             seen_ids[chosen_count],

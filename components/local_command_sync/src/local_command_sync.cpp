@@ -233,8 +233,8 @@ static esp_err_t local_command_sync_apply_document(JsonDocument &document) {
     size_t entry_count = 0;
     for (JsonVariantConst value : commands) {
         entry_count += 1;
-        if (command_count >= LOCAL_COMMAND_CAPACITY) {
-            continue;
+        if (entry_count > LOCAL_COMMAND_CAPACITY) {
+            return ESP_ERR_INVALID_STATE;
         }
         local_command_t command = {};
         local_command_sync_copy_field(
