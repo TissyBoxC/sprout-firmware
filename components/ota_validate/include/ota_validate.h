@@ -12,9 +12,9 @@ extern "C" {
 /**
  * @brief Verify one written OTA partition before boot selection.
  *
- * The image header, application descriptor, version, and (when Secure Boot is
- * enabled) the Secure Boot signature are checked. A failure is final: the
- * caller must not select the partition for boot.
+ * The detached manifest signature, image header, application descriptor,
+ * version, and (when Secure Boot is enabled) the Secure Boot signature are
+ * checked. A failure is final: the caller must not select the partition.
  */
 esp_err_t ota_validate_partition(
     const esp_partition_t *partition,

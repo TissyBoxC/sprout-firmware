@@ -11,5 +11,5 @@ idf_component_register(
     SRCS ${ota_rollback_sources}
     INCLUDE_DIRS "include"
     PRIV_REQUIRES app_update
-    REQUIRES config_store module_registry ota_validate
+    REQUIRES config_store module_registry ota_validate ed25519_verify
 )

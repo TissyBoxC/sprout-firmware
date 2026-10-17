@@ -5,6 +5,7 @@
 #include "esp_app_desc.h"
 #include "esp_image_format.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 static const char *const TAG = "ota_validate";
 
@@ -17,6 +18,13 @@ esp_err_t ota_validate_partition(
     }
     if (partition->type != ESP_PARTITION_TYPE_APP) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (ota_manifest_verify_signature(
+            manifest,
+            CONFIG_OTA_VALIDATE_TRUSTED_KEYS_JSON
+        ) != OTA_MANIFEST_OK) {
+        ESP_LOGE(TAG, "manifest detached signature rejected");
+        return ESP_ERR_OTA_VALIDATE_FAILED;
     }
 
     esp_app_desc_t application_description = {0};
@@ -56,17 +64,5 @@ esp_err_t ota_validate_partition(
         return result;
     }
 
-#ifdef CONFIG_SECURE_SIGNED_APPS
-    if (!manifest->signature[0] || !manifest->signature_key_id[0]) {
-        // Secure Boot builds must never accept an unsigned manifest.
-        return ESP_ERR_OTA_VALIDATE_FAILED;
-    }
-#else
-    // Even without Secure Boot hardware, require signed release metadata so a
-    // manifest cannot be silently downgraded to an unsigned path.
-    if (!manifest->signature[0] || !manifest->signature_key_id[0]) {
-        return ESP_ERR_OTA_VALIDATE_FAILED;
-    }
-#endif
     return ESP_OK;
 }

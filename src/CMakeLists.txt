@@ -363,6 +363,10 @@ if(CONFIG_FEATURE_OFFLINE_POLICY_SYNC)
     list(APPEND app_requires "offline_policy_sync")
 endif()
 
+if(CONFIG_FEATURE_OTA_VALIDATE)
+    list(APPEND app_requires "ed25519_verify")
+endif()
+
 if(CONFIG_FEATURE_OTA_MANAGER)
     list(APPEND app_requires "ota_manager")
 endif()

@@ -11,7 +11,7 @@ idf_component_register(
     SRCS ${ota_download_sources}
     INCLUDE_DIRS "include"
     PRIV_REQUIRES esp_http_client esp-tls esp_timer mbedtls
-    REQUIRES app_update esp_partition ota_validate
+    REQUIRES app_update esp_partition ota_validate ed25519_verify
 )
 
 # An OTA image must come from a trusted host. The shared policy check is wired
