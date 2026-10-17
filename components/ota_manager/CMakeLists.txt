@@ -15,6 +15,7 @@ idf_component_register(
     REQUIRES cloud_auth config_store device_binding_client device_identity
              module_registry network_manager time_sync version_info
              app_update esp_partition ota_download ota_validate ota_rollback
+             ed25519_verify
 )
 
 if(CONFIG_FEATURE_LED_INDICATOR)

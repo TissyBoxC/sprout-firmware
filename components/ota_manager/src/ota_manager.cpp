@@ -522,6 +522,7 @@ static esp_err_t ota_manager_fetch_manifest(
         .sha256 = release_value["sha256"] | "",
         .size_bytes = release_value["size_bytes"] | (uint64_t)0,
         .signature_key_id = release_value["signature_key_id"] | "",
+        .signature_algorithm = release_value["signature_algorithm"] | "",
         .signature = release_value["signature"] | "",
         .rollback_allowed = release_value["rollback_allowed"] | false,
         .published_at = published_at,
@@ -1137,6 +1138,31 @@ static esp_err_t ota_manager_execute(
             0.0
         );
         return ESP_ERR_INVALID_VERSION;
+    }
+    const ota_manifest_error_t signature_validation =
+        ota_manifest_verify_signature(
+            &manifest,
+            CONFIG_OTA_VALIDATE_TRUSTED_KEYS_JSON
+        );
+    if (signature_validation != OTA_MANIFEST_OK) {
+        ESP_LOGW(TAG, "manifest signature rejected: %s",
+                 ota_manifest_error_name(signature_validation));
+        ota_manager_set_error(
+            ota_manifest_error_name(signature_validation)
+        );
+        ota_manager_transition(
+            OTA_MANAGER_STAGE_FAILED,
+            OTA_MANAGER_EVENT_FAILED
+        );
+        (void)ota_manager_report_event(
+            "failed",
+            release_id,
+            ota_manifest_error_name(signature_validation),
+            manifest.firmware_version,
+            manifest.sha256,
+            0.0
+        );
+        return ESP_ERR_OTA_VALIDATE_FAILED;
     }
     result = ota_manager_install_manifest(&manifest, command_id);
     if (result != ESP_OK) {
