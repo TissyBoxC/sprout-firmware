@@ -12,6 +12,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "network_manager.h"
@@ -44,6 +45,9 @@ static volatile bool s_stop;
 static TaskHandle_t s_task_handle;
 static wearable_sync_provider_t s_provider;
 static bool s_sos_reported;
+static bool s_location_reported;
+static int64_t s_last_location_upload_ms;
+static int64_t s_last_sos_attempt_ms;
 
 typedef struct {
     char *body;
@@ -296,6 +300,9 @@ static esp_err_t wearable_sync_apply_policy(
     }
     if (!policy.permission_granted) {
         const esp_err_t revoke_result = wearable_revoke_permission();
+        s_location_reported = false;
+        s_last_location_upload_ms = 0;
+        s_last_sos_attempt_ms = 0;
         return revoke_result == ESP_OK
             ? ESP_OK
             : ESP_ERR_INVALID_STATE;
@@ -398,6 +405,37 @@ esp_err_t wearable_sync_register_provider(
     return ESP_OK;
 }
 
+static bool wearable_sync_location_due(const location_policy_t *policy) {
+    if (!s_location_reported) {
+        return true;
+    }
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms < s_last_location_upload_ms) {
+        s_location_reported = false;
+        return true;
+    }
+    return location_should_upload(
+        policy,
+        (uint32_t)(now_ms - s_last_location_upload_ms)
+    );
+}
+
+static bool wearable_sync_sos_due(void) {
+    if (s_sos_reported) {
+        return false;
+    }
+    if (s_last_sos_attempt_ms == 0) {
+        return true;
+    }
+    const int64_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms < s_last_sos_attempt_ms) {
+        s_last_sos_attempt_ms = 0;
+        return true;
+    }
+    return now_ms - s_last_sos_attempt_ms >=
+        (int64_t)CONFIG_WEARABLE_SYNC_RETRY_INTERVAL_SECONDS * 1000;
+}
+
 esp_err_t wearable_sync_now(void) {
     if (!wearable_is_ready()) {
         return ESP_ERR_INVALID_STATE;
@@ -405,15 +443,16 @@ esp_err_t wearable_sync_now(void) {
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[WEARABLE_SYNC_URL_SIZE] = {0};
-    if (wearable_sync_prepare(
+    const esp_err_t prepare_result = wearable_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (prepare_result != ESP_OK) {
+        return prepare_result;
     }
     const esp_err_t policy_result = wearable_sync_apply_policy(
         session_token,
@@ -427,10 +466,20 @@ esp_err_t wearable_sync_now(void) {
     const location_policy_t policy = wearable_get();
     if (!location_can_sample(&policy)) {
         s_sos_reported = false;
+        s_location_reported = false;
+        s_last_location_upload_ms = 0;
+        s_last_sos_attempt_ms = 0;
         memset(session_token, 0, sizeof(session_token));
         return ESP_OK;
     }
     if (s_provider.read == NULL) {
+        memset(session_token, 0, sizeof(session_token));
+        return ESP_OK;
+    }
+    const bool location_due = wearable_sync_location_due(&policy);
+    const bool sos_due =
+        wearable_sos_active() && wearable_sync_sos_due();
+    if (!location_due && !sos_due) {
         memset(session_token, 0, sizeof(session_token));
         return ESP_OK;
     }
@@ -440,10 +489,13 @@ esp_err_t wearable_sync_now(void) {
         memset(session_token, 0, sizeof(session_token));
         return ESP_OK;
     }
+    esp_err_t result = ESP_OK;
     if (wearable_sos_active()) {
         // Report one triggered SOS exactly once so a latched emergency is not
-        // duplicated on every poll.
-        if (!s_sos_reported) {
+        // duplicated on every poll. A failed attempt is retried independently
+        // at the retry cadence instead of being hidden by a location success.
+        if (sos_due) {
+            s_last_sos_attempt_ms = esp_timer_get_time() / 1000;
             const esp_err_t sos_result = wearable_sync_report_sos(
                 &position,
                 session_token,
@@ -452,20 +504,31 @@ esp_err_t wearable_sync_now(void) {
             );
             if (sos_result == ESP_OK) {
                 s_sos_reported = true;
+            } else if (sos_result != ESP_ERR_INVALID_STATE) {
+                result = sos_result;
             }
         }
     } else {
         s_sos_reported = false;
+        s_last_sos_attempt_ms = 0;
     }
-    const esp_err_t location_result = wearable_sync_report_location(
-        &policy,
-        &position,
-        session_token,
-        device_id,
-        base_url
-    );
+    if (location_due) {
+        const esp_err_t location_result = wearable_sync_report_location(
+            &policy,
+            &position,
+            session_token,
+            device_id,
+            base_url
+        );
+        if (location_result == ESP_OK) {
+            s_location_reported = true;
+            s_last_location_upload_ms = esp_timer_get_time() / 1000;
+        } else if (result == ESP_OK) {
+            result = location_result;
+        }
+    }
     memset(session_token, 0, sizeof(session_token));
-    return location_result;
+    return result;
 }
 
 static void wearable_sync_worker(void *argument) {
@@ -525,3 +588,28 @@ const module_descriptor_t *wearable_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef WEARABLE_SYNC_HOST_TESTS
+extern "C" {
+
+bool wearable_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void wearable_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+    s_sos_reported = false;
+    s_location_reported = false;
+    s_last_location_upload_ms = 0;
+    s_last_sos_attempt_ms = 0;
+    memset(&s_provider, 0, sizeof(s_provider));
+}
+
+void wearable_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}  // extern "C"
+#endif
