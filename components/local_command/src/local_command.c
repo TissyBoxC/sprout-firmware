@@ -263,3 +263,17 @@ const module_descriptor_t *local_command_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef LOCAL_COMMAND_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void local_command_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

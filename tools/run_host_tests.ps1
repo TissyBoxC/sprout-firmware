@@ -1542,6 +1542,39 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$localCommandSyncRoot = Join-Path $firmwareRoot 'components/local_command_sync'
+Invoke-HostTest `
+    -Name 'local_command_sync_runtime' `
+    -Sources @(
+        (Join-Path $localCommandRoot 'src/local_command_core.c')
+        (Join-Path $localCommandRoot 'src/local_command_sync_core.c')
+        (Join-Path $localCommandRoot 'src/local_command.c')
+        (Join-Path $localCommandSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $localCommandSyncRoot 'src/local_command_sync.cpp')
+        (Join-Path $localCommandSyncRoot 'test/stubs/local_command_sync_deps.cpp')
+        (Join-Path $localCommandSyncRoot 'test/test_local_command_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $localCommandRoot 'include')
+        (Join-Path $localCommandRoot 'src')
+        (Join-Path $localCommandSyncRoot 'include')
+        (Join-Path $localCommandSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DLOCAL_COMMAND_HOST_TESTS=1'
+        '-DLOCAL_COMMAND_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_LOCAL_COMMAND_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $offlineContentRoot = Join-Path $firmwareRoot 'components/offline_content'
 Invoke-HostTest `
     -Name 'offline_content_core' `

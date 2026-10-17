@@ -346,3 +346,23 @@ const module_descriptor_t *local_command_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef LOCAL_COMMAND_SYNC_HOST_TESTS
+extern "C" {
+
+bool local_command_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void local_command_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void local_command_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif
