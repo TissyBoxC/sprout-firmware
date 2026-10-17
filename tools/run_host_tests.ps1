@@ -2667,6 +2667,40 @@ Invoke-HostTest `
     -Compiler $compiler
 
 Invoke-HostTest `
+    -Name 'screen_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenSurfaceRoot 'src/screen_surface.c')
+        (Join-Path $screenSurfaceRoot 'test/stubs/config_store.c')
+        (Join-Path $screenPolicySyncRoot 'src/screen_policy_sync_core.c')
+        (Join-Path $screenPolicySyncRoot 'src/screen_policy_sync.cpp')
+        (Join-Path $screenPolicySyncRoot 'test/stubs/screen_policy_sync_deps.cpp')
+        (Join-Path $screenPolicySyncRoot 'test/test_screen_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $screenSurfaceRoot 'include')
+        (Join-Path $screenSurfaceRoot 'src')
+        (Join-Path $screenSurfaceRoot 'test/stubs')
+        (Join-Path $screenPolicySyncRoot 'include')
+        (Join-Path $screenPolicySyncRoot 'src')
+        (Join-Path $screenPolicySyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_SCREEN_POLICY_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -CCompiledSources @(
+        (Join-Path $screenSurfaceRoot 'src/screen_core.c')
+        (Join-Path $screenSurfaceRoot 'src/screen_surface.c')
+        (Join-Path $screenSurfaceRoot 'test/stubs/config_store.c')
+        (Join-Path $screenPolicySyncRoot 'src/screen_policy_sync_core.c')
+    ) `
+    -CCompiler $cCompiler `
+    -Compiler $compiler
+
+Invoke-HostTest `
     -Name 'screen_surface_moderation' `
     -Sources @(
         (Join-Path $screenSurfaceRoot 'src/screen_core.c')
