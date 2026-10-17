@@ -226,18 +226,35 @@ esp_err_t touch_input_sync_now(void) {
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!data["enabled"].is<bool>() ||
+        !data["tap_enabled"].is<bool>() ||
+        !data["swipe_enabled"].is<bool>() ||
+        !data["long_press_enabled"].is<bool>() ||
+        !data["haptic_enabled"].is<bool>() ||
+        !data["sensitivity"].is<int>() ||
+        !data["rotation_degrees"].is<int>() ||
+        !data["long_press_ms"].is<int>() ||
+        !data["double_tap_ms"].is<int>() ||
+        !data["swipe_distance_px"].is<int>() ||
+        !data["revision"].is<int>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const int revision = data["revision"].as<int>();
+    if (revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const touch_input_config_t touch_config = touch_input_sync_core_build(
-        data["enabled"] | false,
-        data["tap_enabled"] | false,
-        data["swipe_enabled"] | false,
-        data["long_press_enabled"] | false,
-        data["haptic_enabled"] | false,
-        data["sensitivity"] | 0,
-        data["rotation_degrees"] | 0,
-        data["long_press_ms"] | 0,
-        data["double_tap_ms"] | 0,
-        data["swipe_distance_px"] | 0,
-        data["revision"] | 0
+        data["enabled"].as<bool>(),
+        data["tap_enabled"].as<bool>(),
+        data["swipe_enabled"].as<bool>(),
+        data["long_press_enabled"].as<bool>(),
+        data["haptic_enabled"].as<bool>(),
+        data["sensitivity"].as<int>(),
+        data["rotation_degrees"].as<int>(),
+        data["long_press_ms"].as<int>(),
+        data["double_tap_ms"].as<int>(),
+        data["swipe_distance_px"].as<int>(),
+        revision
     );
     return touch_input_set(&touch_config);
 }
