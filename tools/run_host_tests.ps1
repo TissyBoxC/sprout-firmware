@@ -43,6 +43,10 @@ function Invoke-HostTest {
         [ValidateSet('c', 'c++')]
         [string]$Language = 'c++',
 
+        [string[]]$CCompiledSources = @(),
+
+        [string]$CCompiler,
+
         [Parameter(Mandatory = $true)]
         [string]$Compiler
     )
@@ -65,7 +69,36 @@ function Invoke-HostTest {
             $arguments += '-I' + $includeDirectory
         }
         $arguments += $AdditionalArguments
-        $arguments += $Sources
+        $objectFiles = @()
+        foreach ($source in $Sources) {
+            if ($CCompiledSources -contains $source) {
+                if ([string]::IsNullOrWhiteSpace($CCompiler)) {
+                    throw "Host test $Name requires a C compiler."
+                }
+                $objectFile = Join-Path $outputDirectory (
+                    [System.IO.Path]::GetFileNameWithoutExtension($source) + '.o'
+                )
+                $cArguments = @(
+                    '-std=c11'
+                    '-Wall'
+                    '-Wextra'
+                    '-Werror'
+                )
+                foreach ($includeDirectory in $IncludeDirectories) {
+                    $cArguments += '-I' + $includeDirectory
+                }
+                $cArguments += $AdditionalArguments
+                $cArguments += @('-c', $source, '-o', $objectFile)
+                & $CCompiler @cArguments
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Host test $Name failed to compile $source."
+                }
+                $objectFiles += $objectFile
+            } else {
+                $arguments += $source
+            }
+        }
+        $arguments += $objectFiles
         $arguments += @('-o', $executable)
 
         Write-Host "Building host test $Name"
@@ -2208,6 +2241,38 @@ Invoke-HostTest `
         (Join-Path $motionPolicySyncRoot 'src')
     ) `
     -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'motion_policy_sync_runtime' `
+    -Sources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionRoot 'src/motion_control.c')
+        (Join-Path $motionPolicySyncRoot 'src/motion_policy_sync_core.c')
+        (Join-Path $motionPolicySyncRoot 'src/motion_policy_sync.cpp')
+        (Join-Path $motionPolicySyncRoot 'test/stubs/motion_policy_sync_deps.cpp')
+        (Join-Path $motionPolicySyncRoot 'test/test_motion_policy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $motionRoot 'include')
+        (Join-Path $motionRoot 'src')
+        (Join-Path $motionRoot 'test/stubs')
+        (Join-Path $motionPolicySyncRoot 'include')
+        (Join-Path $motionPolicySyncRoot 'src')
+        (Join-Path $motionPolicySyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_MOTION_POLICY_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -CCompiledSources @(
+        (Join-Path $motionRoot 'src/motion_core.c')
+        (Join-Path $motionRoot 'src/motion_control.c')
+        (Join-Path $motionPolicySyncRoot 'src/motion_policy_sync_core.c')
+    ) `
+    -CCompiler $cCompiler `
     -Compiler $compiler
 
 $motionReportRoot = Join-Path $firmwareRoot 'components/motion_report'
