@@ -31,3 +31,4 @@ esp_err_t config_store_set_blob(
     const void *value,
     size_t size
 );
+esp_err_t config_store_erase_key(const char *key);

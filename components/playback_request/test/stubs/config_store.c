@@ -46,3 +46,11 @@ esp_err_t config_store_set_blob(
     s_has_blob = true;
     return ESP_OK;
 }
+
+esp_err_t config_store_erase_key(const char *key) {
+    (void)key;
+    s_blob_size = 0;
+    s_has_blob = false;
+    memset(s_blob, 0, sizeof(s_blob));
+    return ESP_OK;
+}

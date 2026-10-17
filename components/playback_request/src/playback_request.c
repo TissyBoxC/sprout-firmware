@@ -489,3 +489,19 @@ const module_descriptor_t *playback_request_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef PLAYBACK_REQUEST_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void playback_request_test_reset_ready(void) {
+    s_ready = false;
+    (void)config_store_erase_key(PLAYBACK_REQUEST_STORE_KEY);
+    playback_request_core_init(&s_core);
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

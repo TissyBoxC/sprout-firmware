@@ -120,11 +120,16 @@ static esp_err_t playback_request_sync_prepare(
         memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_STATE;
     }
-    if (device_binding_client_get_platform_base_url(
+    const esp_err_t base_url_result =
+        device_binding_client_get_platform_base_url(
             base_url,
             base_url_size
-        ) != ESP_OK ||
-        strncmp(base_url, "https://", 8) != 0) {
+        );
+    if (base_url_result != ESP_OK) {
+        memset(session_token, 0, session_token_size);
+        return base_url_result;
+    }
+    if (strncmp(base_url, "https://", 8) != 0) {
         memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
     }
@@ -135,15 +140,16 @@ static esp_err_t playback_request_sync_fetch(JsonDocument *document) {
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
-    if (playback_request_sync_prepare(
+    const esp_err_t prepare_result = playback_request_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (prepare_result != ESP_OK) {
+        return prepare_result;
     }
     char url[PLAYBACK_REQUEST_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -513,3 +519,23 @@ const module_descriptor_t *playback_request_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef PLAYBACK_REQUEST_SYNC_HOST_TESTS
+extern "C" {
+
+bool playback_request_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void playback_request_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void playback_request_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif
