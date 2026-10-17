@@ -226,16 +226,32 @@ esp_err_t screen_policy_sync_now(void) {
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (!data["default_expression"].is<const char *>() ||
+        !data["animation_enabled"].is<bool>() ||
+        !data["point_read_enabled"].is<bool>() ||
+        !data["video_enabled"].is<bool>() ||
+        !data["video_max_fps"].is<int>() ||
+        !data["video_max_bitrate_kbps"].is<int>() ||
+        !data["animation_frame_ms"].is<int>() ||
+        !data["revision"].is<int>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const char *default_expression =
+        data["default_expression"].as<const char *>();
+    const int revision = data["revision"].as<int>();
+    if (default_expression == NULL || revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
     screen_policy_t policy = {};
     if (!screen_policy_sync_core_build(
-            data["default_expression"] | "",
-            data["animation_enabled"] | false,
-            data["point_read_enabled"] | false,
-            data["video_enabled"] | false,
-            data["video_max_fps"] | 0,
-            data["video_max_bitrate_kbps"] | 0,
-            data["animation_frame_ms"] | 0,
-            data["revision"] | 0,
+            default_expression,
+            data["animation_enabled"].as<bool>(),
+            data["point_read_enabled"].as<bool>(),
+            data["video_enabled"].as<bool>(),
+            data["video_max_fps"].as<int>(),
+            data["video_max_bitrate_kbps"].as<int>(),
+            data["animation_frame_ms"].as<int>(),
+            revision,
             &policy
         )) {
         return ESP_ERR_INVALID_ARG;
