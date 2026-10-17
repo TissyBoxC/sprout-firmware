@@ -270,14 +270,36 @@ void test_transport_failures_are_propagated() {
     assert(offline_policy_sync_host_transport_security_calls() == 1);
 }
 
-void test_acknowledgement_failure_does_not_fail_sync() {
+void test_acknowledgement_failure_is_propagated() {
     reset_all();
     const int statuses[] = {200, 500};
     const char *bodies[] = {published_policy_body(), "{}"};
     offline_policy_sync_host_set_http_sequence(statuses, bodies, 2);
 
-    assert(offline_policy_sync_now() == ESP_OK);
+    assert(offline_policy_sync_now() == ESP_FAIL);
     assert(offline_policy_sync_host_request_count() == 2);
+    assert(offline_policy_get().revision == 7u);
+}
+
+void test_unauthorized_acknowledgement_clears_session() {
+    reset_all();
+    const int statuses[] = {200, 401};
+    const char *bodies[] = {published_policy_body(), "{}"};
+    offline_policy_sync_host_set_http_sequence(statuses, bodies, 2);
+
+    assert(offline_policy_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(offline_policy_sync_host_clear_session_calls() == 1);
+    assert(offline_policy_get().revision == 7u);
+
+    reset_all();
+    const int forbidden_statuses[] = {200, 403};
+    offline_policy_sync_host_set_http_sequence(
+        forbidden_statuses,
+        bodies,
+        2
+    );
+    assert(offline_policy_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(offline_policy_sync_host_clear_session_calls() == 1);
     assert(offline_policy_get().revision == 7u);
 }
 
@@ -351,7 +373,8 @@ int main() {
     test_oversized_response_is_rejected();
     test_unauthorized_fetch_clears_session();
     test_transport_failures_are_propagated();
-    test_acknowledgement_failure_does_not_fail_sync();
+    test_acknowledgement_failure_is_propagated();
+    test_unauthorized_acknowledgement_clears_session();
     test_initialize_requires_store_and_is_idempotent();
     test_worker_retries_offline_with_short_interval();
     test_worker_syncs_then_uses_regular_interval();

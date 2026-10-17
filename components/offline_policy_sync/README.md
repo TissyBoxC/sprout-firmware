@@ -16,5 +16,5 @@ configured interval. While offline, unauthenticated, or without a synchronized
 clock it retries on a short interval. A `401`/`403` clears the session token so
 the next request re-authenticates instead of retrying a revoked credential.
 
-The acknowledgement is best effort: the policy is already applied, so a failed
-report is logged without failing the sync.
+The policy is already applied when the acknowledgement fails; the error is
+returned to the worker and retried without losing the successful local update.
