@@ -230,3 +230,22 @@ const module_descriptor_t *video_session_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef VIDEO_SESSION_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void video_session_test_reset_ready(void) {
+    s_ready = false;
+    (void)config_store_erase_key(VIDEO_STORE_KEY);
+    s_policy = video_default();
+    s_state = VIDEO_STATE_IDLE;
+    s_quality = VIDEO_QUALITY_UNKNOWN;
+    s_end_reason = VIDEO_END_NONE;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

@@ -1133,6 +1133,38 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$videoSessionSyncRoot = Join-Path $firmwareRoot 'components/video_session_sync'
+Invoke-HostTest `
+    -Name 'video_session_sync_runtime' `
+    -Sources @(
+        (Join-Path $firmwareRoot 'components/video_session/src/video_session.c')
+        (Join-Path $firmwareRoot 'components/video_session/src/video_core.c')
+        (Join-Path $firmwareRoot 'components/video_session/src/video_session_sync_core.c')
+        (Join-Path $videoSessionSyncRoot 'src/video_session_sync.cpp')
+        (Join-Path $videoSessionSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $videoSessionSyncRoot 'test/stubs/video_session_sync_deps.cpp')
+        (Join-Path $videoSessionSyncRoot 'test/test_video_session_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $videoSessionSyncRoot 'include')
+        (Join-Path $videoSessionSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/video_session/include')
+        (Join-Path $firmwareRoot 'components/video_session/src')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DVIDEO_SESSION_SYNC_HOST_TESTS=1'
+        '-DVIDEO_SESSION_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'alarm_reminder_sync_runtime' `
     -Sources @(
