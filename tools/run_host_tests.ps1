@@ -793,6 +793,22 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $uiTextSyncRoot = Join-Path $firmwareRoot 'components/ui_text_sync'
+$arduinoJsonPath = Get-ChildItem `
+    -Path (Join-Path $firmwareRoot '.pio/libdeps') `
+    -Filter 'ArduinoJson' `
+    -Directory `
+    -Recurse `
+    -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'src' } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'ArduinoJson.h') } |
+    Select-Object -First 1
+if ($null -eq $arduinoJsonPath) {
+    throw (
+        'ArduinoJson was not found under .pio/libdeps. Run ' +
+        '`pio run -e esp32-s3-n16r8 -t compiledb` first.'
+    )
+}
+
 Invoke-HostTest `
     -Name 'ui_text_sync_core' `
     -Sources @(
@@ -805,6 +821,28 @@ Invoke-HostTest `
         (Join-Path $uiTextSyncRoot 'src')
     ) `
     -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'ui_text_sync_runtime' `
+    -Sources @(
+        (Join-Path $uiTextSyncRoot 'src/ui_text_sync.cpp')
+        (Join-Path $uiTextSyncRoot 'src/ui_text_sync_core.c')
+        (Join-Path $uiTextSyncRoot 'test/stubs/ui_text_sync_deps.cpp')
+        (Join-Path $uiTextSyncRoot 'test/test_ui_text_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $uiTextSyncRoot 'include')
+        (Join-Path $uiTextSyncRoot 'src')
+        (Join-Path $uiTextSyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DUITEXT_SYNC_RUNTIME_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_UI_TEXT_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-DCONFIG_UI_TEXT_SYNC_LANGUAGE=\"zh-CN\"'
+    ) `
     -Compiler $compiler
 
 $contentDownloaderRoot = Join-Path $firmwareRoot 'components/content_downloader'

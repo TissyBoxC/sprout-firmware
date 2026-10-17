@@ -249,7 +249,7 @@ static int64_t ui_text_sync_revision_cursor(void) {
     return (int64_t)parsed;
 }
 
-static void ui_text_sync_store_cursor(int64_t revision) {
+static esp_err_t ui_text_sync_store_cursor(int64_t revision) {
     char value[32] = {0};
     snprintf(value, sizeof(value), "%lld", (long long)revision);
     const esp_err_t result = config_store_set_string(
@@ -259,6 +259,7 @@ static void ui_text_sync_store_cursor(int64_t revision) {
     if (result != ESP_OK) {
         ESP_LOGW(TAG, "cursor persistence failed: %s", esp_err_to_name(result));
     }
+    return result;
 }
 
 // Fetch one published package's entries and apply it. A package the device
@@ -450,12 +451,20 @@ static esp_err_t ui_text_sync_page(
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
+    JsonArrayConst packages = data["packages"].as<JsonArrayConst>();
+    JsonArrayConst withdrawn_packages =
+        data["withdrawn_packages"].as<JsonArrayConst>();
+    if (packages.isNull() || withdrawn_packages.isNull() ||
+        !data["revision"].is<int64_t>() ||
+        !data["has_more"].is<bool>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const int64_t revision = data["revision"] | (int64_t)0;
     const bool has_more = data["has_more"] | false;
 
     ui_text_sync_candidate_t candidates[UI_TEXT_SYNC_PAGE_LIMIT] = {};
     size_t candidate_count = 0;
-    for (JsonVariantConst value : data["packages"].as<JsonArrayConst>()) {
+    for (JsonVariantConst value : packages) {
         if (candidate_count >= UI_TEXT_SYNC_PAGE_LIMIT) {
             break;
         }
@@ -479,8 +488,7 @@ static esp_err_t ui_text_sync_page(
 
     ui_text_sync_withdrawal_t withdrawals[UI_TEXT_SYNC_PAGE_LIMIT] = {};
     size_t withdrawal_count = 0;
-    for (JsonVariantConst value :
-         data["withdrawn_packages"].as<JsonArrayConst>()) {
+    for (JsonVariantConst value : withdrawn_packages) {
         if (withdrawal_count >= UI_TEXT_SYNC_PAGE_LIMIT) {
             break;
         }
@@ -582,7 +590,10 @@ esp_err_t ui_text_sync_now(void) {
         // Only advance the durable cursor after a page fully completes, so a
         // transient failure re-delivers the same page next cycle.
         cursor = next_cursor;
-        ui_text_sync_store_cursor(cursor);
+        result = ui_text_sync_store_cursor(cursor);
+        if (result != ESP_OK) {
+            break;
+        }
         if (!has_more) {
             break;
         }
