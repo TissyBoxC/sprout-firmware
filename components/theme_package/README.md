@@ -13,6 +13,9 @@ stale.
 
 - The cache holds at most `THEME_PACKAGE_CAPACITY` (8) packs and each pack at
   most `THEME_PACKAGE_MEMBER_CAPACITY` (16) members.
+- A remote snapshot that exceeds either bound is rejected as a whole and the
+  previous cache is kept. Silently truncating would hide guardian-published
+  themes or members from the device menu.
 - Re-upserting an existing pack replaces it and moves it to the head so the
   most recently changed theme leads.
 - The cache persists as one binary blob in `config_store`; a missing or corrupt

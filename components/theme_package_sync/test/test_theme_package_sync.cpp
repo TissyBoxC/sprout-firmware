@@ -174,6 +174,65 @@ void test_missing_data_array_is_rejected() {
     assert(theme_package_sync_now() == ESP_ERR_INVALID_ARG);
 }
 
+void test_member_overflow_rejects_snapshot_and_keeps_cache() {
+    reset_all();
+    const theme_pack_t cached = local_pack("theme_cached", "缓存主题", 3);
+    assert(theme_package_upsert(&cached) == ESP_OK);
+
+    // 17 members exceeds THEME_PACKAGE_MEMBER_CAPACITY (16). The snapshot is
+    // rejected as a whole so the device never silently drops published
+    // members from the theme menu.
+    const char *const body =
+        "{\"data\":{\"theme_packs\":["
+        "{\"theme_id\":\"theme_big\",\"title\":\"超限主题\","
+        "\"package_ids\":["
+        "\"content_story_001\",\"content_story_002\","
+        "\"content_story_003\",\"content_story_004\","
+        "\"content_story_005\",\"content_story_006\","
+        "\"content_story_007\",\"content_story_008\","
+        "\"content_story_009\",\"content_story_010\","
+        "\"content_story_011\",\"content_story_012\","
+        "\"content_story_013\",\"content_story_014\","
+        "\"content_story_015\",\"content_story_016\","
+        "\"content_story_017\"],"
+        "\"catalog_revision\":5}"
+        "]}}";
+    const int statuses[] = {200};
+    const char *bodies[] = {body};
+    theme_package_sync_host_set_http_sequence(statuses, bodies, 1);
+
+    assert(theme_package_sync_now() == ESP_ERR_INVALID_ARG);
+    assert(theme_package_count() == 1);
+    theme_pack_t preserved = {};
+    assert(theme_package_get("theme_cached", &preserved));
+}
+
+void test_member_capacity_boundary_is_accepted() {
+    reset_all();
+    const char *const body =
+        "{\"data\":{\"theme_packs\":["
+        "{\"theme_id\":\"theme_full\",\"title\":\"满容量主题\","
+        "\"package_ids\":["
+        "\"content_story_001\",\"content_story_002\","
+        "\"content_story_003\",\"content_story_004\","
+        "\"content_story_005\",\"content_story_006\","
+        "\"content_story_007\",\"content_story_008\","
+        "\"content_story_009\",\"content_story_010\","
+        "\"content_story_011\",\"content_story_012\","
+        "\"content_story_013\",\"content_story_014\","
+        "\"content_story_015\",\"content_story_016\"],"
+        "\"catalog_revision\":6}"
+        "]}}";
+    const int statuses[] = {200};
+    const char *bodies[] = {body};
+    theme_package_sync_host_set_http_sequence(statuses, bodies, 1);
+
+    assert(theme_package_sync_now() == ESP_OK);
+    theme_pack_t full = {};
+    assert(theme_package_get("theme_full", &full));
+    assert(full.member_count == THEME_PACKAGE_MEMBER_CAPACITY);
+}
+
 void test_unauthorized_clears_session() {
     reset_all();
     const int statuses[] = {401};
@@ -310,6 +369,8 @@ int main() {
     test_nonempty_invalid_snapshot_is_rejected();
     test_malformed_json_is_rejected_without_touching_cache();
     test_missing_data_array_is_rejected();
+    test_member_overflow_rejects_snapshot_and_keeps_cache();
+    test_member_capacity_boundary_is_accepted();
     test_unauthorized_clears_session();
     test_identity_base_url_and_transport_failures();
     test_transport_and_server_failures_do_not_replace_cache();

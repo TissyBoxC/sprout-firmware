@@ -239,7 +239,10 @@ static esp_err_t theme_package_sync_apply_document(JsonDocument &document) {
     for (JsonVariantConst value : packs) {
         entry_count += 1;
         if (pack_count >= THEME_PACKAGE_CAPACITY) {
-            continue;
+            // A platform snapshot with more packs than this device can cache
+            // is not a partial result: dropping the tail silently hides
+            // themes the guardian published, so keep the current cache.
+            return ESP_ERR_INVALID_ARG;
         }
         theme_pack_t pack = {};
         theme_package_sync_copy_field(
@@ -256,11 +259,15 @@ static esp_err_t theme_package_sync_apply_document(JsonDocument &document) {
             continue;
         }
         JsonArrayConst members = value["package_ids"].as<JsonArrayConst>();
+        if (!members.isNull() &&
+            members.size() > THEME_PACKAGE_MEMBER_CAPACITY) {
+            // The platform allows up to 50 members per pack but the device
+            // stores 16. Truncating would make the theme menu disagree with
+            // the parent app, so reject the snapshot and keep the old cache.
+            return ESP_ERR_INVALID_ARG;
+        }
         if (!members.isNull()) {
             for (JsonVariantConst member : members) {
-                if (pack.member_count >= THEME_PACKAGE_MEMBER_CAPACITY) {
-                    break;
-                }
                 const char *member_id = member.as<const char *>();
                 if (member_id == NULL || member_id[0] == '\0' ||
                     strlen(member_id) >= CONTENT_LIBRARY_ID_SIZE) {
