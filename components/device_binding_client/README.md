@@ -28,4 +28,8 @@ component, its Kconfig entry, and the `main.c` registration to remove it.
 It covers initialization and descriptor contracts, platform URL persistence and
 bounds, registration payloads and grant cleanup, challenge signing and session
 persistence, provisioning-token authorization, binding-state transitions and
-callbacks, malformed responses, and transport or timeout failures.
+callbacks, malformed responses, transport or timeout failures, and recovery
+after a registration response is lost. A registration_used response is only
+treated as recoverable after the authenticated challenge proof succeeds; that
+proof then commits the marker and grant cleanup. Other conflicts remain
+terminal errors.

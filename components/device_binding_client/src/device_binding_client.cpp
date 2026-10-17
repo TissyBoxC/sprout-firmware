@@ -57,6 +57,24 @@ static void *device_binding_state_context;
 
 static esp_err_t device_binding_client_mark_bound(void);
 
+static bool device_binding_response_has_error_code(
+    const char *body,
+    const char *expected_code
+) {
+    if (body == nullptr || expected_code == nullptr) {
+        return false;
+    }
+    JsonDocument envelope;
+    if (deserializeJson(envelope, body) != DeserializationError::Ok) {
+        return false;
+    }
+    const char *const code = envelope["error"]["code"].as<const char *>();
+    return code != nullptr && strcmp(code, expected_code) == 0;
+}
+
+static bool device_binding_registration_used;
+static bool device_binding_registration_proven;
+
 /**
  * @brief Persist the build-time platform URL on first boot.
  *
@@ -154,7 +172,9 @@ static esp_err_t device_binding_request(
     const char *path,
     const char *request_body,
     const char *bearer_token,
-    JsonDocument *response_document
+    JsonDocument *response_document,
+    char *status_body,
+    size_t status_body_size
 ) {
     char base_url[DEVICE_BINDING_URL_SIZE] = {0};
     esp_err_t result = config_store_get_string(
@@ -231,6 +251,14 @@ static esp_err_t device_binding_request(
 
     result = esp_http_client_perform(client);
     const int status_code = esp_http_client_get_status_code(client);
+    if (status_body != nullptr && status_body_size > 0) {
+        const size_t body_length = strlen(response.body);
+        const size_t copy_length = body_length < status_body_size - 1
+                                       ? body_length
+                                       : status_body_size - 1;
+        memcpy(status_body, response.body, copy_length);
+        status_body[copy_length] = '\0';
+    }
     esp_http_client_cleanup(client);
 
     if (result != ESP_OK) {
@@ -381,22 +409,42 @@ esp_err_t device_binding_client_register(
         return ESP_ERR_INVALID_SIZE;
     }
 
+    char status_body[DEVICE_BINDING_RESPONSE_SIZE] = {0};
     result = device_binding_request(
         "POST",
         "/api/v1/devices/register",
         request_body,
         NULL,
-        NULL
+        NULL,
+        status_body,
+        sizeof(status_body)
     );
     memset(request_body, 0, sizeof(request_body));
+    if (result == ESP_ERR_INVALID_RESPONSE &&
+        device_binding_response_has_error_code(
+            status_body,
+            "registration_used"
+        )) {
+        memset(status_body, 0, sizeof(status_body));
+        device_binding_registration_used = true;
+        device_binding_registration_proven = false;
+        return DEVICE_BINDING_REGISTRATION_ALREADY_COMPLETED;
+    }
+    memset(status_body, 0, sizeof(status_body));
     if (result != ESP_OK) {
         return result;
     }
-    device_binding_is_registered = true;
-    return config_store_set_string(
+    const esp_err_t persisted_result = config_store_set_string(
         DEVICE_BINDING_KEY_REGISTERED,
         DEVICE_BINDING_TRUE_VALUE
     );
+    if (persisted_result != ESP_OK) {
+        return persisted_result;
+    }
+    device_binding_registration_used = false;
+    device_binding_registration_proven = false;
+    device_binding_is_registered = true;
+    return ESP_OK;
 }
 
 esp_err_t device_binding_client_register_pending(void) {
@@ -405,6 +453,24 @@ esp_err_t device_binding_client_register_pending(void) {
     }
     if (device_binding_is_registered) {
         return ESP_OK;
+    }
+    if (device_binding_registration_proven) {
+        const esp_err_t erase_result = config_store_erase_key(
+            DEVICE_BINDING_KEY_REGISTRATION_TOKEN
+        );
+        if (erase_result != ESP_OK) {
+            return erase_result;
+        }
+        const esp_err_t marker_result = config_store_set_string(
+            DEVICE_BINDING_KEY_REGISTERED,
+            DEVICE_BINDING_TRUE_VALUE
+        );
+        if (marker_result == ESP_OK) {
+            device_binding_registration_used = false;
+            device_binding_registration_proven = false;
+            device_binding_is_registered = true;
+        }
+        return marker_result;
     }
 
     char registration_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
@@ -424,6 +490,13 @@ esp_err_t device_binding_client_register_pending(void) {
         app_description != NULL ? app_description->version : ""
     );
     memset(registration_token, 0, sizeof(registration_token));
+    if (result == DEVICE_BINDING_REGISTRATION_ALREADY_COMPLETED) {
+        const esp_err_t auth_result = device_binding_client_authenticate();
+        if (auth_result != ESP_OK) {
+            return auth_result;
+        }
+        return ESP_OK;
+    }
     if (result != ESP_OK) {
         return result;
     }
@@ -434,7 +507,8 @@ esp_err_t device_binding_client_authenticate(void) {
     if (!device_binding_is_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (!device_binding_is_registered) {
+    if (!device_binding_is_registered &&
+        !device_binding_registration_used) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -457,7 +531,9 @@ esp_err_t device_binding_client_authenticate(void) {
         "/api/v1/devices/auth/challenge",
         challenge_body,
         NULL,
-        &challenge_response
+        &challenge_response,
+        NULL,
+        0
     );
     if (result != ESP_OK) {
         return result;
@@ -521,7 +597,9 @@ esp_err_t device_binding_client_authenticate(void) {
         "/api/v1/devices/auth/complete",
         complete_body,
         NULL,
-        &complete_response
+        &complete_response,
+        NULL,
+        0
     );
     if (result != ESP_OK) {
         return result;
@@ -549,6 +627,24 @@ esp_err_t device_binding_client_authenticate(void) {
         );
     }
     memset(session_token, 0, sizeof(session_token));
+    if (result == ESP_OK && device_binding_registration_used) {
+        device_binding_registration_proven = true;
+        const esp_err_t erase_result = config_store_erase_key(
+            DEVICE_BINDING_KEY_REGISTRATION_TOKEN
+        );
+        if (erase_result != ESP_OK) {
+            return erase_result;
+        }
+        result = config_store_set_string(
+            DEVICE_BINDING_KEY_REGISTERED,
+            DEVICE_BINDING_TRUE_VALUE
+        );
+        if (result == ESP_OK) {
+            device_binding_is_registered = true;
+            device_binding_registration_used = false;
+            device_binding_registration_proven = false;
+        }
+    }
     return result;
 }
 
@@ -588,7 +684,9 @@ esp_err_t device_binding_client_create_provisioning_token(
         path,
         NULL,
         device_binding_session_token,
-        &response
+        &response,
+        NULL,
+        0
     );
     if (result != ESP_OK) {
         return result;
@@ -666,7 +764,9 @@ esp_err_t device_binding_client_check_binding(bool *is_bound_out) {
         path,
         NULL,
         device_binding_session_token,
-        &response
+        &response,
+        NULL,
+        0
     );
     if (result != ESP_OK) {
         return result;
@@ -818,6 +918,8 @@ bool device_binding_client_host_is_ready(void) {
 void device_binding_client_host_reset_module(void) {
     device_binding_is_ready = false;
     device_binding_is_registered = false;
+    device_binding_registration_used = false;
+    device_binding_registration_proven = false;
     device_binding_is_bound = false;
     memset(
         device_binding_session_token,

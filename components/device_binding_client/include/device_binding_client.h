@@ -17,6 +17,15 @@ extern "C" {
 /** @brief Maximum length of a platform device session token including the terminator. */
 #define DEVICE_BINDING_SESSION_TOKEN_SIZE 129
 
+/**
+ * @brief Result when the registration grant was already consumed by this device.
+ *
+ * This is not a generic conflict. The registration endpoint returned the
+ * stable registration_used error and the caller must prove device identity
+ * through the normal challenge flow before treating registration as complete.
+ */
+#define DEVICE_BINDING_REGISTRATION_ALREADY_COMPLETED 0x7001
+
 /** @brief Callback delivered after the platform accepts a binding token. */
 typedef void (*device_binding_completed_callback_t)(
     bool is_bound,
@@ -41,6 +50,12 @@ esp_err_t device_binding_client_init(void);
  *
  * The registration grant is created by manufacturing or support tooling. The
  * device sends its public key only; the private key never leaves NVS.
+ *
+ * Returns DEVICE_BINDING_REGISTRATION_ALREADY_COMPLETED when the platform
+ * reports that this exact registration grant was already consumed. The caller
+ * must still authenticate to prove the stored platform public key matches this
+ * device. Authentication then persists the registered marker and removes the
+ * consumed grant. Other 409 conflicts remain errors.
  */
 esp_err_t device_binding_client_register(
     const char *registration_token,
@@ -54,6 +69,12 @@ esp_err_t device_binding_client_register(
  * Returns ESP_ERR_INVALID_STATE when the device has no unused manufacturing
  * grant or is already registered. The grant is erased only after the platform
  * accepts the registration so a transient network failure can retry later.
+ *
+ * A lost registration response is recoverable: when the platform reports that
+ * the same grant was already consumed, this function performs challenge
+ * authentication. Only successful proof persists the registered marker and
+ * erases the consumed grant. A failed proof keeps the grant and returns the
+ * authentication error.
  */
 esp_err_t device_binding_client_register_pending(void);
 

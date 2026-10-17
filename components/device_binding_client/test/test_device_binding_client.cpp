@@ -217,6 +217,180 @@ void test_authenticate_completes_challenge_and_stores_session() {
     );
 }
 
+void test_lost_registration_response_recovers_only_after_device_proof() {
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    device_binding_client_host_seed_string("dev_reg_token", "grant-1");
+
+    // The platform consumed the grant but the original 201 response was lost.
+    const int statuses[] = {
+        409, 200, 200,
+    };
+    const char *bodies[] = {
+        "{\"schema_version\":\"1.0.0\",\"request_id\":\"req-1\","
+        "\"data\":null,\"error\":{\"code\":\"registration_used\","
+        "\"message\":\"设备已经完成注册\",\"retryable\":false}}",
+        "{\"data\":{\"nonce\":\"nonce-recovery\"}}",
+        "{\"data\":{\"device_session_token\":\"session-recovered\"}}",
+    };
+    device_binding_client_host_set_http_sequence(statuses, bodies, 3);
+    // register_pending drives the challenge proof itself and only completes
+    // once the platform verifies this device's private key.
+    assert(device_binding_client_register_pending() == ESP_OK);
+    assert(device_binding_client_host_request_count() == 3);
+    assert(
+        strcmp(
+            device_binding_client_host_last_signed_message(),
+            "device-0001.nonce-recovery"
+        ) == 0
+    );
+    assert(device_binding_client_is_registered());
+    assert(!device_binding_client_host_has_key("dev_reg_token"));
+    assert(
+        strcmp(
+            device_binding_client_host_stored_string("dev_registered"),
+            "1"
+        ) == 0
+    );
+    assert(
+        strcmp(
+            device_binding_client_host_stored_string("device_session"),
+            "session-recovered"
+        ) == 0
+    );
+}
+
+void test_registration_conflict_does_not_hide_real_identity_mismatch() {
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    device_binding_client_host_seed_string("dev_reg_token", "grant-2");
+
+    const int statuses[] = {409, 401};
+    const char *bodies[] = {
+        "{\"error\":{\"code\":\"registration_used\"}}",
+        "{\"error\":{\"code\":\"device_auth_failed\"}}",
+    };
+    device_binding_client_host_set_http_sequence(statuses, bodies, 2);
+    assert(
+        device_binding_client_register_pending() == ESP_ERR_INVALID_RESPONSE
+    );
+    assert(!device_binding_client_is_registered());
+    assert(
+        strcmp(
+            device_binding_client_host_stored_string("dev_reg_token"),
+            "grant-2"
+        ) == 0
+    );
+    assert(!device_binding_client_host_has_key("dev_registered"));
+}
+
+void test_other_conflicts_and_malformed_409_remain_failures() {
+    prepare_ready();
+    set_single_response(409, "{\"error\":{\"code\":\"token_used\"}}");
+    assert(
+        device_binding_client_register("token", "model", "1.0") ==
+        ESP_ERR_INVALID_RESPONSE
+    );
+    assert(!device_binding_client_is_registered());
+
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    set_single_response(409, "{\"error\":{\"message\":\"missing code\"}}");
+    assert(
+        device_binding_client_register("token", "model", "1.0") ==
+        ESP_ERR_INVALID_RESPONSE
+    );
+    assert(!device_binding_client_is_registered());
+
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    set_single_response(409, "registration_used");
+    assert(
+        device_binding_client_register("token", "model", "1.0") ==
+        ESP_ERR_INVALID_RESPONSE
+    );
+    assert(!device_binding_client_is_registered());
+}
+
+void test_direct_registration_reports_consumed_grant_for_caller_recovery() {
+    prepare_ready();
+    const int statuses[] = {409, 200, 200};
+    const char *bodies[] = {
+        "{\"error\":{\"code\":\"registration_used\"}}",
+        "{\"data\":{\"nonce\":\"nonce-direct\"}}",
+        "{\"data\":{\"device_session_token\":\"session-direct\"}}",
+    };
+    device_binding_client_host_set_http_sequence(statuses, bodies, 3);
+    assert(
+        device_binding_client_register("token", "model", "1.0") ==
+        DEVICE_BINDING_REGISTRATION_ALREADY_COMPLETED
+    );
+    assert(!device_binding_client_is_registered());
+
+    assert(device_binding_client_authenticate() == ESP_OK);
+    assert(device_binding_client_is_registered());
+}
+
+void test_conflict_recovery_keeps_grant_when_proof_storage_fails() {
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    device_binding_client_host_seed_string("dev_reg_token", "grant-3");
+    const int statuses[] = {
+        409, 200, 200,
+    };
+    const char *bodies[] = {
+        "{\"error\":{\"code\":\"registration_used\"}}",
+        "{\"data\":{\"nonce\":\"nonce-storage-failure\"}}",
+        "{\"data\":{\"device_session_token\":\"session-abc\"}}",
+    };
+    device_binding_client_host_set_http_sequence(statuses, bodies, 3);
+    device_binding_client_host_set_store_set_string_result(
+        ESP_ERR_INVALID_STATE
+    );
+    assert(device_binding_client_register_pending() != ESP_OK);
+    device_binding_client_host_set_store_set_string_result(ESP_OK);
+    assert(!device_binding_client_is_registered());
+    assert(
+        strcmp(
+            device_binding_client_host_stored_string("dev_reg_token"),
+            "grant-3"
+        ) == 0
+    );
+    assert(!device_binding_client_host_has_key("dev_registered"));
+}
+
+void test_conflict_recovery_commits_after_grant_erase_failure() {
+    reset_all();
+    assert(device_binding_client_init() == ESP_OK);
+    device_binding_client_host_seed_string("dev_reg_token", "grant-4");
+    const int statuses[] = {409, 200, 200};
+    const char *bodies[] = {
+        "{\"error\":{\"code\":\"registration_used\"}}",
+        "{\"data\":{\"nonce\":\"nonce-erase-failure\"}}",
+        "{\"data\":{\"device_session_token\":\"session-erase\"}}",
+    };
+    device_binding_client_host_set_http_sequence(statuses, bodies, 3);
+    device_binding_client_host_set_store_erase_result(ESP_ERR_INVALID_STATE);
+    assert(
+        device_binding_client_register_pending() == ESP_ERR_INVALID_STATE
+    );
+    assert(!device_binding_client_is_registered());
+    assert(
+        strcmp(
+            device_binding_client_host_stored_string("dev_reg_token"),
+            "grant-4"
+        ) == 0
+    );
+
+    // The platform proof succeeded, so retrying registration is enough to
+    // finish the local commit without another challenge round trip.
+    device_binding_client_host_set_store_erase_result(ESP_OK);
+    set_single_response(409, "{\"error\":{\"code\":\"registration_used\"}}");
+    assert(device_binding_client_register_pending() == ESP_OK);
+    assert(device_binding_client_is_registered());
+    assert(!device_binding_client_host_has_key("dev_reg_token"));
+}
+
 void test_authenticate_requires_registration_and_valid_challenge() {
     prepare_ready();
     assert(device_binding_client_authenticate() == ESP_ERR_INVALID_STATE);
@@ -481,6 +655,12 @@ int main() {
     test_register_requires_token_and_ready_runtime();
     test_register_pending_erases_grant_only_after_success();
     test_authenticate_completes_challenge_and_stores_session();
+    test_lost_registration_response_recovers_only_after_device_proof();
+    test_registration_conflict_does_not_hide_real_identity_mismatch();
+    test_other_conflicts_and_malformed_409_remain_failures();
+    test_direct_registration_reports_consumed_grant_for_caller_recovery();
+    test_conflict_recovery_keeps_grant_when_proof_storage_fails();
+    test_conflict_recovery_commits_after_grant_erase_failure();
     test_authenticate_requires_registration_and_valid_challenge();
     test_clear_session_token_removes_persisted_and_memory_state();
     test_create_provisioning_token_uses_session_and_bounded_response();
