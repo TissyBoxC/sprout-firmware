@@ -757,6 +757,13 @@ $contractChecks = @(
         Pattern = 'MALLOC_CAP_SPIRAM'
     }
     @{
+        Name = 'temperature monitor links its sensor driver'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/temperature_monitor/CMakeLists.txt'
+        ))
+        Pattern = 'PRIV_REQUIRES[\s\S]*esp_driver_tsens'
+    }
+    @{
         Name = 'production profile turns on the runtime gate'
         Text = (Get-Content -Raw -LiteralPath (
             Join-Path $firmwareRoot 'sdkconfig.production.defaults'
@@ -802,6 +809,7 @@ foreach ($extension in @('*.c', '*.cpp', '*.h')) {
         -Filter $extension |
         Where-Object {
             $_.FullName -notmatch '[\\/]config_store[\\/]' -and
+            $_.FullName -notmatch '[\\/]test[\\/]' -and
             (Get-Content -Raw -LiteralPath $_.FullName) -match
                 'ESP_ERR_NVS_INVALID_LENGTH'
         } |
