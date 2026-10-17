@@ -261,3 +261,17 @@ const module_descriptor_t *image_privacy_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef IMAGE_PRIVACY_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void image_privacy_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

@@ -1382,6 +1382,39 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$imagePrivacySyncRoot = Join-Path $firmwareRoot 'components/image_privacy_sync'
+Invoke-HostTest `
+    -Name 'image_privacy_sync_runtime' `
+    -Sources @(
+        (Join-Path $imagePrivacyRoot 'src/image_core.c')
+        (Join-Path $imagePrivacyRoot 'src/image_privacy_sync_core.c')
+        (Join-Path $imagePrivacyRoot 'src/image_privacy.c')
+        (Join-Path $imagePrivacySyncRoot 'test/stubs/config_store.c')
+        (Join-Path $imagePrivacySyncRoot 'src/image_privacy_sync.cpp')
+        (Join-Path $imagePrivacySyncRoot 'test/stubs/image_privacy_sync_deps.cpp')
+        (Join-Path $imagePrivacySyncRoot 'test/test_image_privacy_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $imagePrivacyRoot 'include')
+        (Join-Path $imagePrivacyRoot 'src')
+        (Join-Path $imagePrivacySyncRoot 'include')
+        (Join-Path $imagePrivacySyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DIMAGE_PRIVACY_HOST_TESTS=1'
+        '-DIMAGE_PRIVACY_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_IMAGE_PRIVACY_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $playbackRequestRoot = Join-Path $firmwareRoot 'components/playback_request'
 Invoke-HostTest `
     -Name 'playback_request_core' `
