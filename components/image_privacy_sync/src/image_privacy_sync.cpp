@@ -248,21 +248,23 @@ static esp_err_t image_privacy_sync_apply_document(
     return image_privacy_apply_remote(&remote);
 }
 
-// The status report is best effort: the policy is already applied, so a failed
-// report is logged without failing or delaying the sync cycle.
-static void image_privacy_sync_report_status(void) {
+// Report the applied policy and live pipeline status so the platform can detect
+// stale policy delivery. The caller propagates failures and retries.
+static esp_err_t image_privacy_sync_report_status(void) {
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
-    if (image_privacy_sync_prepare(
+    const esp_err_t prepare_result = image_privacy_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return;
+        );
+    if (prepare_result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return prepare_result;
     }
     char url[IMAGE_PRIVACY_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -274,13 +276,13 @@ static void image_privacy_sync_report_status(void) {
     );
     if (written <= 0 || (size_t)written >= sizeof(url)) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
 #if IMAGE_PRIVACY_SYNC_HAS_TRANSPORT_SECURITY
     if (transport_security_validate_outbound(url, NULL) !=
         TRANSPORT_SECURITY_OK) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
 #endif
 
@@ -306,13 +308,13 @@ static void image_privacy_sync_report_status(void) {
         serializeJson(payload, request_body, sizeof(request_body));
     if (body_length == 0 || body_length >= sizeof(request_body)) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
 
     image_privacy_sync_response_t response = {};
     if (image_privacy_sync_response_init(&response) != ESP_OK) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return ESP_ERR_NO_MEM;
     }
     esp_http_client_config_t config = {};
     config.url = url;
@@ -325,7 +327,7 @@ static void image_privacy_sync_report_status(void) {
     if (client == NULL) {
         image_privacy_sync_response_destroy(&response);
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return ESP_ERR_NO_MEM;
     }
     char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {0};
     snprintf(
@@ -347,16 +349,18 @@ static void image_privacy_sync_report_status(void) {
     esp_http_client_cleanup(client);
     memset(authorization, 0, sizeof(authorization));
     memset(session_token, 0, sizeof(session_token));
-    if (transport_result != ESP_OK ||
-        status_code < 200 || status_code >= 300) {
-        ESP_LOGW(
-            TAG,
-            "image privacy status report failed: %s (status %d)",
-            esp_err_to_name(transport_result),
-            status_code
-        );
-    }
     image_privacy_sync_response_destroy(&response);
+    if (transport_result != ESP_OK) {
+        return transport_result;
+    }
+    if (status_code == 401 || status_code == 403) {
+        (void)device_binding_client_clear_session_token();
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (status_code < 200 || status_code >= 300) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 esp_err_t image_privacy_sync_now(void) {
@@ -375,8 +379,7 @@ esp_err_t image_privacy_sync_now(void) {
                  esp_err_to_name(apply_result));
         return apply_result;
     }
-    image_privacy_sync_report_status();
-    return ESP_OK;
+    return image_privacy_sync_report_status();
 }
 
 static void image_privacy_sync_worker(void *argument) {

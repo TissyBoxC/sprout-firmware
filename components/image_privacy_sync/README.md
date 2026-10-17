@@ -28,8 +28,8 @@ After a successful apply the worker reports the bounded pipeline status to
 `POST /api/v1/devices/{device_id}/image-privacy/status` so the platform and
 admin overview see the live processing mode, upload scope, redaction level,
 processed/uploaded/blocked counters, last block reason and the applied policy
-revision. The report is best effort: the policy is already applied, so a failed
-report is logged without delaying the sync cycle.
+revision. The policy is already applied when the report fails; the error is
+returned to the worker and retried without losing the successful local update.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
