@@ -1,0 +1,4 @@
+#pragma once
+
+#define CONFIG_TIME_SYNC_SNTP_SERVER "ntp.aliyun.com"
+#define CONFIG_TIME_SYNC_TIMEZONE_OFFSET_MINUTES 480

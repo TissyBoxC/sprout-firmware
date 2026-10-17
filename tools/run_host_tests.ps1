@@ -1905,6 +1905,30 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'time_sync_runtime' `
+    -Sources @(
+        (Join-Path $timeSyncRoot 'src/time_sync_pure.c')
+        (Join-Path $timeSyncRoot 'src/time_sync.c')
+        (Join-Path $timeSyncRoot 'test/stubs/time_sync_deps.c')
+        (Join-Path $timeSyncRoot 'test/test_time_sync_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $timeSyncRoot 'include')
+        (Join-Path $timeSyncRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_TIME_SYNC=1'
+        '-DTIME_SYNC_HOST_TESTS=1'
+    ) `
+    -CCompiledSources @(
+        (Join-Path $timeSyncRoot 'src/time_sync_pure.c')
+        (Join-Path $timeSyncRoot 'src/time_sync.c')
+        (Join-Path $timeSyncRoot 'test/stubs/time_sync_deps.c')
+    ) `
+    -CCompiler $cCompiler `
+    -Compiler $compiler
+
 $usageLedgerRoot = Join-Path $firmwareRoot 'components/usage_ledger'
 Invoke-HostTest `
     -Name 'usage_ledger_state' `
