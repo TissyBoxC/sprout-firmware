@@ -9,5 +9,5 @@ idf_component_register(
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "src"
     REQUIRES module_registry
-    PRIV_REQUIRES esp_timer
+    PRIV_REQUIRES esp_driver_tsens esp_timer
 )
