@@ -23,8 +23,8 @@ response with a quality floor outside its catalog is rejected.
 After a successful apply the worker reports the bounded session status to
 `POST /api/v1/devices/{device_id}/video-session/status` so the platform and
 admin overview see the live call state, quality band, end reason and the
-applied policy revision. The report is best effort: the policy is already
-applied, so a failed report is logged without delaying the sync cycle.
+applied policy revision. The sync result reports a failed status upload while
+the already-applied policy remains active, so a later cycle retries it.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized

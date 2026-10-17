@@ -234,13 +234,23 @@ void test_transport_and_server_failures_leave_policy_unchanged() {
     assert(video_session_sync_host_request_count() == 1);
 }
 
-void test_status_report_failure_does_not_fail_policy_sync() {
+void test_status_report_failure_propagates_after_policy_apply() {
     reset_all();
     const int statuses[] = {200, 500};
     const char *bodies[] = {POLICY_BODY, "{}"};
     video_session_sync_host_set_http_sequence(statuses, bodies, 2);
-    assert(video_session_sync_now() == ESP_OK);
+    assert(video_session_sync_now() == ESP_FAIL);
     assert(video_get().revision == 9u);
+}
+
+void test_unauthorized_status_report_clears_session() {
+    reset_all();
+    const int statuses[] = {200, 401};
+    const char *bodies[] = {POLICY_BODY, "{}"};
+    video_session_sync_host_set_http_sequence(statuses, bodies, 2);
+    assert(video_session_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(video_get().revision == 9u);
+    assert(video_session_sync_host_clear_session_calls() == 1);
 }
 
 void test_initialize_requires_store_and_is_idempotent() {
@@ -313,7 +323,8 @@ int main() {
     test_unauthorized_clears_session();
     test_identity_base_url_and_transport_failures();
     test_transport_and_server_failures_leave_policy_unchanged();
-    test_status_report_failure_does_not_fail_policy_sync();
+    test_status_report_failure_propagates_after_policy_apply();
+    test_unauthorized_status_report_clears_session();
     test_initialize_requires_store_and_is_idempotent();
     test_worker_retries_offline_with_short_interval();
     test_worker_syncs_then_uses_regular_interval();
