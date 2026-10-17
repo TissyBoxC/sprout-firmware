@@ -128,6 +128,26 @@ void test_successful_fetch_merges_remote_and_applies_actions() {
     assert(playback_request_get("req-remote", &merged));
     assert(strcmp(merged.package_id, "pkg-remote") == 0);
     assert(merged.status == PLAYBACK_REQUEST_PENDING);
+    // 2026-10-17T12:00:00Z is parsed into epoch seconds, not left at zero.
+    assert(merged.requested_at_epoch_seconds == 1792238400);
+}
+
+void test_requested_at_accepts_fractional_seconds() {
+    reset_all();
+    const char *const fetch_body =
+        "{\"data\":{\"requests\":["
+        "{\"id\":\"req-frac\",\"package_id\":\"pkg-frac\","
+        "\"status\":\"pending\","
+        "\"requested_at\":\"2026-10-17T12:00:00.250Z\"}"
+        "]}}";
+    const int statuses[] = {200};
+    const char *bodies[] = {fetch_body};
+    playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+
+    assert(playback_request_sync_now() == ESP_OK);
+    playback_request_t merged = {};
+    assert(playback_request_get("req-frac", &merged));
+    assert(merged.requested_at_epoch_seconds == 1792238400);
 }
 
 void test_local_terminal_history_survives_remote_merge() {
@@ -280,6 +300,59 @@ void test_malformed_snapshot_is_rejected() {
     assert(playback_request_sync_now() == ESP_ERR_INVALID_ARG);
 }
 
+// A single unusable entry rejects the whole snapshot so a local non-terminal
+// request is never dropped as if the guardian had cancelled it.
+void test_bad_entry_rejects_whole_snapshot() {
+    reset_all();
+    add_local_request("req-local", "pkg-local", PLAYBACK_REQUEST_PENDING);
+    const char *const fetch_body =
+        "{\"data\":{\"requests\":["
+        "{\"id\":\"req-ok\",\"package_id\":\"pkg-ok\","
+        "\"status\":\"pending\","
+        "\"requested_at\":\"2026-10-17T12:00:00Z\"},"
+        "{\"id\":\"req-bad\",\"package_id\":\"pkg-bad\","
+        "\"status\":\"pending\",\"requested_at\":\"not-a-date\"}"
+        "]}}";
+    const int statuses[] = {200};
+    const char *bodies[] = {fetch_body};
+    playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+
+    assert(playback_request_sync_now() == ESP_ERR_INVALID_ARG);
+    assert(playback_request_count() == 1);
+    playback_request_t local = {};
+    assert(playback_request_get("req-local", &local));
+    playback_request_t absent = {};
+    assert(!playback_request_get("req-ok", &absent));
+}
+
+void test_missing_and_non_utc_requested_at_are_rejected() {
+    const char *const missing =
+        "{\"data\":{\"requests\":["
+        "{\"id\":\"req-1\",\"package_id\":\"pkg-1\",\"status\":\"pending\"}"
+        "]}}";
+    const char *const offset =
+        "{\"data\":{\"requests\":["
+        "{\"id\":\"req-1\",\"package_id\":\"pkg-1\",\"status\":\"pending\","
+        "\"requested_at\":\"2026-10-17T12:00:00+08:00\"}"
+        "]}}";
+
+    reset_all();
+    {
+        const int statuses[] = {200};
+        const char *bodies[] = {missing};
+        playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+        assert(playback_request_sync_now() == ESP_ERR_INVALID_ARG);
+    }
+
+    reset_all();
+    {
+        const int statuses[] = {200};
+        const char *bodies[] = {offset};
+        playback_request_sync_host_set_http_sequence(statuses, bodies, 1);
+        assert(playback_request_sync_now() == ESP_ERR_INVALID_ARG);
+    }
+}
+
 void test_transport_failures_are_propagated() {
     reset_all();
     playback_request_sync_host_set_perform_result(ESP_ERR_TIMEOUT);
@@ -358,6 +431,7 @@ int main() {
     test_now_requires_ready_cache();
     test_fetch_rejects_unusable_identity_and_base_url();
     test_successful_fetch_merges_remote_and_applies_actions();
+    test_requested_at_accepts_fractional_seconds();
     test_local_terminal_history_survives_remote_merge();
     test_local_acknowledge_and_complete_drain_in_order();
     test_acknowledge_action_has_no_completion_body();
@@ -365,6 +439,8 @@ int main() {
     test_transient_action_failure_stops_and_keeps_remaining();
     test_unauthorized_fetch_clears_session();
     test_malformed_snapshot_is_rejected();
+    test_bad_entry_rejects_whole_snapshot();
+    test_missing_and_non_utc_requested_at_are_rejected();
     test_transport_failures_are_propagated();
     test_initialize_requires_cache_and_is_idempotent();
     test_worker_retries_offline_with_short_interval();

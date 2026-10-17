@@ -14,6 +14,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 extern "C" {
 
@@ -505,6 +506,162 @@ const char *esp_err_to_name(esp_err_t error) {
         default:
             return "ESP_ERR_UNKNOWN";
     }
+}
+
+// MinGW's UCRT does not provide POSIX strptime/timegm, so the host test links
+// its own portable implementations matching ESP-IDF's newlib behavior.
+static bool playback_request_sync_parse_fixed_int(
+    const char **cursor,
+    int length,
+    int minimum,
+    int maximum,
+    int *value_out
+) {
+    int value = 0;
+    for (int index = 0; index < length; ++index) {
+        const char character = (*cursor)[index];
+        if (character < '0' || character > '9') {
+            return false;
+        }
+        value = value * 10 + (character - '0');
+    }
+    if (value < minimum || value > maximum) {
+        return false;
+    }
+    *cursor += length;
+    *value_out = value;
+    return true;
+}
+
+char *strptime(const char *input, const char *format, struct tm *tm) {
+    if (input == nullptr || format == nullptr || tm == nullptr) {
+        return nullptr;
+    }
+    const char *cursor = input;
+    const char *pattern = format;
+    while (*pattern != '\0') {
+        if (*pattern != '%') {
+            if (*cursor != *pattern) {
+                return nullptr;
+            }
+            ++cursor;
+            ++pattern;
+            continue;
+        }
+        ++pattern;
+        int value = 0;
+        switch (*pattern) {
+            case 'Y':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        4,
+                        1970,
+                        9999,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_year = value - 1900;
+                break;
+            case 'm':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        2,
+                        1,
+                        12,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_mon = value - 1;
+                break;
+            case 'd':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        2,
+                        1,
+                        31,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_mday = value;
+                break;
+            case 'H':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        2,
+                        0,
+                        23,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_hour = value;
+                break;
+            case 'M':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        2,
+                        0,
+                        59,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_min = value;
+                break;
+            case 'S':
+                if (!playback_request_sync_parse_fixed_int(
+                        &cursor,
+                        2,
+                        0,
+                        60,
+                        &value
+                    )) {
+                    return nullptr;
+                }
+                tm->tm_sec = value;
+                break;
+            case 'Z':
+                if (*cursor != 'Z') {
+                    return nullptr;
+                }
+                ++cursor;
+                break;
+            default:
+                return nullptr;
+        }
+        ++pattern;
+    }
+    return (char *)cursor;
+}
+
+time_t timegm(struct tm *tm) {
+    if (tm == nullptr) {
+        return (time_t)-1;
+    }
+    static const int days_before_month[] = {
+        0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
+    };
+    if (tm->tm_mon < 0 || tm->tm_mon > 11 || tm->tm_mday < 1 ||
+        tm->tm_mday > 31) {
+        return (time_t)-1;
+    }
+    const int adjusted_year = tm->tm_year + 1900;
+    int leap_days = (adjusted_year - 1969) / 4 -
+                    (adjusted_year - 1901) / 100 +
+                    (adjusted_year - 1601) / 400;
+    if (tm->tm_mon <= 1 &&
+        ((adjusted_year % 4 == 0 && adjusted_year % 100 != 0) ||
+         adjusted_year % 400 == 0)) {
+        leap_days -= 1;
+    }
+    const int64_t days =
+        (int64_t)(adjusted_year - 1970) * 365 + leap_days +
+        days_before_month[tm->tm_mon] + tm->tm_mday - 1;
+    return (time_t)(days * 86400 + tm->tm_hour * 3600 +
+                    tm->tm_min * 60 + tm->tm_sec);
 }
 
 }  // extern "C"

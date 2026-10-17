@@ -5,8 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ArduinoJson.h"
+
+#ifdef PLAYBACK_REQUEST_SYNC_HOST_TESTS
+#include "time_compat.h"
+#endif
 
 #include "device_binding_client.h"
 #include "device_identity.h"
@@ -37,6 +42,8 @@
 #define PLAYBACK_REQUEST_SYNC_URL_SIZE 384
 #define PLAYBACK_REQUEST_SYNC_RESPONSE_SIZE 32768
 #define PLAYBACK_REQUEST_SYNC_REQUEST_SIZE 256
+// Bounded buffer for one RFC3339 UTC timestamp parsed from the snapshot.
+#define PLAYBACK_REQUEST_SYNC_TIMESTAMP_SIZE 32
 
 static const char *const TAG = "playback_sync";
 static bool s_ready;
@@ -247,6 +254,61 @@ static void playback_request_sync_copy_field(
     memcpy(destination, value, length + 1);
 }
 
+// Parse a strict RFC3339 UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ` with optional
+// fractional seconds) into Unix epoch seconds. Rejects a missing, malformed,
+// or non-UTC value so a bad snapshot never silently distorts the ordering the
+// guardian depends on.
+static bool playback_request_sync_parse_requested_at(
+    const char *value,
+    int64_t *epoch_out
+) {
+    if (value == NULL || epoch_out == NULL) {
+        return false;
+    }
+    const char *const fractional = strchr(value, '.');
+    const size_t prefix_length = fractional == NULL
+        ? strlen(value)
+        : (size_t)(fractional - value) + 1;
+    if (prefix_length == 0 ||
+        prefix_length + 1 > PLAYBACK_REQUEST_SYNC_TIMESTAMP_SIZE) {
+        return false;
+    }
+    char timestamp[PLAYBACK_REQUEST_SYNC_TIMESTAMP_SIZE] = {0};
+    if (fractional == NULL) {
+        memcpy(timestamp, value, prefix_length + 1);
+    } else {
+        memcpy(timestamp, value, prefix_length);
+        timestamp[prefix_length - 1] = 'Z';
+    }
+    struct tm parsed = {};
+    const char *const end = strptime(
+        timestamp,
+        "%Y-%m-%dT%H:%M:%SZ",
+        &parsed
+    );
+    if (end == NULL || end[0] != '\0') {
+        return false;
+    }
+    const time_t epoch = timegm(&parsed);
+    if (epoch <= 0) {
+        return false;
+    }
+    if (fractional != NULL) {
+        const char *fraction = fractional + 1;
+        size_t fraction_digits = 0;
+        while (*fraction >= '0' && *fraction <= '9') {
+            ++fraction_digits;
+            ++fraction;
+        }
+        if (fraction_digits == 0 || fraction_digits > 9 ||
+            fraction[0] != 'Z' || fraction[1] != '\0') {
+            return false;
+        }
+    }
+    *epoch_out = (int64_t)epoch;
+    return true;
+}
+
 static esp_err_t playback_request_sync_apply_document(JsonDocument &document) {
     JsonArrayConst requests = document["data"]["requests"].as<JsonArrayConst>();
     if (requests.isNull()) {
@@ -275,15 +337,24 @@ static esp_err_t playback_request_sync_apply_document(JsonDocument &document) {
             value["note"] | ""
         );
         playback_request_status_t status = PLAYBACK_REQUEST_PENDING;
+        int64_t requested_at_epoch_seconds = 0;
+        // One unusable entry rejects the whole snapshot: merging the surviving
+        // rows would drop a local non-terminal request the guardian did not
+        // actually cancel.
         if (request.request_id[0] == '\0' || request.package_id[0] == '\0' ||
             !playback_request_status_from_name(
                 value["status"] | "",
                 &status
+            ) ||
+            !playback_request_sync_parse_requested_at(
+                value["requested_at"] | "",
+                &requested_at_epoch_seconds
             )) {
-            continue;
+            return ESP_ERR_INVALID_ARG;
         }
         request.status = status;
         request.outcome = PLAYBACK_REQUEST_OUTCOME_NONE;
+        request.requested_at_epoch_seconds = requested_at_epoch_seconds;
         parsed[request_count] = request;
         request_count += 1;
     }

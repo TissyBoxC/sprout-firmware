@@ -9,7 +9,14 @@ guardian sees that a request was accepted and how it ended.
 `GET /api/v1/devices/{device_id}/playback/requests` with the device session
 token returns the requests that still need device action (pending or
 acknowledged) in `data.requests`. Each entry carries `id`, `package_id`,
-`note`, `status` and `requested_at`.
+`note`, `status` and `requested_at`. `requested_at` is a UTC RFC3339 timestamp;
+the device validates it strictly and stores it as epoch seconds so it can order
+and age requests without trusting its own clock.
+
+One entry that is missing an id, package id, valid status, or a strict
+`YYYY-MM-DDTHH:MM:SSZ` (optionally fractional) `requested_at` rejects the whole
+snapshot with `ESP_ERR_INVALID_ARG`. Merging only the surviving rows would drop
+a local non-terminal request the guardian never actually cancelled.
 
 The response is merged into the local cache through
 `playback_request_merge_remote`:
