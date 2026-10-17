@@ -25,9 +25,9 @@ with a style or animation name outside its catalog is rejected.
 After a successful apply the worker reports the bounded surface status to
 `POST /api/v1/devices/{device_id}/learning-visualization/status` so the platform
 and admin overview see the live visual state, animation level, linked lesson,
-feedback counter, session length and the applied policy revision. The report is
-best effort: the policy is already applied, so a failed report is logged
-without delaying the sync cycle.
+feedback counter, session length and the applied policy revision. The policy is
+already applied when the report fails; the error is returned to the worker and
+retried without losing the successful local update.
 
 The worker runs once immediately after the device is bound, then on the
 configured interval. While offline, unauthenticated, or without a synchronized
