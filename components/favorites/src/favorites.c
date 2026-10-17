@@ -124,7 +124,9 @@ esp_err_t favorites_replace(
     );
     if (result != FAVORITES_OK) {
         xSemaphoreGive(s_lock);
-        return ESP_ERR_INVALID_ARG;
+        return result == FAVORITES_ERR_FULL
+            ? ESP_ERR_INVALID_STATE
+            : ESP_ERR_INVALID_ARG;
     }
     const esp_err_t persisted = favorites_persist_core(&updated);
     if (persisted == ESP_OK) {

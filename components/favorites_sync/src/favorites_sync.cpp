@@ -209,8 +209,8 @@ static esp_err_t favorites_sync_apply_document(JsonDocument &document) {
     size_t entry_count = 0;
     for (JsonVariantConst value : favorites) {
         entry_count += 1;
-        if (package_id_count >= FAVORITES_CAPACITY) {
-            continue;
+        if (entry_count > FAVORITES_CAPACITY) {
+            return ESP_ERR_INVALID_STATE;
         }
         const char *package_id = value["package_id"] | "";
         if (package_id[0] == '\0' ||

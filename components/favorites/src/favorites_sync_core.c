@@ -46,7 +46,7 @@ favorites_error_t favorites_sync_core_replace(
             continue;
         }
         if (replacement.count >= FAVORITES_CAPACITY) {
-            break;
+            return FAVORITES_ERR_FULL;
         }
         strncpy(
             replacement.package_ids[replacement.count],
