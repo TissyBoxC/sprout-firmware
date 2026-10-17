@@ -77,7 +77,7 @@ int main() {
     assert(core.count == 1);
     assert(std::strcmp(core.packs[0].theme_id, "theme_ocean") == 0);
 
-    // Capacity is bounded without rejecting the whole snapshot.
+    // An oversized authoritative snapshot is rejected without truncation.
     theme_pack_t too_many[THEME_PACKAGE_CAPACITY + 2] = {};
     char ids[THEME_PACKAGE_CAPACITY + 2][CONTENT_LIBRARY_ID_SIZE] = {};
     for (int index = 0; index < THEME_PACKAGE_CAPACITY + 2; ++index) {
@@ -89,10 +89,10 @@ int main() {
             &core,
             too_many,
             THEME_PACKAGE_CAPACITY + 2
-        ) == THEME_PACKAGE_OK
+        ) == THEME_PACKAGE_ERR_FULL
     );
-    assert(core.count == THEME_PACKAGE_CAPACITY);
-    assert(std::strcmp(core.packs[0].theme_id, "theme_pack_000") == 0);
+    assert(core.count == 1);
+    assert(std::strcmp(core.packs[0].theme_id, "theme_ocean") == 0);
 
     return 0;
 }

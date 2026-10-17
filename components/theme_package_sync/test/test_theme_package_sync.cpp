@@ -1,6 +1,7 @@
 #include "theme_package_sync.h"
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 
 #include "esp_http_client.h"
@@ -233,6 +234,65 @@ void test_member_capacity_boundary_is_accepted() {
     assert(full.member_count == THEME_PACKAGE_MEMBER_CAPACITY);
 }
 
+void test_pack_overflow_returns_retryable_error_and_keeps_cache() {
+    reset_all();
+    const theme_pack_t cached = local_pack("theme_cached", "缓存主题", 3);
+    assert(theme_package_upsert(&cached) == ESP_OK);
+
+    char body[4096] = {};
+    const int prefix = snprintf(
+        body,
+        sizeof(body),
+        "{\"data\":{\"theme_packs\":["
+    );
+    assert(prefix > 0);
+    size_t used = (size_t)prefix;
+    for (int index = 0; index < THEME_PACKAGE_CAPACITY + 1; ++index) {
+        const int written = snprintf(
+            body + used,
+            sizeof(body) - used,
+            "%s{\"theme_id\":\"theme_%03d\",\"title\":\"主题 %03d\","
+            "\"package_ids\":[\"content_story_001\"],"
+            "\"catalog_revision\":1}",
+            index == 0 ? "" : ",",
+            index,
+            index
+        );
+        assert(written > 0);
+        used += (size_t)written;
+        assert(used < sizeof(body));
+    }
+    assert(used + 4 < sizeof(body));
+    snprintf(body + used, sizeof(body) - used, "]}}");
+
+    const int statuses[] = {200};
+    const char *bodies[] = {body};
+    theme_package_sync_host_set_http_sequence(statuses, bodies, 1);
+    assert(theme_package_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(theme_package_count() == 1);
+    theme_pack_t preserved = {};
+    assert(theme_package_get("theme_cached", &preserved));
+}
+
+void test_invalid_member_rejects_snapshot_and_keeps_cache() {
+    reset_all();
+    const theme_pack_t cached = local_pack("theme_cached", "缓存主题", 3);
+    assert(theme_package_upsert(&cached) == ESP_OK);
+
+    const int statuses[] = {200};
+    const char *bodies[] = {
+        "{\"data\":{\"theme_packs\":["
+        "{\"theme_id\":\"theme_invalid\",\"title\":\"异常主题\","
+        "\"package_ids\":[\"content_story_001\",\"\"]}"
+        "]}}",
+    };
+    theme_package_sync_host_set_http_sequence(statuses, bodies, 1);
+    assert(theme_package_sync_now() == ESP_ERR_INVALID_ARG);
+    assert(theme_package_count() == 1);
+    theme_pack_t preserved = {};
+    assert(theme_package_get("theme_cached", &preserved));
+}
+
 void test_unauthorized_clears_session() {
     reset_all();
     const int statuses[] = {401};
@@ -371,6 +431,8 @@ int main() {
     test_missing_data_array_is_rejected();
     test_member_overflow_rejects_snapshot_and_keeps_cache();
     test_member_capacity_boundary_is_accepted();
+    test_pack_overflow_returns_retryable_error_and_keeps_cache();
+    test_invalid_member_rejects_snapshot_and_keeps_cache();
     test_unauthorized_clears_session();
     test_identity_base_url_and_transport_failures();
     test_transport_and_server_failures_do_not_replace_cache();
