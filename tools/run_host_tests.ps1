@@ -167,9 +167,11 @@ Invoke-HostTest `
         (Join-Path $versionInfoRoot 'test/stubs')
     ) `
     -AdditionalArguments @(
-        '-DCONFIG_IDF_TARGET=\"esp32s3\"'
-        '-DCONFIG_FIRMWARE_SCHEMA_VERSION=\"1.0.0\"'
-        '-DCONFIG_FIRMWARE_PROTOCOL_VERSION=\"1.0.0\"'
+        # PowerShell passes native arguments literally. Escaping the quotes for
+        # a POSIX shell leaves backslashes in gcc's argv on Windows.
+        '-DCONFIG_IDF_TARGET="esp32s3"'
+        '-DCONFIG_FIRMWARE_SCHEMA_VERSION="1.0.0"'
+        '-DCONFIG_FIRMWARE_PROTOCOL_VERSION="1.0.0"'
     ) `
     -Compiler $compiler
 
@@ -978,7 +980,7 @@ Invoke-HostTest `
         '-DUITEXT_SYNC_RUNTIME_HOST_TESTS=1'
         '-DCONFIG_FEATURE_UI_TEXT_SYNC=1'
         '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
-        '-DCONFIG_UI_TEXT_SYNC_LANGUAGE=\"zh-CN\"'
+        '-DCONFIG_UI_TEXT_SYNC_LANGUAGE="zh-CN"'
     ) `
     -Compiler $compiler
 
@@ -3002,7 +3004,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DCONFIG_FEATURE_CONFIG_STORE=1'
         '-DCONFIG_FACTORY_RESET_PENDING_TIMEOUT_SECONDS=10'
-        '-DCONFIG_FACTORY_RESET_NVS_PARTITION=\"nvs\"'
+        '-DCONFIG_FACTORY_RESET_NVS_PARTITION="nvs"'
     ) `
     -Compiler $compiler
 
@@ -3293,7 +3295,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DCONFIG_STORE_HOST_TESTS=1'
         '-DCONFIG_FEATURE_CONFIG_STORE=1'
-        '-DCONFIG_CONFIG_STORE_LARGE_PARTITION=\"nvs_data\"'
+        '-DCONFIG_CONFIG_STORE_LARGE_PARTITION="nvs_data"'
         '-DCONFIG_NVS_ENCRYPTION=0'
     ) `
     -Language 'c' `
@@ -3314,7 +3316,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DDEVICE_IDENTITY_HOST_TESTS=1'
         '-DCONFIG_FEATURE_DEVICE_IDENTITY=1'
-        '-DCONFIG_DEVICE_IDENTITY_NVS_PARTITION=\"nvs\"'
+        '-DCONFIG_DEVICE_IDENTITY_NVS_PARTITION="nvs"'
     ) `
     -Language 'c' `
     -Compiler $cCompiler
@@ -3366,7 +3368,7 @@ Invoke-HostTest `
     -AdditionalArguments @(
         '-DDEVICE_PROVISIONING_HOST_TESTS=1'
         '-DCONFIG_FEATURE_DEVICE_PROVISIONING=1'
-        '-DCONFIG_DEVICE_PROVISIONING_SERVICE_PREFIX=\"SPROUT\"'
+        '-DCONFIG_DEVICE_PROVISIONING_SERVICE_PREFIX="SPROUT"'
     ) `
     -Compiler $compiler
 
