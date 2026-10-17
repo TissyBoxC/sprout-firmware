@@ -483,32 +483,35 @@ static esp_err_t english_course_sync_report_attempt(
 
 // Drain the queued practice attempts, stopping at the first transient failure
 // so the rest of the queue survives for the next cycle.
-static void english_course_sync_report_attempts(void) {
+static esp_err_t english_course_sync_report_attempts(void) {
     if (english_course_pending_attempt_count() == 0) {
-        return;
+        return ESP_OK;
     }
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[ENGLISH_COURSE_SYNC_URL_SIZE] = {0};
-    if (english_course_sync_prepare(
+    const esp_err_t prepare_result = english_course_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return;
+        );
+    if (prepare_result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return prepare_result;
     }
     english_course_attempt_t attempts[ENGLISH_COURSE_OUTBOUND_CAPACITY] = {};
     size_t attempt_count = 0;
-    if (english_course_list_pending_attempts(
+    const esp_err_t list_result = english_course_list_pending_attempts(
             attempts,
             ENGLISH_COURSE_OUTBOUND_CAPACITY,
             &attempt_count
-        ) != ESP_OK) {
+        );
+    if (list_result != ESP_OK) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return list_result;
     }
     for (size_t index = 0; index < attempt_count; ++index) {
         const esp_err_t report_result = english_course_sync_report_attempt(
@@ -520,11 +523,21 @@ static void english_course_sync_report_attempts(void) {
         if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
             // A permanently rejected attempt is dropped rather than retried
             // forever.
-            (void)english_course_ack_attempt(
+            const esp_err_t ack_result = english_course_ack_attempt(
                 attempts[index].lesson_id,
                 attempts[index].item_id,
                 attempts[index].practiced_at_epoch_seconds
             );
+            if (ack_result != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "english attempt ack failed for %s: %s",
+                    attempts[index].item_id,
+                    esp_err_to_name(ack_result)
+                );
+                memset(session_token, 0, sizeof(session_token));
+                return ack_result;
+            }
         } else {
             ESP_LOGW(
                 TAG,
@@ -532,10 +545,12 @@ static void english_course_sync_report_attempts(void) {
                 attempts[index].item_id,
                 esp_err_to_name(report_result)
             );
-            break;
+            memset(session_token, 0, sizeof(session_token));
+            return report_result;
         }
     }
     memset(session_token, 0, sizeof(session_token));
+    return ESP_OK;
 }
 
 esp_err_t english_course_sync_now(void) {
@@ -554,8 +569,8 @@ esp_err_t english_course_sync_now(void) {
     }
     // Reporting queued practice is independent of the catalog refresh, so a
     // transient lesson-fetch failure never blocks a child's progress upload.
-    english_course_sync_report_attempts();
-    return apply_result;
+    const esp_err_t report_result = english_course_sync_report_attempts();
+    return apply_result != ESP_OK ? apply_result : report_result;
 }
 
 static void english_course_sync_worker(void *argument) {

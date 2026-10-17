@@ -11,6 +11,8 @@ local lesson cache, then reports queued practice attempts.
   network, clock or response payload is unusable.
 - Practice attempts stay queued through transient failures and are delivered on
   a later cycle.
+- The sync result reports a failed practice upload; an already-applied lesson
+  refresh is preserved while the queued attempt is retried later.
 
 ## Tests
 

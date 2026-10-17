@@ -281,7 +281,7 @@ void test_attempt_failure_stops_draining_and_retries() {
     seed_attempt("lesson_fruit", "word_apple", 1700000000, "apple");
     seed_attempt("lesson_fruit", "word_apple", 1700000100, "apple");
 
-    assert(english_course_sync_now() == ESP_OK);
+    assert(english_course_sync_now() == ESP_FAIL);
     assert(english_course_pending_attempt_count() == 2);
 
     reset_all();
