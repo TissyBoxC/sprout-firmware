@@ -160,33 +160,37 @@ static esp_err_t playback_history_sync_report_record(
 
 // Drain the queued playback records, stopping at the first transient failure so
 // the rest of the queue survives for the next cycle.
-static void playback_history_sync_report_pending(void) {
+static esp_err_t playback_history_sync_report_pending(void) {
     if (playback_history_pending_count() == 0) {
-        return;
+        return ESP_OK;
     }
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[PLAYBACK_HISTORY_SYNC_URL_SIZE] = {0};
-    if (playback_history_sync_prepare(
+    const esp_err_t prepare_result = playback_history_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return;
+        );
+    if (prepare_result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return prepare_result;
     }
     playback_record_t records[PLAYBACK_HISTORY_OUTBOUND_CAPACITY] = {};
     size_t record_count = 0;
-    if (playback_history_list_pending(
+    const esp_err_t list_result = playback_history_list_pending(
             records,
             PLAYBACK_HISTORY_OUTBOUND_CAPACITY,
             &record_count
-        ) != ESP_OK) {
+        );
+    if (list_result != ESP_OK) {
         memset(session_token, 0, sizeof(session_token));
-        return;
+        return list_result;
     }
+    esp_err_t result = ESP_OK;
     for (size_t index = 0; index < record_count; ++index) {
         const esp_err_t report_result = playback_history_sync_report_record(
             &records[index],
@@ -197,10 +201,19 @@ static void playback_history_sync_report_pending(void) {
         if (report_result == ESP_OK || report_result == ESP_ERR_NOT_FOUND) {
             // A stale row for a removed package is dropped rather than retried
             // forever.
-            (void)playback_history_ack_pending(
+            result = playback_history_ack_pending(
                 records[index].package_id,
                 records[index].played_at
             );
+            if (result != ESP_OK) {
+                ESP_LOGW(
+                    TAG,
+                    "playback history ack failed for %s: %s",
+                    records[index].package_id,
+                    esp_err_to_name(result)
+                );
+                break;
+            }
         } else {
             ESP_LOGW(
                 TAG,
@@ -208,18 +221,19 @@ static void playback_history_sync_report_pending(void) {
                 records[index].package_id,
                 esp_err_to_name(report_result)
             );
+            result = report_result;
             break;
         }
     }
     memset(session_token, 0, sizeof(session_token));
+    return result;
 }
 
 esp_err_t playback_history_sync_now(void) {
     if (!playback_history_is_ready()) {
         return ESP_ERR_INVALID_STATE;
     }
-    playback_history_sync_report_pending();
-    return ESP_OK;
+    return playback_history_sync_report_pending();
 }
 
 static void playback_history_sync_worker(void *argument) {

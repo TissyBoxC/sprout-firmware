@@ -14,6 +14,10 @@ extern "C" {
  * a 401/403 clears the token so the next request can re-authenticate instead of
  * retrying a revoked credential. Each accepted record is dropped from the
  * pending queue, while a transient failure leaves the rest for the next cycle.
+ *
+ * @return ESP_OK when every eligible record was handled; otherwise the first
+ * preparation, queue, acknowledgement, or report error. A 404 report is
+ * treated as success and drops the stale record.
  */
 esp_err_t playback_history_sync_now(void);
 

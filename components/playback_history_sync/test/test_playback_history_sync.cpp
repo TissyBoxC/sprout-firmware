@@ -69,21 +69,23 @@ void test_now_requires_ready_history_store() {
 
 void test_now_requires_trusted_runtime_state() {
     reset_all();
+    queue_record("pkg-offline", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_network_state(NETWORK_MANAGER_STATE_IDLE);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_request_count() == 0);
 
     playback_history_sync_host_set_network_state(
         NETWORK_MANAGER_STATE_CONNECTED
     );
     playback_history_sync_host_set_time_synchronized(false);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_request_count() == 0);
 
     playback_history_sync_host_set_time_synchronized(true);
     playback_history_sync_host_set_registered(false);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_request_count() == 0);
+    assert(playback_history_pending_count() == 1);
 }
 
 void test_successful_report_drains_queue_in_order() {
@@ -158,7 +160,7 @@ void test_transient_failure_stops_and_keeps_remaining_rows() {
     const char *bodies[] = {"{}", "{}"};
     playback_history_sync_host_set_http_sequence(statuses, bodies, 2);
 
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_FAIL);
     assert(playback_history_sync_host_request_count() == 2);
     assert(playback_history_pending_count() == 2);
 
@@ -180,14 +182,14 @@ void test_unauthorized_and_revoked_clear_session() {
     reset_all();
     queue_record("pkg-401", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_http_status(401);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_clear_session_calls() == 1);
     assert(playback_history_pending_count() == 1);
 
     reset_all();
     queue_record("pkg-403", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_http_status(403);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_clear_session_calls() == 1);
     assert(playback_history_pending_count() == 1);
 }
@@ -198,14 +200,14 @@ void test_identity_and_transport_failures_keep_rows() {
     playback_history_sync_host_set_copy_session_result(
         ESP_ERR_INVALID_STATE
     );
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_request_count() == 0);
     assert(playback_history_pending_count() == 1);
 
     reset_all();
     queue_record("pkg-base", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_base_url("http://api.clarkhub.cn");
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_ARG);
     assert(playback_history_sync_host_request_count() == 0);
     assert(playback_history_pending_count() == 1);
 
@@ -214,7 +216,7 @@ void test_identity_and_transport_failures_keep_rows() {
     playback_history_sync_host_set_transport_security_result(
         TRANSPORT_SECURITY_ERR_HOST_NOT_ALLOWED
     );
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_ARG);
     assert(playback_history_sync_host_request_count() == 0);
     assert(playback_history_sync_host_transport_security_calls() == 1);
     assert(playback_history_pending_count() == 1);
@@ -224,14 +226,14 @@ void test_transport_failure_keeps_rows() {
     reset_all();
     queue_record("pkg-timeout", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_perform_result(ESP_ERR_TIMEOUT);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_INVALID_STATE);
     assert(playback_history_sync_host_request_count() == 1);
     assert(playback_history_pending_count() == 1);
 
     reset_all();
     queue_record("pkg-nomem", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
     playback_history_sync_host_set_client_init_fails(true);
-    assert(playback_history_sync_now() == ESP_OK);
+    assert(playback_history_sync_now() == ESP_ERR_NO_MEM);
     assert(playback_history_pending_count() == 1);
 }
 
