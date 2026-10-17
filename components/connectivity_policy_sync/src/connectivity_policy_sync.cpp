@@ -262,15 +262,28 @@ esp_err_t connectivity_policy_sync_now(void) {
     if (data.isNull()) {
         return ESP_ERR_INVALID_ARG;
     }
-    const char *preference = data["preference"] | "wifi_first";
+    const char *preference = "";
+    if (!data["enabled"].is<bool>() ||
+        !data["roaming_allowed"].is<bool>() ||
+        !data["remote_wake_enabled"].is<bool>() ||
+        !data["metered_upload_limit"].is<bool>() ||
+        !data["preference"].is<const char *>() ||
+        !data["revision"].is<int>()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    preference = data["preference"].as<const char *>();
+    const int revision = data["revision"].as<int>();
+    if (preference == NULL || revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
     const connectivity_policy_state_t applied =
         connectivity_policy_sync_core_build(
-            data["enabled"] | false,
-            data["roaming_allowed"] | false,
-            data["remote_wake_enabled"] | false,
-            data["metered_upload_limit"] | false,
+            data["enabled"].as<bool>(),
+            data["roaming_allowed"].as<bool>(),
+            data["remote_wake_enabled"].as<bool>(),
+            data["metered_upload_limit"].as<bool>(),
             preference,
-            data["revision"] | 0
+            revision
         );
     s_state = applied;
     return connectivity_policy_sync_persist();
