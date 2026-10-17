@@ -294,6 +294,38 @@ void test_worker_drains_then_uses_regular_interval() {
     assert(playback_history_pending_count() == 0);
 }
 
+void test_worker_retries_timeout_with_short_interval() {
+    reset_all();
+    const module_descriptor_t *const descriptor =
+        playback_history_sync_module_descriptor();
+    queue_record("pkg-timeout", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
+    playback_history_sync_host_set_perform_result(ESP_ERR_TIMEOUT);
+    playback_history_sync_host_set_stop_after_delays(0);
+    assert(descriptor->initialize() == ESP_OK);
+
+    playback_history_sync_host_run_pending_task();
+    assert(playback_history_sync_host_request_count() == 1);
+    assert(playback_history_sync_host_delay_calls() == 1);
+    assert(playback_history_sync_host_last_delay_ticks() == 15000u);
+    assert(playback_history_pending_count() == 1);
+}
+
+void test_worker_uses_regular_interval_after_server_failure() {
+    reset_all();
+    const module_descriptor_t *const descriptor =
+        playback_history_sync_module_descriptor();
+    queue_record("pkg-server", 1, PLAYBACK_OUTCOME_COMPLETED, 10, 1000);
+    playback_history_sync_host_set_http_status(500);
+    playback_history_sync_host_set_stop_after_delays(0);
+    assert(descriptor->initialize() == ESP_OK);
+
+    playback_history_sync_host_run_pending_task();
+    assert(playback_history_sync_host_request_count() == 1);
+    assert(playback_history_sync_host_delay_calls() == 1);
+    assert(playback_history_sync_host_last_delay_ticks() == 120000u);
+    assert(playback_history_pending_count() == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -309,5 +341,7 @@ int main() {
     test_initialize_requires_history_and_is_idempotent();
     test_worker_retries_offline_with_short_interval();
     test_worker_drains_then_uses_regular_interval();
+    test_worker_retries_timeout_with_short_interval();
+    test_worker_uses_regular_interval_after_server_failure();
     return 0;
 }

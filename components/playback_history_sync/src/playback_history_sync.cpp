@@ -252,7 +252,9 @@ static void playback_history_sync_worker(void *argument) {
                 );
             }
         }
-        const uint32_t delay_seconds = result == ESP_ERR_INVALID_STATE
+        const bool retry_soon = result == ESP_ERR_INVALID_STATE ||
+            result == ESP_ERR_TIMEOUT;
+        const uint32_t delay_seconds = retry_soon
             ? CONFIG_PLAYBACK_HISTORY_SYNC_RETRY_INTERVAL_SECONDS
             : CONFIG_PLAYBACK_HISTORY_SYNC_INTERVAL_SECONDS;
         vTaskDelay(pdMS_TO_TICKS(delay_seconds * 1000));
