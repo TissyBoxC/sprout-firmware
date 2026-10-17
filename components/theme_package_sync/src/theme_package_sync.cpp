@@ -238,11 +238,11 @@ static esp_err_t theme_package_sync_apply_document(JsonDocument &document) {
     size_t entry_count = 0;
     for (JsonVariantConst value : packs) {
         entry_count += 1;
-        if (pack_count >= THEME_PACKAGE_CAPACITY) {
+        if (entry_count > THEME_PACKAGE_CAPACITY) {
             // A platform snapshot with more packs than this device can cache
             // is not a partial result: dropping the tail silently hides
             // themes the guardian published, so keep the current cache.
-            return ESP_ERR_INVALID_ARG;
+            return ESP_ERR_INVALID_STATE;
         }
         theme_pack_t pack = {};
         theme_package_sync_copy_field(
@@ -271,7 +271,7 @@ static esp_err_t theme_package_sync_apply_document(JsonDocument &document) {
                 const char *member_id = member.as<const char *>();
                 if (member_id == NULL || member_id[0] == '\0' ||
                     strlen(member_id) >= CONTENT_LIBRARY_ID_SIZE) {
-                    continue;
+                    return ESP_ERR_INVALID_ARG;
                 }
                 strncpy(
                     pack.package_ids[pack.member_count],

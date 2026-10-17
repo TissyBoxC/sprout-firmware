@@ -59,7 +59,7 @@ theme_package_error_t theme_package_sync_core_replace(
             continue;
         }
         if (chosen_count >= THEME_PACKAGE_CAPACITY) {
-            break;
+            return THEME_PACKAGE_ERR_FULL;
         }
         memcpy(seen_ids[chosen_count], pack->theme_id, CONTENT_LIBRARY_ID_SIZE);
         chosen[chosen_count] = index;

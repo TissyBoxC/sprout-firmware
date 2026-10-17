@@ -85,7 +85,9 @@ esp_err_t theme_package_upsert(const theme_pack_t *pack) {
     );
     if (result != THEME_PACKAGE_OK) {
         xSemaphoreGive(s_lock);
-        return ESP_ERR_INVALID_ARG;
+        return result == THEME_PACKAGE_ERR_FULL
+            ? ESP_ERR_INVALID_STATE
+            : ESP_ERR_INVALID_ARG;
     }
     const esp_err_t persisted = theme_package_persist_core(&updated);
     if (persisted == ESP_OK) {
