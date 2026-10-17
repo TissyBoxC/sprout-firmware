@@ -122,6 +122,22 @@ function Invoke-HostTest {
 $compiler = Resolve-HostCompiler -Language 'c++'
 $cCompiler = Resolve-HostCompiler -Language 'c'
 
+$arduinoJsonPath = Get-ChildItem `
+    -Path (Join-Path $firmwareRoot '.pio/libdeps') `
+    -Filter 'ArduinoJson' `
+    -Directory `
+    -Recurse `
+    -ErrorAction SilentlyContinue |
+    ForEach-Object { Join-Path $_.FullName 'src' } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'ArduinoJson.h') } |
+    Select-Object -First 1
+if ($null -eq $arduinoJsonPath) {
+    throw (
+        'ArduinoJson was not found under .pio/libdeps. Run ' +
+        '`pio run -e esp32-s3-n16r8 -t compiledb` first.'
+    )
+}
+
 $contentFilterRoot = Join-Path $firmwareRoot 'components/content_filter'
 
 $errorCodeRoot = Join-Path $firmwareRoot 'components/error_code'
@@ -745,6 +761,34 @@ Invoke-HostTest `
     -Compiler $compiler
 
 Invoke-HostTest `
+    -Name 'vision_sync_runtime' `
+    -Sources @(
+        (Join-Path $visionSyncRoot 'src/vision_sync.cpp')
+        (Join-Path $visionSyncRoot 'src/vision_sync_core.c')
+        (Join-Path $visionSyncRoot 'test/stubs/vision_sync_deps.cpp')
+        (Join-Path $visionSyncRoot 'test/test_vision_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $visionSyncRoot 'include')
+        (Join-Path $visionSyncRoot 'src')
+        (Join-Path $visionSyncRoot 'test/stubs')
+        (Join-Path $cameraVisionRoot 'include')
+        (Join-Path $firmwareRoot 'components/camera_capture/include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DVISION_SYNC_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
     -Name 'content_filter' `
     -Sources @(
         (Join-Path $contentFilterRoot 'src/content_filter_core.c')
@@ -826,22 +870,6 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $uiTextSyncRoot = Join-Path $firmwareRoot 'components/ui_text_sync'
-$arduinoJsonPath = Get-ChildItem `
-    -Path (Join-Path $firmwareRoot '.pio/libdeps') `
-    -Filter 'ArduinoJson' `
-    -Directory `
-    -Recurse `
-    -ErrorAction SilentlyContinue |
-    ForEach-Object { Join-Path $_.FullName 'src' } |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'ArduinoJson.h') } |
-    Select-Object -First 1
-if ($null -eq $arduinoJsonPath) {
-    throw (
-        'ArduinoJson was not found under .pio/libdeps. Run ' +
-        '`pio run -e esp32-s3-n16r8 -t compiledb` first.'
-    )
-}
-
 Invoke-HostTest `
     -Name 'ui_text_sync_core' `
     -Sources @(
