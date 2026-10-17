@@ -202,3 +202,18 @@ const module_descriptor_t *playback_history_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef PLAYBACK_HISTORY_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void playback_history_test_reset_ready(void) {
+    s_ready = false;
+    playback_history_core_init(&s_core);
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

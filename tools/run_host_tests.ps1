@@ -1035,6 +1035,38 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$playbackHistorySyncRoot = Join-Path $firmwareRoot 'components/playback_history_sync'
+Invoke-HostTest `
+    -Name 'playback_history_sync_runtime' `
+    -Sources @(
+        (Join-Path $firmwareRoot 'components/playback_history/src/playback_history.c')
+        (Join-Path $firmwareRoot 'components/playback_history/src/playback_history_core.c')
+        (Join-Path $playbackHistorySyncRoot 'src/playback_history_sync.cpp')
+        (Join-Path $playbackHistorySyncRoot 'test/stubs/config_store.c')
+        (Join-Path $playbackHistorySyncRoot 'test/stubs/playback_history_sync_deps.cpp')
+        (Join-Path $playbackHistorySyncRoot 'test/test_playback_history_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $playbackHistorySyncRoot 'include')
+        (Join-Path $playbackHistorySyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/playback_history/include')
+        (Join-Path $firmwareRoot 'components/playback_history/src')
+        (Join-Path $firmwareRoot 'components/content_library/include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DPLAYBACK_HISTORY_SYNC_HOST_TESTS=1'
+        '-DPLAYBACK_HISTORY_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'alarm_reminder_sync_runtime' `
     -Sources @(

@@ -279,3 +279,23 @@ const module_descriptor_t *playback_history_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef PLAYBACK_HISTORY_SYNC_HOST_TESTS
+extern "C" {
+
+bool playback_history_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void playback_history_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void playback_history_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif
