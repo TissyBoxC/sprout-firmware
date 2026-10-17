@@ -1,6 +1,7 @@
 #include "local_command_sync.h"
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 
 #include "esp_http_client.h"
@@ -235,6 +236,43 @@ void test_oversized_response_is_rejected() {
     assert(local_command_count() == 1);
 }
 
+void test_oversized_snapshot_returns_state_error_and_keeps_commands() {
+    reset_all();
+    seed_command("cmd_local", "本地口令", LOCAL_COMMAND_ACTION_STOP, nullptr);
+
+    char body[4096] = {};
+    const int prefix = snprintf(
+        body,
+        sizeof(body),
+        "{\"data\":{\"revision\":7,\"commands\":["
+    );
+    assert(prefix > 0);
+    size_t used = (size_t)prefix;
+    for (int index = 0; index < LOCAL_COMMAND_CAPACITY + 1; ++index) {
+        const int written = snprintf(
+            body + used,
+            sizeof(body) - used,
+            "%s{\"command_id\":\"cmd_%03d\",\"phrase\":\"命令 %03d\","
+            "\"action\":\"stop\"}",
+            index == 0 ? "" : ",",
+            index,
+            index
+        );
+        assert(written > 0);
+        used += (size_t)written;
+        assert(used < sizeof(body));
+    }
+    assert(used + 4 < sizeof(body));
+    snprintf(body + used, sizeof(body) - used, "]}}");
+
+    set_single_response(200, body);
+    assert(local_command_sync_now() == ESP_ERR_INVALID_STATE);
+    assert(local_command_count() == 1);
+    local_command_t resolved = {};
+    assert(local_command_resolve("本地口令", &resolved));
+    assert(resolved.action == LOCAL_COMMAND_ACTION_STOP);
+}
+
 void test_unauthorized_fetch_clears_session() {
     reset_all();
     set_single_response(401, "{}");
@@ -336,6 +374,7 @@ int main() {
     test_partial_snapshot_keeps_valid_entries();
     test_malformed_responses_leave_commands_untouched();
     test_oversized_response_is_rejected();
+    test_oversized_snapshot_returns_state_error_and_keeps_commands();
     test_unauthorized_fetch_clears_session();
     test_transport_failures_are_propagated();
     test_initialize_requires_store_and_is_idempotent();

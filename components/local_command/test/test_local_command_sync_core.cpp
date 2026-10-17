@@ -104,7 +104,7 @@ int main() {
     assert(core.count == 1);
     assert(std::strcmp(core.commands[0].command_id, "cmd_stop") == 0);
 
-    // Capacity is bounded without rejecting the whole snapshot.
+    // An oversized authoritative snapshot is rejected without truncation.
     local_command_t too_many[LOCAL_COMMAND_CAPACITY + 2] = {};
     char ids[LOCAL_COMMAND_CAPACITY + 2][LOCAL_COMMAND_ID_SIZE] = {};
     char phrases[LOCAL_COMMAND_CAPACITY + 2][LOCAL_COMMAND_PHRASE_SIZE] = {};
@@ -128,10 +128,10 @@ int main() {
             &core,
             too_many,
             LOCAL_COMMAND_CAPACITY + 2
-        ) == LOCAL_COMMAND_OK
+        ) == LOCAL_COMMAND_ERR_FULL
     );
-    assert(core.count == LOCAL_COMMAND_CAPACITY);
-    assert(std::strcmp(core.commands[0].command_id, "cmd_000") == 0);
+    assert(core.count == 1);
+    assert(std::strcmp(core.commands[0].command_id, "cmd_stop") == 0);
 
     return 0;
 }
