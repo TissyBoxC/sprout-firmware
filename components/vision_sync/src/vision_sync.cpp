@@ -101,26 +101,39 @@ static esp_err_t vision_sync_prepare(
     char *base_url,
     size_t base_url_size
 ) {
+    memset(session_token, 0, session_token_size);
+    memset(device_id, 0, device_id_size);
+    memset(base_url, 0, base_url_size);
     if (network_manager_get_state() != NETWORK_MANAGER_STATE_CONNECTED ||
         !time_sync_is_synchronized() ||
         !device_binding_client_is_registered()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (device_binding_client_copy_session_token(
+    const esp_err_t session_result = device_binding_client_copy_session_token(
             session_token,
             session_token_size
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (session_result != ESP_OK) {
+        return session_result;
     }
-    if (device_identity_copy(device_id, device_id_size) != ESP_OK) {
+    const esp_err_t identity_result = device_identity_copy(
+        device_id,
+        device_id_size
+    );
+    if (identity_result != ESP_OK) {
         memset(session_token, 0, session_token_size);
-        return ESP_ERR_INVALID_STATE;
+        return identity_result;
     }
-    if (device_binding_client_get_platform_base_url(
+    const esp_err_t base_url_result =
+        device_binding_client_get_platform_base_url(
             base_url,
             base_url_size
-        ) != ESP_OK ||
-        strncmp(base_url, "https://", 8) != 0) {
+        );
+    if (base_url_result != ESP_OK) {
+        memset(session_token, 0, session_token_size);
+        return base_url_result;
+    }
+    if (strncmp(base_url, "https://", 8) != 0) {
         memset(session_token, 0, session_token_size);
         return ESP_ERR_INVALID_ARG;
     }
@@ -165,15 +178,39 @@ static esp_err_t vision_sync_request(
         "Bearer %s",
         session_token
     );
-    esp_http_client_set_header(client, "Authorization", authorization);
-    esp_http_client_set_header(client, "Accept", "application/json");
-    if (request_body != nullptr) {
-        esp_http_client_set_header(client, "Content-Type", "application/json");
-        esp_http_client_set_post_field(
+    esp_err_t header_result = esp_http_client_set_header(
+        client,
+        "Authorization",
+        authorization
+    );
+    if (header_result == ESP_OK) {
+        header_result = esp_http_client_set_header(
             client,
-            request_body,
-            (int)strlen(request_body)
+            "Accept",
+            "application/json"
         );
+    }
+    if (request_body != nullptr) {
+        if (header_result == ESP_OK) {
+            header_result = esp_http_client_set_header(
+                client,
+                "Content-Type",
+                "application/json"
+            );
+        }
+        if (header_result == ESP_OK) {
+            header_result = esp_http_client_set_post_field(
+                client,
+                request_body,
+                (int)strlen(request_body)
+            );
+        }
+    }
+    if (header_result != ESP_OK) {
+        esp_http_client_cleanup(client);
+        vision_sync_response_destroy(response);
+        memset(authorization, 0, sizeof(authorization));
+        return ESP_ERR_INVALID_STATE;
     }
     const esp_err_t transport_result = esp_http_client_perform(client);
     const int status_code = esp_http_client_get_status_code(client);
@@ -235,15 +272,16 @@ static esp_err_t vision_sync_fetch_tasks(
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[VISION_SYNC_URL_SIZE] = {0};
-    if (vision_sync_prepare(
+    const esp_err_t prepare_result = vision_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (prepare_result != ESP_OK) {
+        return prepare_result;
     }
     char url[VISION_SYNC_URL_SIZE] = {0};
     const int written = snprintf(
@@ -286,6 +324,10 @@ static esp_err_t vision_sync_fetch_tasks(
         return ESP_ERR_INVALID_ARG;
     }
     for (JsonVariantConst value : json_tasks) {
+        // The platform emits tasks newest first. Process the first bounded
+        // batch and leave the remainder pending for the next poll; rejecting
+        // the whole response would starve every task while more than one
+        // batch is waiting.
         if (*task_count_out >= task_capacity) {
             break;
         }
@@ -295,25 +337,34 @@ static esp_err_t vision_sync_fetch_tasks(
                 sizeof(task.task_id),
                 value["task_id"] | ""
             )) {
-            continue;
+            return ESP_ERR_INVALID_ARG;
         }
         if (!vision_sync_task_type_from_name(
                 value["task_type"] | "",
                 &task.task_type
             )) {
-            continue;
+            return ESP_ERR_INVALID_ARG;
         }
         if (!vision_sync_core_status_from_name(
                 value["status"] | "",
                 &task.status
             )) {
-            continue;
+            return ESP_ERR_INVALID_ARG;
         }
-        (void)vision_sync_core_copy_field(
-            task.prompt,
-            sizeof(task.prompt),
-            value["prompt"] | ""
-        );
+        for (size_t index = 0; index < *task_count_out; ++index) {
+            if (strcmp(tasks[index].task_id, task.task_id) == 0) {
+                return ESP_ERR_INVALID_ARG;
+            }
+        }
+        const char *prompt = value["prompt"] | "";
+        if (prompt[0] != '\0' &&
+            !vision_sync_core_copy_field(
+                task.prompt,
+                sizeof(task.prompt),
+                prompt
+            )) {
+            return ESP_ERR_INVALID_ARG;
+        }
         tasks[*task_count_out] = task;
         *task_count_out += 1u;
     }
@@ -481,14 +532,19 @@ static esp_err_t vision_sync_run_task(
         s_provider.context,
         &result
     );
-    if (analyze_result != ESP_OK ||
-        !vision_sync_core_result_is_valid(&result)) {
-        (void)camera_vision_fail(
-            vision_sync_failure_code_for_error(analyze_result)
-        );
+    const bool result_is_valid =
+        analyze_result == ESP_OK &&
+        vision_sync_core_result_is_valid(&result);
+    if (!result_is_valid) {
+        const esp_err_t failure_error = analyze_result != ESP_OK
+            ? analyze_result
+            : ESP_ERR_INVALID_ARG;
+        const char *const failure_code =
+            vision_sync_failure_code_for_error(failure_error);
+        (void)camera_vision_fail(failure_code);
         return vision_sync_report_failure(
             task,
-            vision_sync_failure_code_for_error(analyze_result),
+            failure_code,
             session_token,
             device_id,
             base_url
@@ -551,15 +607,16 @@ esp_err_t vision_sync_now(void) {
     char session_token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {0};
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     char base_url[VISION_SYNC_URL_SIZE] = {0};
-    if (vision_sync_prepare(
+    const esp_err_t prepare_result = vision_sync_prepare(
             session_token,
             sizeof(session_token),
             device_id,
             sizeof(device_id),
             base_url,
             sizeof(base_url)
-        ) != ESP_OK) {
-        return ESP_ERR_INVALID_STATE;
+        );
+    if (prepare_result != ESP_OK) {
+        return prepare_result;
     }
     esp_err_t last_result = ESP_OK;
     for (size_t index = 0; index < task_count; ++index) {
@@ -570,6 +627,8 @@ esp_err_t vision_sync_now(void) {
             base_url
         );
         if (last_result != ESP_OK) {
+            // A failed acknowledge or result report leaves the task open on
+            // the platform. Stop this batch so later tasks cannot overtake it.
             break;
         }
     }
@@ -634,3 +693,27 @@ const module_descriptor_t *vision_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef VISION_SYNC_HOST_TESTS
+extern "C" {
+
+bool vision_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void vision_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void vision_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+void vision_sync_host_clear_provider(void) {
+    memset(&s_provider, 0, sizeof(s_provider));
+}
+
+}
+#endif
