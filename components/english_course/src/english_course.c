@@ -463,3 +463,17 @@ const module_descriptor_t *english_course_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef ENGLISH_COURSE_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void english_course_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

@@ -1314,6 +1314,40 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$englishCourseSyncRoot = Join-Path $firmwareRoot 'components/english_course_sync'
+Invoke-HostTest `
+    -Name 'english_course_sync_runtime' `
+    -Sources @(
+        (Join-Path $englishCourseRoot 'src/english_course_core.c')
+        (Join-Path $englishCourseRoot 'src/english_course_sync_core.c')
+        (Join-Path $englishCourseRoot 'src/english_course.c')
+        (Join-Path $englishCourseRoot 'test/stubs/config_store.c')
+        (Join-Path $englishCourseSyncRoot 'src/english_course_sync.cpp')
+        (Join-Path $englishCourseSyncRoot 'test/stubs/english_course_sync_deps.cpp')
+        (Join-Path $englishCourseSyncRoot 'test/test_english_course_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $englishCourseRoot 'include')
+        (Join-Path $englishCourseRoot 'src')
+        (Join-Path $englishCourseSyncRoot 'include')
+        (Join-Path $englishCourseSyncRoot 'test/stubs')
+        (Join-Path $englishCourseRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DENGLISH_COURSE_SYNC_HOST_TESTS=1'
+        '-DENGLISH_COURSE_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_ENGLISH_COURSE_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $playbackRequestRoot = Join-Path $firmwareRoot 'components/playback_request'
 Invoke-HostTest `
     -Name 'playback_request_core' `

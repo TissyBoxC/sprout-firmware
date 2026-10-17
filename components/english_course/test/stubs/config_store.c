@@ -11,6 +11,14 @@ static unsigned char s_blob[ENGLISH_COURSE_TEST_BLOB_SIZE];
 static size_t s_blob_size;
 static bool s_has_blob;
 
+#ifdef __cplusplus
+extern "C"
+#endif
+void english_course_test_store_reset(void) {
+    s_blob_size = 0;
+    s_has_blob = false;
+}
+
 esp_err_t config_store_get_blob(
     const char *key,
     void *output,

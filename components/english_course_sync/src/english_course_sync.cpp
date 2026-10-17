@@ -615,3 +615,23 @@ const module_descriptor_t *english_course_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef ENGLISH_COURSE_SYNC_HOST_TESTS
+extern "C" {
+
+bool english_course_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void english_course_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void english_course_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif
