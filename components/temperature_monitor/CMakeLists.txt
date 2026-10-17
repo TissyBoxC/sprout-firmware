@@ -2,6 +2,7 @@ set(temperature_monitor_sources "")
 
 if(CONFIG_FEATURE_TEMPERATURE_MONITOR)
     list(APPEND temperature_monitor_sources "src/temperature_monitor.c")
+    list(APPEND temperature_monitor_sources "src/temperature_monitor_core.c")
 endif()
 
 idf_component_register(

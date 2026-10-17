@@ -764,6 +764,13 @@ $contractChecks = @(
         Pattern = 'PRIV_REQUIRES[\s\S]*esp_driver_tsens'
     }
     @{
+        Name = 'temperature monitor compiles its classifier'
+        Text = (Get-Content -Raw -LiteralPath (
+            Join-Path $firmwareRoot 'components/temperature_monitor/CMakeLists.txt'
+        ))
+        Pattern = 'list\(APPEND temperature_monitor_sources "src/temperature_monitor_core\.c"\)'
+    }
+    @{
         Name = 'production profile turns on the runtime gate'
         Text = (Get-Content -Raw -LiteralPath (
             Join-Path $firmwareRoot 'sdkconfig.production.defaults'
