@@ -99,5 +99,11 @@ int main() {
     assert(transition.status == CONTENT_DOWNLOAD_STATUS_CANCELED);
     assert(transition.error == CONTENT_DOWNLOADER_ERR_CANCELED);
 
+    content_download_request_t boundary = make_request();
+    boundary.size_bytes = CONTENT_DOWNLOADER_MAX_PACKAGE_BYTES;
+    assert(content_download_state_init(&state, &boundary, 1));
+    boundary.size_bytes = CONTENT_DOWNLOADER_MAX_PACKAGE_BYTES + 1u;
+    assert(!content_download_state_init(&state, &boundary, 1));
+
     return 0;
 }

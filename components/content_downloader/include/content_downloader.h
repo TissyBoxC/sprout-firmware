@@ -19,7 +19,12 @@ extern "C" {
 /** @brief Partition label that stores downloaded packages. */
 #define CONTENT_DOWNLOADER_PARTITION_LABEL "content"
 
-/** @brief Maximum package byte size accepted into the partition. */
+/**
+ * @brief Maximum package byte size accepted into the partition.
+ *
+ * Keep this value aligned with MaxPackageBytes in the platform content domain
+ * and with the size_bytes ceiling in the shared content package contract.
+ */
 #define CONTENT_DOWNLOADER_MAX_PACKAGE_BYTES (768u * 1024u)
 
 /** @brief Maximum PCM frames submitted in one ambient playback item. */
