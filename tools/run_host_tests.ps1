@@ -2089,6 +2089,40 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'touch_input_sync_runtime' `
+    -Sources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchInputRoot 'src/touch_input.c')
+        (Join-Path $touchInputRoot 'test/stubs/config_store.c')
+        (Join-Path $touchInputSyncRoot 'src/touch_input_sync_core.c')
+        (Join-Path $touchInputSyncRoot 'src/touch_input_sync.cpp')
+        (Join-Path $touchInputSyncRoot 'test/stubs/touch_input_sync_deps.cpp')
+        (Join-Path $touchInputSyncRoot 'test/test_touch_input_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $touchInputRoot 'include')
+        (Join-Path $touchInputRoot 'src')
+        (Join-Path $touchInputRoot 'test/stubs')
+        (Join-Path $touchInputSyncRoot 'include')
+        (Join-Path $touchInputSyncRoot 'src')
+        (Join-Path $touchInputSyncRoot 'test/stubs')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_TOUCH_INPUT_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -CCompiledSources @(
+        (Join-Path $touchInputRoot 'src/touch_input_core.c')
+        (Join-Path $touchInputRoot 'src/touch_input.c')
+        (Join-Path $touchInputRoot 'test/stubs/config_store.c')
+        (Join-Path $touchInputSyncRoot 'src/touch_input_sync_core.c')
+    ) `
+    -CCompiler $cCompiler `
+    -Compiler $compiler
+
 $cellularRoot = Join-Path $firmwareRoot 'components/cellular_4g'
 Invoke-HostTest `
     -Name 'cellular_core' `
