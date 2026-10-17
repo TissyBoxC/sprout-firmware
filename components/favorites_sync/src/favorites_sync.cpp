@@ -300,3 +300,23 @@ const module_descriptor_t *favorites_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef FAVORITES_SYNC_HOST_TESTS
+extern "C" {
+
+bool favorites_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void favorites_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void favorites_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif

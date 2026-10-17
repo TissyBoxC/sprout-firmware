@@ -1348,6 +1348,40 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$favoritesSyncRoot = Join-Path $firmwareRoot 'components/favorites_sync'
+Invoke-HostTest `
+    -Name 'favorites_sync_runtime' `
+    -Sources @(
+        (Join-Path $favoritesRoot 'src/favorites_core.c')
+        (Join-Path $favoritesRoot 'src/favorites_sync_core.c')
+        (Join-Path $favoritesRoot 'src/favorites.c')
+        (Join-Path $favoritesSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $favoritesSyncRoot 'src/favorites_sync.cpp')
+        (Join-Path $favoritesSyncRoot 'test/stubs/favorites_sync_deps.cpp')
+        (Join-Path $favoritesSyncRoot 'test/test_favorites_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $favoritesRoot 'include')
+        (Join-Path $favoritesRoot 'src')
+        (Join-Path $favoritesSyncRoot 'include')
+        (Join-Path $favoritesSyncRoot 'test/stubs')
+        (Join-Path $contentLibraryRoot 'include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DFAVORITES_HOST_TESTS=1'
+        '-DFAVORITES_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_FAVORITES_SYNC=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $playbackRequestRoot = Join-Path $firmwareRoot 'components/playback_request'
 Invoke-HostTest `
     -Name 'playback_request_core' `

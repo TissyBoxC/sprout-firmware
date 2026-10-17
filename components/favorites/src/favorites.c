@@ -237,3 +237,17 @@ const module_descriptor_t *favorites_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef FAVORITES_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void favorites_test_reset_ready(void) {
+    s_ready = false;
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif
