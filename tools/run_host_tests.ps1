@@ -1100,6 +1100,39 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$themePackageSyncRoot = Join-Path $firmwareRoot 'components/theme_package_sync'
+Invoke-HostTest `
+    -Name 'theme_package_sync_runtime' `
+    -Sources @(
+        (Join-Path $firmwareRoot 'components/theme_package/src/theme_package.c')
+        (Join-Path $firmwareRoot 'components/theme_package/src/theme_package_core.c')
+        (Join-Path $firmwareRoot 'components/theme_package/src/theme_package_sync_core.c')
+        (Join-Path $themePackageSyncRoot 'src/theme_package_sync.cpp')
+        (Join-Path $themePackageSyncRoot 'test/stubs/config_store.c')
+        (Join-Path $themePackageSyncRoot 'test/stubs/theme_package_sync_deps.cpp')
+        (Join-Path $themePackageSyncRoot 'test/test_theme_package_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $themePackageSyncRoot 'include')
+        (Join-Path $themePackageSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/theme_package/include')
+        (Join-Path $firmwareRoot 'components/theme_package/src')
+        (Join-Path $firmwareRoot 'components/content_library/include')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DTHEME_PACKAGE_SYNC_HOST_TESTS=1'
+        '-DTHEME_PACKAGE_HOST_TESTS=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 Invoke-HostTest `
     -Name 'alarm_reminder_sync_runtime' `
     -Sources @(

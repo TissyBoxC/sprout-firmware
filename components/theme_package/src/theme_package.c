@@ -252,3 +252,19 @@ const module_descriptor_t *theme_package_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef THEME_PACKAGE_HOST_TESTS
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void theme_package_test_reset_ready(void) {
+    s_ready = false;
+    (void)config_store_erase_key(THEME_PACKAGE_STORE_KEY);
+    theme_package_core_init(&s_core);
+}
+
+#ifdef __cplusplus
+}
+#endif
+#endif

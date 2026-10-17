@@ -118,11 +118,16 @@ static esp_err_t theme_package_sync_fetch(JsonDocument *document) {
         return ESP_ERR_INVALID_STATE;
     }
     char base_url[THEME_PACKAGE_SYNC_URL_SIZE] = {0};
-    if (device_binding_client_get_platform_base_url(
+    const esp_err_t base_url_result =
+        device_binding_client_get_platform_base_url(
             base_url,
             sizeof(base_url)
-        ) != ESP_OK ||
-        strncmp(base_url, "https://", 8) != 0) {
+        );
+    if (base_url_result != ESP_OK) {
+        memset(session_token, 0, sizeof(session_token));
+        return base_url_result;
+    }
+    if (strncmp(base_url, "https://", 8) != 0) {
         memset(session_token, 0, sizeof(session_token));
         return ESP_ERR_INVALID_ARG;
     }
@@ -357,3 +362,23 @@ const module_descriptor_t *theme_package_sync_module_descriptor(void) {
     };
     return &descriptor;
 }
+
+#ifdef THEME_PACKAGE_SYNC_HOST_TESTS
+extern "C" {
+
+bool theme_package_sync_host_is_ready(void) {
+    return s_ready;
+}
+
+void theme_package_sync_host_reset_module(void) {
+    s_ready = false;
+    s_stop = false;
+    s_task_handle = NULL;
+}
+
+void theme_package_sync_host_set_stop(bool stop) {
+    s_stop = stop;
+}
+
+}
+#endif
