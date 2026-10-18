@@ -20,27 +20,28 @@ bool ota_rollback_version_allowed(
     }
     return comparison < 0 && rollback_allowed && current_image_invalid;
 }
-
 bool ota_rollback_boot_count_exceeded(
     uint32_t boot_count,
     uint32_t maximum_attempts
 ) {
     return maximum_attempts > 0 && boot_count >= maximum_attempts;
 }
-
-ota_rollback_action_t ota_rollback_boot_action(
+ota_rollback_action_t ota_rollback_health_action(
     bool pending_verify,
-    bool healthy,
-    uint32_t boot_count,
+    bool health_probe_succeeded,
+    uint32_t failed_probe_count,
     uint32_t maximum_attempts
 ) {
     if (!pending_verify) {
         return OTA_ROLLBACK_ACTION_NONE;
     }
-    if (healthy) {
+    if (health_probe_succeeded) {
         return OTA_ROLLBACK_ACTION_MARK_VALID;
     }
-    return ota_rollback_boot_count_exceeded(boot_count, maximum_attempts)
+    return ota_rollback_boot_count_exceeded(
+               failed_probe_count,
+               maximum_attempts
+           )
                ? OTA_ROLLBACK_ACTION_REBOOT_INVALID
                : OTA_ROLLBACK_ACTION_NONE;
 }

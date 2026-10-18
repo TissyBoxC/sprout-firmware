@@ -8,17 +8,22 @@
 extern "C" {
 #endif
 
-#define OTA_MANIFEST_SCHEMA_VERSION "1"
+#define OTA_MANIFEST_SCHEMA_VERSION "1.0.0"
+#define OTA_MANIFEST_SIGNATURE_PAYLOAD_VERSION "2"
+#define OTA_MANIFEST_SCHEMA_SIZE 16
 #define OTA_MANIFEST_RELEASE_ID_SIZE 65
 #define OTA_MANIFEST_VERSION_SIZE 32
 #define OTA_MANIFEST_HARDWARE_SIZE 32
 #define OTA_MANIFEST_CHANNEL_SIZE 16
-#define OTA_MANIFEST_URL_SIZE 512
+#define OTA_MANIFEST_ARTIFACT_KEY_SIZE 513
+#define OTA_MANIFEST_URL_SIZE 513
 #define OTA_MANIFEST_HASH_SIZE 65
 #define OTA_MANIFEST_KEY_ID_SIZE 65
 #define OTA_MANIFEST_SIGNATURE_SIZE 513
 #define OTA_MANIFEST_TIME_SIZE 32
 #define OTA_MANIFEST_SIGNATURE_ALGORITHM_SIZE 16
+#define OTA_MANIFEST_PAYLOAD_VERSION_SIZE 8
+#define OTA_MANIFEST_MAX_ARTIFACT_SIZE_BYTES 4194304ULL
 
 /** @brief Stable validation errors shared by firmware OTA paths. */
 typedef enum {
@@ -31,9 +36,11 @@ typedef enum {
     OTA_MANIFEST_ERR_HARDWARE_REVISION,
     OTA_MANIFEST_ERR_CHANNEL,
     OTA_MANIFEST_ERR_ARTIFACT_URL,
+    OTA_MANIFEST_ERR_ARTIFACT_KEY,
     OTA_MANIFEST_ERR_SHA256,
     OTA_MANIFEST_ERR_SIZE,
     OTA_MANIFEST_ERR_SIGNATURE,
+    OTA_MANIFEST_ERR_SIGNATURE_PAYLOAD_VERSION,
     OTA_MANIFEST_ERR_PUBLISHED_AT,
     OTA_MANIFEST_ERR_MIN_SOURCE_VERSION,
     OTA_MANIFEST_ERR_DUPLICATE_FIELD,
@@ -55,13 +62,16 @@ typedef struct {
     char firmware_version[OTA_MANIFEST_VERSION_SIZE];
     char hardware_revision[OTA_MANIFEST_HARDWARE_SIZE];
     char channel[OTA_MANIFEST_CHANNEL_SIZE];
+    char artifact_key[OTA_MANIFEST_ARTIFACT_KEY_SIZE];
     char artifact_url[OTA_MANIFEST_URL_SIZE];
     char sha256[OTA_MANIFEST_HASH_SIZE];
     uint64_t size_bytes;
     char signature_key_id[OTA_MANIFEST_KEY_ID_SIZE];
     char signature_algorithm[OTA_MANIFEST_SIGNATURE_ALGORITHM_SIZE];
+    char signature_payload_version[OTA_MANIFEST_PAYLOAD_VERSION_SIZE];
     char signature[OTA_MANIFEST_SIGNATURE_SIZE];
     bool rollback_allowed;
+    bool mandatory;
     char published_at[OTA_MANIFEST_TIME_SIZE];
     char min_source_version[OTA_MANIFEST_VERSION_SIZE];
 } ota_manifest_t;
@@ -78,13 +88,16 @@ typedef struct {
     const char *version;
     const char *hardware_revision;
     const char *channel;
+    const char *artifact_key;
     const char *artifact_url;
     const char *sha256;
     uint64_t size_bytes;
     const char *signature_key_id;
     const char *signature_algorithm;
+    const char *signature_payload_version;
     const char *signature;
     bool rollback_allowed;
+    bool mandatory;
     const char *published_at;
     const char *min_source_version;
 } ota_platform_release_t;
@@ -98,11 +111,10 @@ ota_manifest_error_t ota_manifest_parse(
 
 /** @brief Normalize a platform device release into the strict manifest.
  *
- * Only the non-security metadata is defaulted: an absent min source version
- * becomes "0.0.0" and an absent publish time becomes `fallback_published_at`.
- * The detached `signature` and `signature_key_id` are mandatory security
- * fields and are never substituted with the artifact hash. The function fails
- * closed on any missing or malformed security field.
+ * Only the non-security min source version is defaulted to "0.0.0". The
+ * detached signature, key id, artifact key, mandatory flag, and canonical
+ * signature payload version are required and never substituted. An absent
+ * publish time may use `fallback_published_at` for unsigned audit metadata.
  */
 ota_manifest_error_t ota_manifest_from_platform_release(
     const ota_platform_release_t *release,
@@ -111,12 +123,13 @@ ota_manifest_error_t ota_manifest_from_platform_release(
 );
 
 /**
- * @brief Verify one Ed25519 detached signature over the artifact digest.
+ * @brief Verify one Ed25519 detached signature over the canonical policy.
  *
  * The keyring is a JSON object mapping key IDs to canonical standard Base64
- * encoded 32-byte Ed25519 public keys. The signed message is the canonical
- * lowercase SHA-256 hex digest encoded as 64 ASCII bytes. Unknown keys and
- * malformed or non-canonical signatures fail closed.
+ * encoded 32-byte Ed25519 public keys. The signed message is the exact
+ * schema_version=2 field sequence defined by the shared OTA
+ * contract. `published_at` is unsigned audit metadata and is excluded.
+ * Unknown keys and malformed or non-canonical signatures fail closed.
  */
 ota_manifest_error_t ota_manifest_verify_signature(
     const ota_manifest_t *manifest,

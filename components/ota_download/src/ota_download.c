@@ -35,7 +35,7 @@
 #define CONFIG_OTA_DOWNLOAD_MAX_RETRIES 3
 #endif
 
-#define OTA_DOWNLOAD_MAX_IMAGE_BYTES (8ULL * 1024ULL * 1024ULL)
+#define OTA_DOWNLOAD_MAX_IMAGE_BYTES (4ULL * 1024ULL * 1024ULL)
 
 typedef struct {
     esp_ota_handle_t ota_handle;

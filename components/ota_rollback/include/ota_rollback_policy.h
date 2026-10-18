@@ -25,11 +25,22 @@ bool ota_rollback_boot_count_exceeded(
     uint32_t maximum_attempts
 );
 
-ota_rollback_action_t ota_rollback_boot_action(
+ota_rollback_action_t ota_rollback_health_action(
     bool pending_verify,
-    bool healthy,
-    uint32_t boot_count,
+    bool health_probe_succeeded,
+    uint32_t failed_probe_count,
     uint32_t maximum_attempts
+);
+
+/**
+ * Decide whether a failed platform probe is authoritative enough to consume
+ * the rollback budget. Transport failures and transient service responses do
+ * not; authentication, contract, and permanent request failures do.
+ */
+bool ota_rollback_health_probe_failure_is_definitive(
+    bool request_completed,
+    int http_status_code,
+    bool response_invalid
 );
 
 #ifdef __cplusplus

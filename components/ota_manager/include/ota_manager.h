@@ -50,15 +50,6 @@ esp_err_t ota_manager_handle_firmware_update_command(
     const char *release_id
 );
 
-/**
- * @brief Confirm the currently running OTA image after a health check.
- *
- * This must only be called from the image that was selected by a previous OTA
- * install. The call is idempotent and clears the pending release only after
- * ESP-IDF has accepted the image as valid.
- */
-esp_err_t ota_manager_mark_running_image_healthy(void);
-
 /** @brief Return the removable-module descriptor for ota_manager. */
 const module_descriptor_t *ota_manager_module_descriptor(void);
 

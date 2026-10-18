@@ -18,13 +18,14 @@ static const char *const TAG = "ota_rollback";
 
 static bool ota_rollback_ready;
 static bool ota_rollback_pending_verify;
-static uint32_t ota_rollback_boot_count;
-#define OTA_ROLLBACK_BOOT_COUNT_KEY "ota_boot_count"
+static uint32_t ota_rollback_failed_probe_count;
+#define OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY "ota_probe_fails"
+CONFIG_STORE_KEY_ASSERT(OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY);
 
-static uint32_t ota_rollback_read_boot_count(void) {
+static uint32_t ota_rollback_read_failed_probe_count(void) {
     char value[16] = {0};
     if (config_store_get_string(
-            OTA_ROLLBACK_BOOT_COUNT_KEY,
+            OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY,
             value,
             sizeof(value)
         ) != ESP_OK) {
@@ -37,10 +38,13 @@ static uint32_t ota_rollback_read_boot_count(void) {
     return (uint32_t)parsed;
 }
 
-static esp_err_t ota_rollback_write_boot_count(uint32_t value) {
+static esp_err_t ota_rollback_write_failed_probe_count(uint32_t value) {
     char encoded[16] = {0};
     snprintf(encoded, sizeof(encoded), "%lu", (unsigned long)value);
-    return config_store_set_string(OTA_ROLLBACK_BOOT_COUNT_KEY, encoded);
+    return config_store_set_string(
+        OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY,
+        encoded
+    );
 }
 
 esp_err_t ota_rollback_init(void) {
@@ -67,19 +71,15 @@ esp_err_t ota_rollback_init(void) {
             image_state == ESP_OTA_IMG_PENDING_VERIFY;
     }
     if (ota_rollback_pending_verify) {
-        ota_rollback_boot_count = ota_rollback_read_boot_count();
-        if (ota_rollback_boot_count < UINT32_MAX) {
-            ++ota_rollback_boot_count;
-        }
-        const esp_err_t count_result = ota_rollback_write_boot_count(
-            ota_rollback_boot_count
-        );
-        if (count_result != ESP_OK) {
-            return count_result;
-        }
+        // Reboots and slow network startup are not health failures. The
+        // budget is consumed only by authenticated platform probes.
+        ota_rollback_failed_probe_count =
+            ota_rollback_read_failed_probe_count();
     } else {
-        ota_rollback_boot_count = 0;
-        (void)config_store_erase_key(OTA_ROLLBACK_BOOT_COUNT_KEY);
+        ota_rollback_failed_probe_count = 0;
+        (void)config_store_erase_key(
+            OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY
+        );
     }
     ota_rollback_ready = true;
     return ESP_OK;
@@ -89,8 +89,8 @@ bool ota_rollback_is_pending_verify(void) {
     return ota_rollback_pending_verify;
 }
 
-uint32_t ota_rollback_get_boot_count(void) {
-    return ota_rollback_boot_count;
+uint32_t ota_rollback_get_failed_probe_count(void) {
+    return ota_rollback_failed_probe_count;
 }
 
 esp_err_t ota_rollback_mark_valid(void) {
@@ -100,18 +100,30 @@ esp_err_t ota_rollback_mark_valid(void) {
     const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
     if (result == ESP_OK) {
         ota_rollback_pending_verify = false;
-        ota_rollback_boot_count = 0;
-        (void)config_store_erase_key(OTA_ROLLBACK_BOOT_COUNT_KEY);
+        ota_rollback_failed_probe_count = 0;
+        (void)config_store_erase_key(
+            OTA_ROLLBACK_FAILED_PROBE_COUNT_KEY
+        );
     }
     return result;
 }
 
-esp_err_t ota_rollback_reboot_if_unhealthy(void) {
+esp_err_t ota_rollback_health_probe_failed(void) {
     if (!ota_rollback_ready || !ota_rollback_pending_verify) {
         return ESP_OK;
     }
+    if (ota_rollback_failed_probe_count < UINT32_MAX) {
+        ++ota_rollback_failed_probe_count;
+    }
+    const esp_err_t persist_result =
+        ota_rollback_write_failed_probe_count(
+            ota_rollback_failed_probe_count
+        );
+    if (persist_result != ESP_OK) {
+        return persist_result;
+    }
     if (!ota_rollback_boot_count_exceeded(
-            ota_rollback_boot_count,
+            ota_rollback_failed_probe_count,
             CONFIG_OTA_ROLLBACK_MAX_BOOT_ATTEMPTS
         )) {
         return ESP_OK;

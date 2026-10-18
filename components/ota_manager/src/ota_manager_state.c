@@ -82,19 +82,75 @@ bool ota_manager_state_transition(
     return true;
 }
 
-void ota_manager_state_set_progress(
+bool ota_manager_state_set_progress(
     ota_manager_state_t *state,
     uint64_t received_bytes,
     uint64_t total_bytes
 ) {
     if (state == NULL) {
-        return;
+        return false;
     }
     state->received_bytes = received_bytes;
     state->total_bytes = total_bytes;
     state->last_event = OTA_MANAGER_EVENT_PROGRESS;
     ++state->sequence;
     state->event_pending = true;
+    return true;
+}
+
+bool ota_manager_state_begin_validation(
+    ota_manager_state_t *state,
+    uint64_t received_bytes,
+    uint64_t total_bytes
+) {
+    if (state == NULL ||
+        state->stage != OTA_MANAGER_STAGE_DOWNLOADING) {
+        return false;
+    }
+    state->stage = OTA_MANAGER_STAGE_VALIDATING;
+    state->received_bytes = received_bytes;
+    state->total_bytes = total_bytes;
+    state->last_event = OTA_MANAGER_EVENT_PROGRESS;
+    ++state->sequence;
+    state->event_pending = true;
+    return true;
+}
+
+bool ota_manager_state_begin_install(
+    ota_manager_state_t *state,
+    bool manifest_validated,
+    bool signature_validated,
+    bool device_policy_passed,
+    bool artifact_download_validated
+) {
+    if (!ota_manager_state_can_install_release(
+            state,
+            manifest_validated,
+            signature_validated,
+            device_policy_passed,
+            artifact_download_validated
+        )) {
+        return false;
+    }
+    state->stage = OTA_MANAGER_STAGE_INSTALLING;
+    state->last_event = OTA_MANAGER_EVENT_VALIDATED;
+    ++state->sequence;
+    state->event_pending = true;
+    return true;
+}
+
+bool ota_manager_state_begin_pending_verify(
+    ota_manager_state_t *state
+) {
+    if (state == NULL ||
+        state->stage != OTA_MANAGER_STAGE_INSTALLING) {
+        return false;
+    }
+    state->stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
+    state->last_event = OTA_MANAGER_EVENT_INSTALLED;
+    ++state->sequence;
+    state->event_pending = true;
+    return true;
 }
 
 ota_manager_event_t ota_manager_state_consume_event(
@@ -111,6 +167,32 @@ bool ota_manager_state_can_install(const ota_manager_state_t *state) {
     return state != NULL &&
         state->stage == OTA_MANAGER_STAGE_VALIDATING &&
         state->last_event == OTA_MANAGER_EVENT_VALIDATED;
+}
+
+bool ota_manager_state_can_mark_healthy(
+    const ota_manager_state_t *state,
+    bool platform_status_ready,
+    bool pending_transaction_trusted
+) {
+    return state != NULL && platform_status_ready &&
+        pending_transaction_trusted &&
+        state->stage == OTA_MANAGER_STAGE_PENDING_VERIFY;
+}
+
+bool ota_manager_state_can_install_release(
+    const ota_manager_state_t *state,
+    bool manifest_validated,
+    bool signature_validated,
+    bool device_policy_passed,
+    bool artifact_download_validated
+) {
+    return state != NULL &&
+        state->stage == OTA_MANAGER_STAGE_VALIDATING &&
+        state->last_event == OTA_MANAGER_EVENT_PROGRESS &&
+        manifest_validated &&
+        signature_validated &&
+        device_policy_passed &&
+        artifact_download_validated;
 }
 
 const char *ota_manager_stage_name(ota_manager_stage_t stage) {

@@ -482,7 +482,7 @@ if ($null -ne $python) {
         Pop-Location
     }
 } else {
-    Write-Host 'Skipping OTA signing-to-firmware verification: python was not found.'
+    throw 'OTA signing-to-firmware verification requires Python.'
 }
 
 $otaDownloadRoot = Join-Path $firmwareRoot 'components/ota_download'
@@ -543,6 +543,7 @@ Invoke-HostTest `
     -Name 'ota_rollback_policy' `
     -Sources @(
         (Join-Path $otaRollbackRoot 'src/ota_rollback_policy.c')
+        (Join-Path $otaRollbackRoot 'src/ota_rollback_health_policy.c')
         (Join-Path $otaValidateRoot 'src/ota_manifest.c')
         (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
         (Join-Path $ed25519VerifyRoot 'src/monocypher.c')
@@ -558,6 +559,7 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -CCompiledSources @(
         (Join-Path $otaRollbackRoot 'src/ota_rollback_policy.c')
+        (Join-Path $otaRollbackRoot 'src/ota_rollback_health_policy.c')
         (Join-Path $otaValidateRoot 'src/ota_manifest.c')
         (Join-Path $ed25519VerifyRoot 'src/ed25519_verify.c')
         (Join-Path $ed25519VerifyRoot 'src/monocypher.c')

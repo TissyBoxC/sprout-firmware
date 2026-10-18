@@ -16,6 +16,7 @@ sdkconfig.*
 # Host-test stubs must remain trackable despite the generated-config rule above.
 !components/*/test/stubs/sdkconfig.h
 sdkconfig
+sdkconfig.secure-version.generated
 dependencies.lock
 managed_components/
 build/

@@ -10,6 +10,18 @@
 # actually active in eFuse. Development and factory images leave this off.
 CONFIG_SPROUT_PRODUCTION_BUILD=y
 
+# A newly installed OTA image boots in PENDING_VERIFY. The firmware marks it
+# valid only after authenticated platform confirmation; repeated failed boots
+# return to the previous slot instead of repeatedly running a broken image.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Reject bootloader-level version downgrades. Manufacturing burns the secure
+# version through the release pipeline after validating unsigned fuses. The
+# secure version binds every release to an explicit, traceable integer in
+# secure_version.txt; CI rejects a release that reuses an older value.
+CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y
+CONFIG_BOOTLOADER_APP_SECURE_VERSION=1
+
 # Secure Boot V2 (RSA) so the bootloader only runs signed images.
 CONFIG_SECURE_BOOT=y
 CONFIG_SECURE_BOOT_V2_ENABLED=y

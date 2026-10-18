@@ -27,6 +27,8 @@ jobs:
       - name: Detect version and existing release
         id: detect
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
@@ -36,8 +38,46 @@ jobs:
           fi
           tag="v$version"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            # A tag without a complete release is not a successful publish.
+            # Verify every immutable asset and its checksum before skipping.
+            if [[ -z "${GH_TOKEN:-}" ]]; then
+              echo "GH_TOKEN is required to verify the existing immutable release." >&2
+              exit 1
+            fi
+            if ! gh release view "$tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --json assets \
+                --jq '.assets[].name' > "$RUNNER_TEMP/existing-assets.txt"; then
+              echo "Tag $tag exists but its GitHub Release is missing or unreadable." >&2
+              exit 1
+            fi
+            if ! grep -qx 'SHA256SUMS' "$RUNNER_TEMP/existing-assets.txt"; then
+              echo "Existing release $tag is missing SHA256SUMS." >&2
+              exit 1
+            fi
+            expected_assets=(
+              "sprout-firmware-$tag.bin"
+              "bootloader.bin"
+              "partitions.bin"
+              "firmware.elf"
+              "firmware.map"
+              "SHA256SUMS"
+            )
+            for asset in "${expected_assets[@]}"; do
+              if ! grep -qx "$asset" "$RUNNER_TEMP/existing-assets.txt"; then
+                echo "Existing release $tag is missing required asset $asset." >&2
+                exit 1
+              fi
+            done
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir "$RUNNER_TEMP/existing-release"
+            (
+              cd "$RUNNER_TEMP/existing-release"
+              sha256sum -c SHA256SUMS
+            )
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Release $tag already exists; skipping."
+            echo "Existing release $tag and all assets are intact; skipping publication."
             exit 0
           fi
           {
@@ -51,6 +91,24 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+
+      - name: Verify secure-version increment
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_revision="$(
+            git describe --tags --abbrev=0 \
+              --match 'v[0-9]*' 2>/dev/null || true
+          )"
+          if [[ -n "$previous_revision" ]]; then
+            python tools/verify_secure_version_lifecycle.py \
+              --root . \
+              --previous-revision "$previous_revision" \
+              --require-increment
+          else
+            python tools/verify_secure_version_lifecycle.py --root .
+          fi
 
       - name: Cache PlatformIO
         if: steps.detect.outputs.should_release == 'true'
@@ -86,7 +144,56 @@ jobs:
         if: steps.detect.outputs.should_release == 'true'
         env:
           SPROUT_SECURE_BOOT_SIGNING_KEY: ${{ runner.temp }}/secure_boot_signing_key.pem
-        run: platformio run -e esp32-s3-n16r8-production
+          SPROUT_OTA_TRUSTED_KEYS_JSON: ${{ secrets.SPROUT_OTA_TRUSTED_KEYS_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPROUT_OTA_TRUSTED_KEYS_JSON:-}" ]]; then
+            echo "Missing required secret SPROUT_OTA_TRUSTED_KEYS_JSON." >&2
+            echo "Add the trusted firmware-signing Ed25519 public keyring before releasing." >&2
+            exit 1
+          fi
+          python -c '
+          import base64
+          import binascii
+          import json
+          import os
+          import re
+          import sys
+
+          encoded = os.environ["SPROUT_OTA_TRUSTED_KEYS_JSON"]
+          try:
+              keyring = json.loads(encoded)
+          except json.JSONDecodeError as error:
+              sys.exit(f"Invalid SPROUT_OTA_TRUSTED_KEYS_JSON: {error}")
+          if not isinstance(keyring, dict) or not keyring:
+              sys.exit("SPROUT_OTA_TRUSTED_KEYS_JSON must be a non-empty JSON object")
+          pattern = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+          for key_id, public_key in keyring.items():
+              if (
+                  not isinstance(key_id, str)
+                  or pattern.fullmatch(key_id) is None
+                  or not isinstance(public_key, str)
+              ):
+                  sys.exit("SPROUT_OTA_TRUSTED_KEYS_JSON has an invalid key entry")
+              try:
+                  raw = base64.b64decode(public_key, validate=True)
+              except (binascii.Error, ValueError):
+                  sys.exit(f"OTA public key {key_id!r} is not canonical Base64")
+              if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != public_key:
+                  sys.exit(f"OTA public key {key_id!r} must encode exactly 32 bytes")
+          '
+          platformio run -e esp32-s3-n16r8-production
+
+      - name: Verify generated production OTA hardening
+        if: steps.detect.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python test/test_production_ota_config.py
+          python tools/verify_secure_version_lifecycle.py \
+            --root . \
+            --generated-config sdkconfig.esp32-s3-n16r8-production
 
       - name: Generate Chinese release notes
         if: steps.detect.outputs.should_release == 'true'

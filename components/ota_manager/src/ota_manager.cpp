@@ -30,6 +30,7 @@ extern "C" {
 #include "ota_download.h"
 #include "ota_manager_event_sequence.h"
 #include "ota_manifest.h"
+#include "ota_rollback_policy.h"
 #include "ota_rollback.h"
 #include "ota_validate.h"
 #include "sdkconfig.h"
@@ -48,9 +49,11 @@ extern "C" {
 #define OTA_MANAGER_SESSION_TOKEN_SIZE DEVICE_BINDING_SESSION_TOKEN_SIZE
 #define OTA_MANAGER_PENDING_RELEASE_KEY "ota_pending"
 #define OTA_MANAGER_APPLIED_RELEASE_KEY "ota_applied"
+#define OTA_MANAGER_CANDIDATE_RELEASE_KEY "ota_candidate"
 #define OTA_MANAGER_PENDING_SUCCESS_KEY "ota_ok_pending"
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_PENDING_RELEASE_KEY);
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_APPLIED_RELEASE_KEY);
+CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_CANDIDATE_RELEASE_KEY);
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_PENDING_SUCCESS_KEY);
 
 static const char *const TAG = "ota_manager";
@@ -111,6 +114,10 @@ static esp_err_t ota_manager_load_pending_release(
     char *output,
     size_t output_size
 );
+
+static bool ota_manager_has_trusted_pending_release(void);
+
+static esp_err_t ota_manager_mark_running_image_healthy(void);
 
 static void ota_manager_report_previous_rollback(void);
 
@@ -518,13 +525,17 @@ static esp_err_t ota_manager_fetch_manifest(
         .version = version,
         .hardware_revision = release_value["hardware_revision"] | "",
         .channel = release_value["channel"] | "",
+        .artifact_key = release_value["artifact_key"] | "",
         .artifact_url = release_value["artifact_url"] | "",
         .sha256 = release_value["sha256"] | "",
         .size_bytes = release_value["size_bytes"] | (uint64_t)0,
         .signature_key_id = release_value["signature_key_id"] | "",
         .signature_algorithm = release_value["signature_algorithm"] | "",
+        .signature_payload_version =
+            release_value["signature_payload_version"] | "",
         .signature = release_value["signature"] | "",
         .rollback_allowed = release_value["rollback_allowed"] | false,
+        .mandatory = release_value["mandatory"] | false,
         .published_at = published_at,
         .min_source_version = release_value["min_source_version"] | "",
     };
@@ -684,16 +695,54 @@ static esp_err_t ota_manager_poll_update(void) {
         return ESP_ERR_INVALID_SIZE;
     }
     JsonDocument response;
+    int http_status_code = 0;
     result = ota_manager_platform_request(
         "GET",
         path,
         NULL,
         session_token,
         &response,
-        NULL
+        &http_status_code
     );
-    if (ota_rollback_is_pending_verify()) {
-        (void)ota_manager_mark_running_image_healthy();
+    if (result != ESP_OK && result != ESP_ERR_NOT_FOUND &&
+        ota_rollback_health_probe_failure_is_definitive(
+            http_status_code >= 100,
+            http_status_code,
+            http_status_code >= 200 && http_status_code < 300
+        )) {
+        // DNS, TLS, timeout, and offline failures never reach the platform and
+        // therefore do not consume the rollback budget. Only a completed HTTP
+        // exchange with a definitive contract or authentication failure does.
+        const esp_err_t rollback_result =
+            ota_rollback_health_probe_failed();
+        if (rollback_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "failed OTA health probe and rollback check: %s",
+                esp_err_to_name(rollback_result)
+            );
+        }
+    }
+    if (result == ESP_OK &&
+        ota_manager_state_can_mark_healthy(
+            &ota_manager_state,
+            true,
+            ota_manager_has_trusted_pending_release()
+        )) {
+        esp_err_t healthy_result = ota_manager_mark_running_image_healthy();
+        if (healthy_result == ESP_ERR_INVALID_STATE) {
+            ESP_LOGE(
+                TAG,
+                "pending OTA transaction is incomplete; keeping image pending"
+            );
+            healthy_result = ESP_OK;
+        } else if (healthy_result != ESP_OK) {
+            ESP_LOGW(
+                TAG,
+                "failed to confirm pending image: %s",
+                esp_err_to_name(healthy_result)
+            );
+        }
     }
     const esp_err_t command_result =
         ota_manager_poll_runtime_firmware_update(session_token);
@@ -727,6 +776,18 @@ static esp_err_t ota_manager_record_pending_release(
         OTA_MANAGER_PENDING_RELEASE_KEY,
         release_id
     );
+}
+
+static bool ota_manager_has_trusted_pending_release(void) {
+    char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    const esp_err_t result = config_store_get_string(
+        OTA_MANAGER_PENDING_RELEASE_KEY,
+        release_id,
+        sizeof(release_id)
+    );
+    const bool trusted = result == ESP_OK && release_id[0] != '\0';
+    memset(release_id, 0, sizeof(release_id));
+    return trusted;
 }
 
 static esp_err_t ota_manager_clear_pending_release(void) {
@@ -777,6 +838,126 @@ static esp_err_t ota_manager_record_applied_release(
         OTA_MANAGER_APPLIED_RELEASE_KEY,
         release_id
     );
+}
+
+static esp_err_t ota_manager_record_candidate_release(
+    const char *release_id
+) {
+    if (release_id == NULL || release_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return config_store_set_string(
+        OTA_MANAGER_CANDIDATE_RELEASE_KEY,
+        release_id
+    );
+}
+
+static esp_err_t ota_manager_clear_candidate_release(void) {
+    return config_store_erase_key(OTA_MANAGER_CANDIDATE_RELEASE_KEY);
+}
+
+static esp_err_t ota_manager_finalize_candidate_release(
+    char *release_id_out,
+    size_t output_size
+) {
+    if (release_id_out == NULL || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    const esp_err_t read_result = config_store_get_string(
+        OTA_MANAGER_CANDIDATE_RELEASE_KEY,
+        release_id,
+        sizeof(release_id)
+    );
+    if (read_result == CONFIG_STORE_ERR_NOT_FOUND ||
+        (read_result == ESP_OK && release_id[0] == '\0')) {
+        return ESP_OK;
+    }
+    if (read_result != ESP_OK) {
+        memset(release_id, 0, sizeof(release_id));
+        return read_result;
+    }
+    const esp_err_t persist_result =
+        ota_manager_record_applied_release(release_id);
+    if (persist_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "cannot finalize OTA candidate %s: %s",
+            release_id,
+            esp_err_to_name(persist_result)
+        );
+        memset(release_id, 0, sizeof(release_id));
+        return persist_result;
+    }
+    snprintf(
+        ota_manager_last_release_id,
+        sizeof(ota_manager_last_release_id),
+        "%s",
+        release_id
+    );
+    if (ota_rollback_is_pending_verify()) {
+        snprintf(release_id_out, output_size, "%s", release_id);
+        memset(release_id, 0, sizeof(release_id));
+        return ESP_OK;
+    }
+    // Persist the terminal event before removing the install transaction.
+    // A power loss after this point is recovered by the outbox poll, while a
+    // crash before this point still has the candidate transaction to replay.
+    const esp_err_t queue_result = config_store_set_string(
+        OTA_MANAGER_PENDING_SUCCESS_KEY,
+        release_id
+    );
+    if (queue_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "cannot queue finalized OTA candidate %s: %s",
+            release_id,
+            esp_err_to_name(queue_result)
+        );
+        memset(release_id, 0, sizeof(release_id));
+        return queue_result;
+    }
+    const esp_err_t clear_candidate_result =
+        ota_manager_clear_candidate_release();
+    if (clear_candidate_result != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "failed to clear finalized OTA candidate: %s",
+            esp_err_to_name(clear_candidate_result)
+        );
+    }
+    const esp_err_t clear_pending_result =
+        ota_manager_clear_pending_release();
+    if (clear_pending_result != ESP_OK) {
+        ESP_LOGW(
+            TAG,
+            "failed to clear finalized OTA transaction: %s",
+            esp_err_to_name(clear_pending_result)
+        );
+    }
+    snprintf(release_id_out, output_size, "%s", release_id);
+    memset(release_id, 0, sizeof(release_id));
+    return ESP_OK;
+}
+
+static esp_err_t ota_manager_recover_candidate_release(void) {
+    char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    const esp_err_t result = ota_manager_finalize_candidate_release(
+        release_id,
+        sizeof(release_id)
+    );
+    if (result == ESP_OK && release_id[0] != '\0' &&
+        !ota_rollback_is_pending_verify()) {
+        if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+            ota_manager_state.stage = OTA_MANAGER_STAGE_VALID;
+            ota_manager_state.last_event = OTA_MANAGER_EVENT_INSTALLED;
+            ota_manager_snapshot.pending_reboot = false;
+            ota_manager_apply_state_locked();
+            xSemaphoreGive(ota_manager_mutex);
+        }
+    }
+    memset(release_id, 0, sizeof(release_id));
+    return result;
 }
 
 static void ota_manager_report_previous_rollback(void) {
@@ -905,28 +1086,65 @@ static esp_err_t ota_manager_poll_runtime_firmware_update(
             "%s",
             release_id
         );
-        return ota_manager_handle_firmware_update_command(
+        const esp_err_t result =
+            ota_manager_handle_firmware_update_command(
             command.id,
             command.release_id
         );
+        return result;
     }
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t ota_manager_mark_running_image_healthy(void) {
-    if (!ota_manager_ready || !ota_rollback_is_pending_verify()) {
+static esp_err_t ota_manager_mark_running_image_healthy(void) {
+    if (!ota_manager_ready) {
         return ESP_OK;
     }
+    const esp_err_t recovery_result =
+        ota_manager_recover_candidate_release();
+    if (recovery_result != ESP_OK &&
+        recovery_result != ESP_ERR_INVALID_STATE) {
+        return recovery_result;
+    }
+    if (!ota_rollback_is_pending_verify()) {
+        return recovery_result;
+    }
     char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
-    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (ota_manager_snapshot.release_id[0] != '\0') {
         snprintf(
             release_id,
             sizeof(release_id),
             "%s",
             ota_manager_snapshot.release_id
         );
-        xSemaphoreGive(ota_manager_mutex);
     }
+    xSemaphoreGive(ota_manager_mutex);
+    if (release_id[0] == '\0') {
+        const esp_err_t load_result = ota_manager_load_pending_release(
+            release_id,
+            sizeof(release_id)
+        );
+        if (load_result != ESP_OK || release_id[0] == '\0') {
+            memset(release_id, 0, sizeof(release_id));
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+
+    const esp_err_t candidate_result =
+        ota_manager_record_candidate_release(release_id);
+    if (candidate_result != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "cannot persist OTA candidate; image remains pending: %s",
+            esp_err_to_name(candidate_result)
+        );
+        memset(release_id, 0, sizeof(release_id));
+        return candidate_result;
+    }
+
     ota_manager_event_log_count = 0;
     memset(
         ota_manager_event_log,
@@ -939,11 +1157,30 @@ esp_err_t ota_manager_mark_running_image_healthy(void) {
     }
     const esp_err_t result = ota_rollback_mark_valid();
     if (result != ESP_OK) {
+        // The image is still pending and the candidate key is the durable
+        // transaction record needed to retry this operation after restart.
+        // Clearing it here would leave a pending image with no recovery path.
+        memset(release_id, 0, sizeof(release_id));
         return result;
     }
-    if (release_id[0] != '\0') {
-        (void)ota_manager_record_applied_release(release_id);
+    char finalized_release[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    const esp_err_t finalize_result =
+        ota_manager_finalize_candidate_release(
+            finalized_release,
+            sizeof(finalized_release)
+        );
+    if (finalize_result != ESP_OK) {
+        memset(release_id, 0, sizeof(release_id));
+        memset(finalized_release, 0, sizeof(finalized_release));
+        return finalize_result;
     }
+    snprintf(
+        release_id,
+        sizeof(release_id),
+        "%s",
+        finalized_release
+    );
+    memset(finalized_release, 0, sizeof(finalized_release));
     ota_manager_transition(
         OTA_MANAGER_STAGE_VALID,
         OTA_MANAGER_EVENT_INSTALLED
@@ -953,22 +1190,8 @@ esp_err_t ota_manager_mark_running_image_healthy(void) {
         ota_manager_apply_state_locked();
         xSemaphoreGive(ota_manager_mutex);
     }
-    const esp_err_t report_result = ota_manager_report_event(
-        "succeeded",
-        release_id,
-        NULL,
-        version_info_get().firmware_version,
-        NULL,
-        100.0
-    );
-    if (report_result != ESP_OK && release_id[0] != '\0') {
-        // Preserve the terminal event so a later healthy poll retries it.
-        (void)config_store_set_string(
-            OTA_MANAGER_PENDING_SUCCESS_KEY,
-            release_id
-        );
-    }
-    (void)ota_manager_clear_pending_release();
+    ota_manager_report_pending_success();
+    memset(release_id, 0, sizeof(release_id));
     return ESP_OK;
 }
 
@@ -1014,18 +1237,38 @@ static esp_err_t ota_manager_install_manifest(
         manifest->sha256,
         100.0
     );
-    ota_manager_transition(
-        OTA_MANAGER_STAGE_VALIDATING,
-        OTA_MANAGER_EVENT_PROGRESS
-    );
+    bool state_updated = false;
+    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+        state_updated = ota_manager_state_begin_validation(
+            &ota_manager_state,
+            manifest->size_bytes,
+            manifest->size_bytes
+        );
+        ota_manager_apply_state_locked();
+        xSemaphoreGive(ota_manager_mutex);
+    }
+    if (!state_updated) {
+        return ESP_ERR_INVALID_STATE;
+    }
     result = ota_validate_partition(target, manifest);
     if (result != ESP_OK) {
         return result;
     }
-    ota_manager_transition(
-        OTA_MANAGER_STAGE_INSTALLING,
-        OTA_MANAGER_EVENT_VALIDATED
-    );
+    bool install_allowed = false;
+    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+        install_allowed = ota_manager_state_begin_install(
+            &ota_manager_state,
+            true,
+            true,
+            true,
+            true
+        );
+        ota_manager_apply_state_locked();
+        xSemaphoreGive(ota_manager_mutex);
+    }
+    if (!install_allowed) {
+        return ESP_ERR_INVALID_STATE;
+    }
     (void)ota_manager_report_event(
         "installing",
         manifest->release_id,
@@ -1034,19 +1277,34 @@ static esp_err_t ota_manager_install_manifest(
         manifest->sha256,
         100.0
     );
-    result = esp_ota_set_boot_partition(target);
-    if (result != ESP_OK) {
-        return result;
-    }
     const esp_err_t pending_result =
         ota_manager_record_pending_release(manifest->release_id);
     if (pending_result != ESP_OK) {
         return pending_result;
     }
-    ota_manager_transition(
-        OTA_MANAGER_STAGE_PENDING_VERIFY,
-        OTA_MANAGER_EVENT_INSTALLED
-    );
+    result = esp_ota_set_boot_partition(target);
+    if (result != ESP_OK) {
+        const esp_err_t clear_result = ota_manager_clear_pending_release();
+        if (clear_result != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "boot selection failed and transaction cleanup failed: %s",
+                esp_err_to_name(clear_result)
+            );
+        }
+        return result;
+    }
+    state_updated = false;
+    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+        state_updated = ota_manager_state_begin_pending_verify(
+            &ota_manager_state
+        );
+        ota_manager_apply_state_locked();
+        xSemaphoreGive(ota_manager_mutex);
+    }
+    if (!state_updated) {
+        return ESP_ERR_INVALID_STATE;
+    }
     (void)ota_manager_report_event(
         "validated",
         manifest->release_id,
@@ -1250,6 +1508,16 @@ esp_err_t ota_manager_init(void) {
     if (ota_manager_ready) {
         return ESP_OK;
     }
+    if (ota_manager_mutex != NULL || ota_manager_queue != NULL) {
+        if (ota_manager_mutex != NULL) {
+            vSemaphoreDelete(ota_manager_mutex);
+            ota_manager_mutex = NULL;
+        }
+        if (ota_manager_queue != NULL) {
+            vQueueDelete(ota_manager_queue);
+            ota_manager_queue = NULL;
+        }
+    }
     const esp_err_t rollback_result = ota_rollback_init();
     if (rollback_result != ESP_OK) {
         return rollback_result;
@@ -1257,6 +1525,14 @@ esp_err_t ota_manager_init(void) {
     ota_manager_mutex = xSemaphoreCreateMutex();
     ota_manager_queue = xQueueCreate(4, sizeof(ota_manager_work_item_t));
     if (ota_manager_mutex == NULL || ota_manager_queue == NULL) {
+        if (ota_manager_mutex != NULL) {
+            vSemaphoreDelete(ota_manager_mutex);
+            ota_manager_mutex = NULL;
+        }
+        if (ota_manager_queue != NULL) {
+            vQueueDelete(ota_manager_queue);
+            ota_manager_queue = NULL;
+        }
         return ESP_ERR_NO_MEM;
     }
     ota_manager_state_init(&ota_manager_state);
@@ -1264,25 +1540,48 @@ esp_err_t ota_manager_init(void) {
     ota_manager_snapshot.ready = true;
     ota_manager_apply_state_locked();
     ota_manager_load_applied_release();
+    const esp_err_t recovery_result =
+        ota_manager_recover_candidate_release();
+    if (recovery_result != ESP_OK &&
+        recovery_result != ESP_ERR_INVALID_STATE) {
+        vSemaphoreDelete(ota_manager_mutex);
+        vQueueDelete(ota_manager_queue);
+        ota_manager_mutex = NULL;
+        ota_manager_queue = NULL;
+        return recovery_result;
+    }
     if (ota_rollback_is_pending_verify()) {
         char pending_release[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
-        if (ota_manager_load_pending_release(
-                pending_release,
-                sizeof(pending_release)
-            ) == ESP_OK) {
+        const esp_err_t pending_result = ota_manager_load_pending_release(
+            pending_release,
+            sizeof(pending_release)
+        );
+        if (pending_result != ESP_OK || pending_release[0] == '\0') {
+            ESP_LOGE(
+                TAG,
+                "pending image has no trusted install transaction; "
+                "refusing in-process recovery"
+            );
+            memset(pending_release, 0, sizeof(pending_release));
+            ota_manager_state.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
+            ota_manager_state.last_event = OTA_MANAGER_EVENT_INSTALLED;
+            ota_manager_snapshot.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
+            ota_manager_snapshot.last_event = OTA_MANAGER_EVENT_INSTALLED;
+            ota_manager_snapshot.pending_reboot = true;
+        } else {
             snprintf(
                 ota_manager_snapshot.release_id,
                 sizeof(ota_manager_snapshot.release_id),
                 "%s",
                 pending_release
             );
+            ota_manager_state.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
+            ota_manager_state.last_event = OTA_MANAGER_EVENT_INSTALLED;
+            ota_manager_snapshot.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
+            ota_manager_snapshot.last_event = OTA_MANAGER_EVENT_INSTALLED;
+            ota_manager_snapshot.pending_reboot = true;
         }
         memset(pending_release, 0, sizeof(pending_release));
-        ota_manager_state.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
-        ota_manager_state.last_event = OTA_MANAGER_EVENT_INSTALLED;
-        ota_manager_snapshot.stage = OTA_MANAGER_STAGE_PENDING_VERIFY;
-        ota_manager_snapshot.last_event = OTA_MANAGER_EVENT_INSTALLED;
-        ota_manager_snapshot.pending_reboot = true;
     }
     ota_manager_ready = true;
     if (xTaskCreate(
@@ -1294,10 +1593,11 @@ esp_err_t ota_manager_init(void) {
             &ota_manager_task
         ) != pdPASS) {
         ota_manager_ready = false;
+        vSemaphoreDelete(ota_manager_mutex);
+        vQueueDelete(ota_manager_queue);
+        ota_manager_mutex = NULL;
+        ota_manager_queue = NULL;
         return ESP_ERR_NO_MEM;
-    }
-    if (ota_rollback_is_pending_verify()) {
-        (void)ota_rollback_reboot_if_unhealthy();
     }
     return ESP_OK;
 }

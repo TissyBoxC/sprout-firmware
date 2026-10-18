@@ -60,6 +60,20 @@ def _verify_generated_keyring(target, source, env):  # noqa: ARG001
             "trusted keyring.\n"
         )
         env.Exit(1)  # noqa: F821
+    required = (
+        "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y",
+        "CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y",
+        "CONFIG_BOOTLOADER_APP_SECURE_VERSION",
+        "CONFIG_SECURE_BOOT=y",
+        "CONFIG_SECURE_FLASH_ENC_ENABLED=y",
+    )
+    missing = [item for item in required if item not in content]
+    if missing:
+        sys.stderr.write(
+            f"\nError: generated production config {sdkconfig_path} lacks "
+            f"required OTA hardening: {', '.join(missing)}.\n"
+        )
+        env.Exit(1)  # noqa: F821
     return None
 
 

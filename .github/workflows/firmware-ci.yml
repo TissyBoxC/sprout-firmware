@@ -75,7 +75,21 @@ jobs:
       - name: Build hardened production image
         env:
           SPROUT_SECURE_BOOT_SIGNING_KEY: ${{ github.workspace }}/secure_boot_signing_key.pem
+          # Compile-only trust material. This is the RFC 8032 test public key
+          # for seed 9d61...7f60 and is never used by a release build.
+          SPROUT_OTA_TRUSTED_KEYS_JSON: '{"ci-test-only":"11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="}'
         run: platformio run -e esp32-s3-n16r8-production
+
+      - name: Verify generated production OTA hardening
+        run: |
+          python -m unittest discover -s test \
+            -p 'test_secure_version_lifecycle.py' -v
+          python -m unittest discover -s test \
+            -p 'test_workflow_security_contract.py' -v
+          python test/test_production_ota_config.py
+          python tools/verify_secure_version_lifecycle.py \
+            --root . \
+            --generated-config sdkconfig.esp32-s3-n16r8-production
 
       - name: Assert signed production artifacts exist
         shell: bash
