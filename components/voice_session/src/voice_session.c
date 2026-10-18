@@ -172,6 +172,8 @@ typedef struct {
     QueueHandle_t audio_queue;
     TaskHandle_t sender_task;
     volatile bool sender_running;
+    bool stopping;
+    bool shutdown_failed;
 
     voice_session_snapshot_t counters;
 } voice_session_runtime_t;
@@ -846,6 +848,15 @@ static void voice_session_sender_task(void *argument) {
                 control.type == VOICE_SESSION_CONTROL_TYPE_WAKE ||
                 control.type == VOICE_SESSION_CONTROL_TYPE_BARGE_IN ||
                 control.type == VOICE_SESSION_CONTROL_TYPE_QUALITY) {
+                if (control.type == VOICE_SESSION_CONTROL_TYPE_BARGE_IN) {
+                    (void)playback_queue_clear(false);
+#if CONFIG_FEATURE_AUDIO_OUTPUT
+                    (void)audio_output_discard_priority(
+                        AUDIO_OUTPUT_PRIORITY_CONVERSATION,
+                        NULL
+                    );
+#endif
+                }
                 // The handshake may complete a moment after the frame is
                 // queued, so retry a bounded number of times instead of
                 // dropping the frame while the TLS session is still opening.
@@ -904,7 +915,18 @@ static void voice_session_sender_task(void *argument) {
             }
         }
     }
-    voice_session_state.sender_task = NULL;
+    if (voice_session_state.lifecycle_mutex != NULL &&
+        xSemaphoreTake(
+            voice_session_state.lifecycle_mutex,
+            portMAX_DELAY
+        ) == pdTRUE) {
+        voice_session_state.sender_task = NULL;
+        voice_session_state.sender_running = false;
+        xSemaphoreGive(voice_session_state.lifecycle_mutex);
+    } else {
+        voice_session_state.sender_task = NULL;
+        voice_session_state.sender_running = false;
+    }
     vTaskDelete(NULL);
 }
 
@@ -934,16 +956,6 @@ static void voice_session_on_audio_metrics(
     }
 
     voice_session_state.is_speaking = false;
-    (void)playback_queue_clear(false);
-    // playback_queue_clear stops the producer, but the mixer may still hold
-    // already-submitted conversation frames. Discard only that lane so prompt
-    // and safety announcements are not interrupted by a child barge-in.
-#if CONFIG_FEATURE_AUDIO_OUTPUT
-    (void)audio_output_discard_priority(
-        AUDIO_OUTPUT_PRIORITY_CONVERSATION,
-        NULL
-    );
-#endif
     voice_session_increment(&voice_session_state.counters.barge_in_events);
 
     uint8_t frame[VOICE_SESSION_CONTROL_FRAME_SIZE] = {0};
@@ -981,7 +993,6 @@ static void voice_session_on_audio(
     // VAD-driven interruption path remains available without the new module.
     if (voice_session_state.state == VOICE_SESSION_STATE_SPEAKING) {
         voice_session_state.is_speaking = false;
-        (void)playback_queue_clear(false);
         voice_session_increment(&voice_session_state.counters.barge_in_events);
     }
 #endif
@@ -1430,17 +1441,21 @@ static void voice_session_websocket_event(
 // Session lifecycle
 // ---------------------------------------------------------------------------
 
-static void voice_session_release_capture(void) {
+static esp_err_t voice_session_release_capture(void) {
+    esp_err_t result = ESP_OK;
     if (voice_session_state.capture_started) {
-        (void)audio_input_stop();
-        voice_session_state.capture_started = false;
+        result = audio_input_stop();
+        if (result == ESP_OK) {
+            voice_session_state.capture_started = false;
+        }
     }
 #if CONFIG_FEATURE_VOICE_WAKE
-    if (voice_session_state.wake_suspended) {
+    if (result == ESP_OK && voice_session_state.wake_suspended) {
         (void)voice_wake_resume();
         voice_session_state.wake_suspended = false;
     }
 #endif
+    return result;
 }
 
 static void voice_session_stop_transport_locked(void) {
@@ -1658,6 +1673,10 @@ esp_err_t voice_session_start_session(
     if (!voice_session_state.is_initialized) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (voice_session_state.stopping ||
+        voice_session_state.shutdown_failed) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (voice_session_state.lifecycle_mutex == NULL ||
         xSemaphoreTake(
             voice_session_state.lifecycle_mutex,
@@ -1704,7 +1723,10 @@ esp_err_t voice_session_start_session(
             }
         }
         if (result != ESP_OK) {
-            voice_session_release_capture();
+            if (voice_session_release_capture() != ESP_OK) {
+                voice_session_state.shutdown_failed = true;
+                voice_session_set_state(VOICE_SESSION_STATE_FAILED);
+            }
             voice_session_stop_transport_locked();
         }
     }
@@ -1825,11 +1847,18 @@ static esp_err_t voice_session_finish_session(
         vTaskDelay(pdMS_TO_TICKS(50));
 
         (void)playback_queue_clear(clear_safety);
-        voice_session_release_capture();
+        const esp_err_t capture_result = voice_session_release_capture();
+        if (capture_result != ESP_OK) {
+            voice_session_state.shutdown_failed = true;
+            voice_session_set_state(VOICE_SESSION_STATE_FAILED);
+            result = capture_result;
+        }
         voice_session_stop_transport_locked();
         voice_session_finalize_conversation();
         voice_session_state.has_active_session = false;
-        voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
+        if (capture_result == ESP_OK) {
+            voice_session_set_state(VOICE_SESSION_STATE_CLOSED);
+        }
         strncpy(
             voice_session_state.last_reason,
             reason,
@@ -1925,6 +1954,10 @@ const char *voice_session_state_name(voice_session_state_t state) {
 }
 
 esp_err_t voice_session_init(void) {
+    if (voice_session_state.stopping ||
+        voice_session_state.shutdown_failed) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (voice_session_state.is_initialized) {
         return ESP_OK;
     }
@@ -1995,13 +2028,23 @@ esp_err_t voice_session_init(void) {
 }
 
 bool voice_session_is_ready(void) {
-    return voice_session_state.is_initialized;
+    return voice_session_state.is_initialized &&
+           !voice_session_state.stopping &&
+           !voice_session_state.shutdown_failed;
 }
 
 void voice_session_shutdown(void) {
+    if (voice_session_state.stopping) {
+        return;
+    }
+    voice_session_state.stopping = true;
     // Stop microphone capture first so no producer can touch the audio queue
     // after it is released.
-    voice_session_release_capture();
+    if (voice_session_release_capture() != ESP_OK) {
+        voice_session_state.shutdown_failed = true;
+        voice_session_state.stopping = false;
+        return;
+    }
 
     // Then stop the sender. It owns the socket, so it must be quiesced before
     // the transport and queues are destroyed.
@@ -2020,11 +2063,15 @@ void voice_session_shutdown(void) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    if (voice_session_state.lifecycle_mutex != NULL &&
-        xSemaphoreTake(
-            voice_session_state.lifecycle_mutex,
-            portMAX_DELAY
-        ) == pdTRUE) {
+    bool lifecycle_locked = false;
+    if (voice_session_state.lifecycle_mutex != NULL) {
+        lifecycle_locked =
+            xSemaphoreTake(
+                voice_session_state.lifecycle_mutex,
+                portMAX_DELAY
+            ) == pdTRUE;
+    }
+    if (lifecycle_locked) {
         voice_session_stop_transport_locked();
         voice_session_finalize_conversation();
         voice_session_state.has_active_session = false;
@@ -2036,6 +2083,7 @@ void voice_session_shutdown(void) {
     // report the incomplete teardown instead.
     if (voice_session_state.sender_task != NULL) {
         ESP_LOGE(TAG, "sender task did not stop; resources retained");
+        voice_session_state.shutdown_failed = true;
     } else {
         if (voice_session_state.control_queue != NULL) {
             vQueueDelete(voice_session_state.control_queue);
@@ -2050,14 +2098,19 @@ void voice_session_shutdown(void) {
             voice_session_state.lifecycle_mutex = NULL;
         }
     }
-    voice_session_state.is_initialized = false;
+    if (!voice_session_state.shutdown_failed) {
+        voice_session_state.is_initialized = false;
+        voice_session_state.shutdown_failed = false;
+    }
     voice_session_state.is_connected = false;
     voice_session_state.capture_started = false;
     voice_session_state.wake_suspended = false;
     voice_session_state.client = NULL;
+    voice_session_state.stopping = false;
 
     portENTER_CRITICAL(&voice_session_counter_lock);
-    voice_session_state.counters.is_initialized = false;
+    voice_session_state.counters.is_initialized =
+        voice_session_state.is_initialized;
     voice_session_state.counters.is_connected = false;
     voice_session_state.counters.has_active_session = false;
     portEXIT_CRITICAL(&voice_session_counter_lock);

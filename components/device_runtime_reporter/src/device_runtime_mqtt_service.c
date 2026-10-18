@@ -49,6 +49,7 @@ static QueueHandle_t device_runtime_mqtt_service_command_queue;
 static TaskHandle_t device_runtime_mqtt_service_command_task;
 static bool device_runtime_mqtt_service_command_task_started;
 static volatile bool device_runtime_mqtt_service_command_task_stop;
+static bool device_runtime_mqtt_service_shutdown_failed;
 static atomic_bool device_runtime_mqtt_service_command_task_running =
     ATOMIC_VAR_INIT(false);
 static SemaphoreHandle_t device_runtime_mqtt_service_state_mutex;
@@ -267,6 +268,10 @@ static esp_err_t device_runtime_mqtt_start_command_task(void) {
         device_runtime_mqtt_service_unlock_command_queue();
         return ESP_OK;
     }
+    if (device_runtime_mqtt_service_shutdown_failed) {
+        device_runtime_mqtt_service_unlock_command_queue();
+        return ESP_ERR_INVALID_STATE;
+    }
     device_runtime_mqtt_service_command_task_stop = false;
     atomic_store_explicit(
         &device_runtime_mqtt_service_command_task_running,
@@ -306,11 +311,11 @@ static esp_err_t device_runtime_mqtt_start_command_task(void) {
     return ESP_OK;
 }
 
-static void device_runtime_mqtt_stop_command_task(void) {
+static esp_err_t device_runtime_mqtt_stop_command_task(void) {
     device_runtime_mqtt_service_lock_command_queue();
     if (!device_runtime_mqtt_service_command_task_started) {
         device_runtime_mqtt_service_unlock_command_queue();
-        return;
+        return ESP_OK;
     }
     device_runtime_mqtt_service_command_task_stop = true;
     const TickType_t deadline =
@@ -327,13 +332,19 @@ static void device_runtime_mqtt_stop_command_task(void) {
             memory_order_acquire
         ) &&
         device_runtime_mqtt_service_command_task != NULL) {
-        vTaskDelete(device_runtime_mqtt_service_command_task);
+        // The worker may still own queue access or mid-execution state. A
+        // forced deletion followed by a queue delete is a use-after-free.
+        device_runtime_mqtt_service_shutdown_failed = true;
+        device_runtime_mqtt_service_unlock_command_queue();
+        ESP_LOGE(TAG, "MQTT command task did not stop; resources retained");
+        return ESP_ERR_TIMEOUT;
     }
     device_runtime_mqtt_service_command_task = NULL;
     vQueueDelete(device_runtime_mqtt_service_command_queue);
     device_runtime_mqtt_service_command_queue = NULL;
     device_runtime_mqtt_service_command_task_started = false;
     device_runtime_mqtt_service_unlock_command_queue();
+    return ESP_OK;
 }
 
 static esp_err_t device_runtime_mqtt_start_if_configured(void) {
@@ -460,7 +471,7 @@ esp_err_t device_runtime_mqtt_service_start(void) {
             NULL
         );
         if (observer_result != ESP_OK) {
-            device_runtime_mqtt_stop_command_task();
+            (void)device_runtime_mqtt_stop_command_task();
             device_runtime_mqtt_service_unlock_state();
             return observer_result;
         }
@@ -496,11 +507,12 @@ esp_err_t device_runtime_mqtt_service_stop(void) {
         transport_result = device_mqtt_transport_stop();
         device_runtime_mqtt_service_transport_started = false;
     }
-    device_runtime_mqtt_stop_command_task();
+    const esp_err_t command_task_result =
+        device_runtime_mqtt_stop_command_task();
     (void)device_runtime_reporter_set_mqtt_ack_publisher(NULL);
     device_runtime_mqtt_service_device_id[0] = '\0';
     device_runtime_mqtt_service_unlock_state();
-    return transport_result;
+    return transport_result != ESP_OK ? transport_result : command_task_result;
 }
 
 bool device_runtime_mqtt_service_is_connected(void) {

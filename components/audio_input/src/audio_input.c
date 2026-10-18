@@ -27,6 +27,7 @@ typedef struct {
 typedef struct {
     volatile bool is_running;
     bool initialized;
+    bool stop_failed;
     uint32_t stream_id;
     uint32_t next_sequence;
     audio_input_frame_callback_t callback;
@@ -374,6 +375,10 @@ esp_err_t audio_input_init(void) {
     }
 
     esp_err_t result = ESP_OK;
+    if (audio_input_state.stop_failed) {
+        xSemaphoreGive(audio_input_state.lifecycle_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (audio_input_state.initialized) {
         xSemaphoreGive(audio_input_state.lifecycle_mutex);
         return ESP_OK;
@@ -412,6 +417,7 @@ esp_err_t audio_input_init(void) {
     audio_input_state.preroll_write = 0;
     audio_input_state.preroll_count = 0;
     audio_input_state.speech_active = false;
+    audio_input_state.stop_failed = false;
     audio_input_state.initialized = true;
     xSemaphoreGive(audio_input_state.lifecycle_mutex);
     return ESP_OK;
@@ -445,6 +451,8 @@ esp_err_t audio_input_start_with_metrics(
 
     esp_err_t result = ESP_OK;
     if (!audio_input_state.initialized) {
+        result = ESP_ERR_INVALID_STATE;
+    } else if (audio_input_state.stop_failed) {
         result = ESP_ERR_INVALID_STATE;
     } else if (audio_input_state.is_running) {
         result = ESP_ERR_INVALID_STATE;
@@ -502,11 +510,14 @@ esp_err_t audio_input_start_with_metrics(
                     AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT
                 );
                 (void)audio_pipeline_set_reference_sink(NULL, NULL);
-                (void)xSemaphoreTake(
-                    audio_input_state.task_exit_semaphore,
-                    pdMS_TO_TICKS(1000)
-                );
-                audio_input_state.task_handle = NULL;
+                if (xSemaphoreTake(
+                        audio_input_state.task_exit_semaphore,
+                        pdMS_TO_TICKS(1000)
+                    ) == pdTRUE) {
+                    audio_input_state.task_handle = NULL;
+                } else {
+                    audio_input_state.stop_failed = true;
+                }
                 portENTER_CRITICAL(&audio_input_counter_lock);
                 audio_input_state.snapshot.is_running = false;
                 portEXIT_CRITICAL(&audio_input_counter_lock);
@@ -519,29 +530,40 @@ esp_err_t audio_input_start_with_metrics(
 }
 
 static esp_err_t audio_input_stop_locked(void) {
+    if (audio_input_state.stop_failed) {
+        if (audio_input_state.task_handle == NULL ||
+            xSemaphoreTake(audio_input_state.task_exit_semaphore, 0) == pdTRUE) {
+            audio_input_state.task_handle = NULL;
+            audio_input_state.callback = NULL;
+            audio_input_state.metrics_callback = NULL;
+            audio_input_state.callback_context = NULL;
+            audio_input_state.stop_failed = false;
+            audio_input_reference_queue_flush(&audio_input_state.reference_queue);
+            portENTER_CRITICAL(&audio_input_counter_lock);
+            audio_input_state.snapshot.is_running = false;
+            portEXIT_CRITICAL(&audio_input_counter_lock);
+            return ESP_OK;
+        }
+        return ESP_ERR_TIMEOUT;
+    }
     if (!audio_input_state.initialized || !audio_input_state.is_running) {
         return ESP_OK;
     }
     audio_input_state.is_running = false;
-    portENTER_CRITICAL(&audio_input_counter_lock);
-    audio_input_state.snapshot.is_running = false;
-    portEXIT_CRITICAL(&audio_input_counter_lock);
-
-    // Stop capturing first so the blocked I2S read returns and the task can
-    // observe the cleared running flag.
+    // Release the capture lease before joining so a blocked pipeline read can
+    // observe the stop request and let the task post its exit token.
     (void)audio_pipeline_capture_release(
         AUDIO_PIPELINE_CAPTURE_OWNER_AUDIO_INPUT
     );
     (void)audio_pipeline_set_reference_sink(NULL, NULL);
-
-    esp_err_t result = ESP_OK;
     if (audio_input_state.task_handle != NULL) {
         if (xSemaphoreTake(
                 audio_input_state.task_exit_semaphore,
                 pdMS_TO_TICKS(1000)
             ) != pdTRUE) {
-            ESP_LOGE(TAG, "capture task did not stop in time");
-            result = ESP_ERR_TIMEOUT;
+            audio_input_state.stop_failed = true;
+            ESP_LOGE(TAG, "capture task did not stop; lifecycle is locked");
+            return ESP_ERR_TIMEOUT;
         }
     }
     audio_input_state.task_handle = NULL;
@@ -549,7 +571,12 @@ static esp_err_t audio_input_stop_locked(void) {
     audio_input_state.metrics_callback = NULL;
     audio_input_state.callback_context = NULL;
     audio_input_reference_queue_flush(&audio_input_state.reference_queue);
-    return result;
+
+    portENTER_CRITICAL(&audio_input_counter_lock);
+    audio_input_state.snapshot.is_running = false;
+    portEXIT_CRITICAL(&audio_input_counter_lock);
+
+    return ESP_OK;
 }
 
 esp_err_t audio_input_stop(void) {
@@ -581,7 +608,10 @@ void audio_input_shutdown(void) {
     if (xSemaphoreTake(audio_input_state.lifecycle_mutex, portMAX_DELAY) != pdTRUE) {
         return;
     }
-    (void)audio_input_stop_locked();
+    if (audio_input_stop_locked() != ESP_OK) {
+        xSemaphoreGive(audio_input_state.lifecycle_mutex);
+        return;
+    }
     if (audio_input_state.initialized) {
         audio_input_dsp_deinit(&audio_input_state.dsp);
         if (audio_input_state.reference_queue.mutex != NULL) {

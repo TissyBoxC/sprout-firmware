@@ -2,6 +2,7 @@
 #include "device_mqtt.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -30,11 +31,13 @@ static int published_message_id = 1;
 static bool deliver_publish_event = true;
 static esp_event_handler_t registered_event_handler;
 static unsigned int command_callback_count;
+static unsigned int destroy_count;
 
 #define TEST_MUTEX_COUNT 4
 
 typedef struct {
     int locked;
+    unsigned int waiter_count;
 } test_mutex_t;
 
 static test_mutex_t test_mutexes[TEST_MUTEX_COUNT];
@@ -48,10 +51,22 @@ SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *buffer) {
     return (SemaphoreHandle_t)mutex;
 }
 
+SemaphoreHandle_t xSemaphoreCreateBinary(void) {
+    static test_mutex_t binary;
+    binary.locked = 0;
+    binary.waiter_count = 0;
+    return (SemaphoreHandle_t)&binary;
+}
+
 int xSemaphoreTake(SemaphoreHandle_t semaphore, TickType_t timeout) {
-    (void)timeout;
     test_mutex_t *mutex = (test_mutex_t *)semaphore;
     if (mutex == NULL || mutex->locked) {
+        if (mutex != NULL) {
+            ++mutex->waiter_count;
+            if (timeout != portMAX_DELAY && timeout < 100) {
+                current_ticks += timeout;
+            }
+        }
         return pdFALSE;
     }
     mutex->locked = 1;
@@ -183,6 +198,7 @@ esp_err_t esp_mqtt_client_stop(esp_mqtt_client_handle_t client) {
 
 esp_err_t esp_mqtt_client_destroy(esp_mqtt_client_handle_t client) {
     (void)client;
+    ++destroy_count;
     return ESP_OK;
 }
 
@@ -296,6 +312,31 @@ int main(void) {
         assert(command_callback_count == 0);
     }
 
-    assert(device_mqtt_transport_stop() == ESP_OK);
+    // Teardown destroys the client exactly once. The lifecycle admission
+    // guard is exercised by the stale delivery below.
+    {
+        assert(device_mqtt_transport_stop() == ESP_OK);
+        assert(destroy_count == 1);
+    }
+    // A stale event delivered after teardown must not read the cleared
+    // identity or invoke the previous command callback.
+    {
+        const unsigned int before = command_callback_count;
+        char stale_topic[] = "sprout/v1/devices/device_demo_001/commands";
+        char stale_payload[] = "{\"schema_version\":\"1.0.0\"}";
+        esp_mqtt_event_t stale_event = {};
+        stale_event.topic = stale_topic;
+        stale_event.topic_len = (int)strlen(stale_topic);
+        stale_event.data = stale_payload;
+        stale_event.data_len = (int)strlen(stale_payload);
+        stale_event.total_data_len = stale_event.data_len;
+        registered_event_handler(
+            NULL,
+            NULL,
+            MQTT_EVENT_DATA,
+            &stale_event
+        );
+        assert(command_callback_count == before);
+    }
     return 0;
 }

@@ -31,6 +31,9 @@ hands the packet to the voice session.
   stream.
 - The reference sink is cleared on stop, and the capture task joins with a
   bounded timeout before resources are released.
+- If the capture task misses the stop deadline, the module retains its task
+  handle, callbacks, and synchronization objects. It enters a stop-failed
+  state and refuses restart until the original task has really exited.
 - Frame buffers are fixed size; a stalled consumer cannot grow memory without
   bound.
 - Raw audio is never logged.

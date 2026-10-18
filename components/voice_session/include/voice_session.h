@@ -166,7 +166,9 @@ const char *voice_session_state_name(voice_session_state_t state);
  * @brief Tear down the session, close the socket, and release resources.
  *
  * Intended for module_registry shutdown and test teardown. The module returns
- * to the uninitialized state and can be reinitialized.
+ * to the uninitialized state and can be reinitialized only after every owned
+ * task and transport has actually exited. If capture or the sender misses its
+ * stop deadline, resources are retained and initialization is refused.
  */
 void voice_session_shutdown(void);
 

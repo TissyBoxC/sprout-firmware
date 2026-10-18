@@ -101,7 +101,10 @@ esp_err_t audio_input_start_with_metrics(
  * @brief Stop capture, release the microphone, and clear the reference sink.
  *
  * Returns ESP_ERR_TIMEOUT when the capture task does not stop within one
- * second; the caller must then treat the module as unusable and reset it.
+ * second. The module then retains all task-owned resources and enters an
+ * unrecoverable stop_failed state; a later stop may only succeed after the
+ * original task has actually exited. Reinitialization and restart are
+ * rejected until then.
  */
 esp_err_t audio_input_stop(void);
 
