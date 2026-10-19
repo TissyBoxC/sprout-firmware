@@ -5,13 +5,13 @@
 
 #include "esp_err.h"
 #include "module_registry.h"
+#include "ota_manager_deployment_contract.h"
 #include "ota_manager_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define OTA_MANAGER_RELEASE_ID_SIZE 65
 #define OTA_MANAGER_COMMAND_ID_SIZE 65
 #define OTA_MANAGER_ERROR_CODE_SIZE 48
 
@@ -23,6 +23,7 @@ typedef struct {
     uint64_t received_bytes;
     uint64_t total_bytes;
     char release_id[OTA_MANAGER_RELEASE_ID_SIZE];
+    char deployment_id[OTA_MANAGER_DEPLOYMENT_ID_SIZE];
     char last_error[OTA_MANAGER_ERROR_CODE_SIZE];
     bool update_available;
     bool pending_reboot;

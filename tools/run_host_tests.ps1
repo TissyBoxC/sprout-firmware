@@ -538,6 +538,17 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+Invoke-HostTest `
+    -Name 'ota_manager_deployment_contract' `
+    -Sources @(
+        (Join-Path $otaManagerRoot 'test/test_ota_manager_deployment_contract.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $otaManagerRoot 'include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
 $otaRollbackRoot = Join-Path $firmwareRoot 'components/ota_rollback'
 Invoke-HostTest `
     -Name 'ota_rollback_policy' `

@@ -51,10 +51,12 @@ extern "C" {
 #define OTA_MANAGER_APPLIED_RELEASE_KEY "ota_applied"
 #define OTA_MANAGER_CANDIDATE_RELEASE_KEY "ota_candidate"
 #define OTA_MANAGER_PENDING_SUCCESS_KEY "ota_ok_pending"
+#define OTA_MANAGER_TRANSACTION_KEY "ota_txn"
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_PENDING_RELEASE_KEY);
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_APPLIED_RELEASE_KEY);
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_CANDIDATE_RELEASE_KEY);
 CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_PENDING_SUCCESS_KEY);
+CONFIG_STORE_KEY_ASSERT(OTA_MANAGER_TRANSACTION_KEY);
 
 static const char *const TAG = "ota_manager";
 
@@ -70,6 +72,17 @@ typedef struct {
 } ota_manager_work_item_t;
 
 typedef struct {
+    char deployment_id[OTA_MANAGER_DEPLOYMENT_ID_SIZE];
+    char release_id[OTA_MANAGER_RELEASE_ID_SIZE];
+    ota_manager_deployment_kind_t kind;
+} ota_manager_transaction_t;
+
+typedef struct {
+    char deployment_id[OTA_MANAGER_DEPLOYMENT_ID_SIZE];
+    char release_id[OTA_MANAGER_RELEASE_ID_SIZE];
+} ota_manager_download_context_t;
+
+typedef struct {
     char id[OTA_MANAGER_COMMAND_ID_SIZE];
     char type[32];
     char release_id[OTA_MANAGER_RELEASE_ID_SIZE];
@@ -82,6 +95,7 @@ static QueueHandle_t ota_manager_queue;
 static ota_manager_snapshot_t ota_manager_snapshot;
 static char ota_manager_last_release_id[OTA_MANAGER_RELEASE_ID_SIZE];
 static char ota_manager_last_command_id[OTA_MANAGER_COMMAND_ID_SIZE];
+static char ota_manager_last_deployment_id[OTA_MANAGER_DEPLOYMENT_ID_SIZE];
 static ota_manager_state_t ota_manager_state;
 static uint32_t ota_manager_last_progress_bucket;
 static int64_t ota_manager_next_poll_ms;
@@ -100,10 +114,12 @@ static esp_err_t ota_manager_platform_request(
 static esp_err_t ota_manager_report_event(
     const char *event_name,
     const char *release_id,
+    const char *deployment_id,
     const char *error_code,
     const char *firmware_version,
     const char *artifact_sha256,
-    double progress_percent
+    double progress_percent,
+    bool enforce_sequence
 );
 
 static esp_err_t ota_manager_poll_runtime_firmware_update(
@@ -122,6 +138,18 @@ static esp_err_t ota_manager_mark_running_image_healthy(void);
 static void ota_manager_report_previous_rollback(void);
 
 static void ota_manager_report_pending_success(void);
+
+static esp_err_t ota_manager_load_transaction(
+    ota_manager_transaction_t *transaction_out
+);
+
+static esp_err_t ota_manager_store_transaction(
+    const char *deployment_id,
+    const char *release_id,
+    ota_manager_deployment_kind_t kind
+);
+
+static esp_err_t ota_manager_clear_transaction(void);
 
 static void ota_manager_format_utc_timestamp(
     char *output,
@@ -144,12 +172,23 @@ static void ota_manager_set_error(const char *code) {
     if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) != pdTRUE) {
         return;
     }
-    snprintf(
-        ota_manager_snapshot.last_error,
-        sizeof(ota_manager_snapshot.last_error),
-        "%s",
-        code != NULL ? code : "unknown"
-    );
+    if (code == NULL) {
+        snprintf(
+            ota_manager_snapshot.last_error,
+            sizeof(ota_manager_snapshot.last_error),
+            "%s",
+            "unknown"
+        );
+    } else if (code[0] == '\0') {
+        ota_manager_snapshot.last_error[0] = '\0';
+    } else {
+        snprintf(
+            ota_manager_snapshot.last_error,
+            sizeof(ota_manager_snapshot.last_error),
+            "%s",
+            code
+        );
+    }
     xSemaphoreGive(ota_manager_mutex);
 }
 
@@ -157,6 +196,7 @@ static void ota_manager_set_error(const char *code) {
 // contract, so the firmware derives a deterministic id from the release,
 // event name, and progress rather than embedding the raw release id.
 static void ota_manager_format_event_id(
+    const char *deployment_id,
     const char *release_id,
     const char *event_name,
     double progress_percent,
@@ -168,9 +208,9 @@ static void ota_manager_format_event_id(
     }
     uint64_t hash = 1469598103934665603ULL;
     const char *const parts[3] = {
+        deployment_id,
         release_id,
         event_name,
-        NULL,
     };
     char progress_text[32] = {0};
     snprintf(
@@ -179,7 +219,7 @@ static void ota_manager_format_event_id(
         "%.0f",
         progress_percent < 0.0 ? 0.0 : progress_percent
     );
-    for (size_t part = 0; part < 2; ++part) {
+    for (size_t part = 0; part < 3; ++part) {
         const char *value = parts[part];
         if (value == NULL) {
             continue;
@@ -208,6 +248,57 @@ static void ota_manager_set_release(const char *release_id) {
         release_id != NULL ? release_id : ""
     );
     xSemaphoreGive(ota_manager_mutex);
+}
+
+static void ota_manager_set_deployment(const char *deployment_id) {
+    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) != pdTRUE) {
+        return;
+    }
+    snprintf(
+        ota_manager_snapshot.deployment_id,
+        sizeof(ota_manager_snapshot.deployment_id),
+        "%s",
+        deployment_id != NULL ? deployment_id : ""
+    );
+    xSemaphoreGive(ota_manager_mutex);
+}
+
+static void ota_manager_copy_current_identity(
+    char *deployment_id,
+    size_t deployment_id_size,
+    char *release_id,
+    size_t release_id_size
+) {
+    char *deployment_output = deployment_id;
+    char *release_output = release_id;
+    size_t deployment_output_size = deployment_id_size;
+    size_t release_output_size = release_id_size;
+    if (deployment_output != NULL && deployment_output_size > 0) {
+        deployment_output[0] = '\0';
+    }
+    if (release_output != NULL && release_output_size > 0) {
+        release_output[0] = '\0';
+    }
+    if (ota_manager_mutex != NULL &&
+        xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
+        if (deployment_output != NULL && deployment_output_size > 0) {
+            snprintf(
+                deployment_output,
+                deployment_output_size,
+                "%s",
+                ota_manager_snapshot.deployment_id
+            );
+        }
+        if (release_output != NULL && release_output_size > 0) {
+            snprintf(
+                release_output,
+                release_output_size,
+                "%s",
+                ota_manager_snapshot.release_id
+            );
+        }
+        xSemaphoreGive(ota_manager_mutex);
+    }
 }
 
 static void ota_manager_apply_state_locked(void) {
@@ -247,7 +338,8 @@ static void ota_manager_progress_callback(
     uint64_t total_bytes,
     void *context
 ) {
-    (void)context;
+    const ota_manager_download_context_t *download_context =
+        (const ota_manager_download_context_t *)context;
     if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) != pdTRUE) {
         return;
     }
@@ -267,32 +359,20 @@ static void ota_manager_progress_callback(
         return;
     }
     ota_manager_last_progress_bucket = bucket;
-    char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
-    if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
-        snprintf(
-            release_id,
-            sizeof(release_id),
-            "%s",
-            ota_manager_snapshot.release_id
-        );
-        xSemaphoreGive(ota_manager_mutex);
-    }
-    if (release_id[0] == '\0') {
-        (void)ota_manager_load_pending_release(
-            release_id,
-            sizeof(release_id)
-        );
-    }
-    if (release_id[0] != '\0') {
+    if (download_context != NULL &&
+        download_context->release_id[0] != '\0' &&
+        download_context->deployment_id[0] != '\0') {
         const uint32_t progress_percent =
             bucket >= 10 ? 100U : bucket * 10U;
         (void)ota_manager_report_event(
             "downloading",
-            release_id,
+            download_context->release_id,
+            download_context->deployment_id,
             NULL,
             NULL,
             NULL,
-            (double)progress_percent
+            (double)progress_percent,
+            true
         );
     }
 }
@@ -447,12 +527,15 @@ static esp_err_t ota_manager_get_session_token(
 
 static esp_err_t ota_manager_fetch_manifest(
     const char *release_id,
-    ota_manifest_t *manifest_out
+    ota_manifest_t *manifest_out,
+    ota_manager_deployment_context_t *deployment_out
 ) {
-    if (release_id == NULL || manifest_out == NULL) {
+    if (release_id == NULL || manifest_out == NULL ||
+        deployment_out == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(manifest_out, 0, sizeof(*manifest_out));
+    memset(deployment_out, 0, sizeof(*deployment_out));
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     esp_err_t result = device_identity_copy(device_id, sizeof(device_id));
     if (result != ESP_OK) {
@@ -490,6 +573,57 @@ static esp_err_t ota_manager_fetch_manifest(
     if (result != ESP_OK) {
         return result;
     }
+    const char *status = response["status"] | "";
+    const char *current_version = response["current_version"] | "";
+    const char *target_version = response["target_version"] | "";
+    const char *deployment_id = response["deployment_id"] | "";
+    const char *rollback_release_id =
+        response["rollback_release_id"] | "";
+    const char *rollback_of_deployment_id =
+        response["rollback_of_deployment_id"] | "";
+    const char *deployment_kind = response["deployment_kind"] | "";
+    const bool update_available =
+        response["update_available"] | false;
+    const bool rollback_available =
+        response["rollback_available"] | false;
+    deployment_out->kind =
+        ota_manager_deployment_kind_from_protocol(deployment_kind);
+    const bool fields_fit =
+        ota_manager_copy_exact_platform_field(
+            status,
+            deployment_out->status,
+            sizeof(deployment_out->status)
+        ) &&
+        ota_manager_copy_exact_platform_field(
+            current_version,
+            deployment_out->current_version,
+            sizeof(deployment_out->current_version)
+        ) &&
+        ota_manager_copy_exact_platform_field(
+            target_version,
+            deployment_out->target_version,
+            sizeof(deployment_out->target_version)
+        ) &&
+        ota_manager_copy_exact_platform_field(
+            deployment_id,
+            deployment_out->deployment_id,
+            sizeof(deployment_out->deployment_id)
+        ) &&
+        ota_manager_copy_exact_platform_field(
+            rollback_release_id,
+            deployment_out->rollback_release_id,
+            sizeof(deployment_out->rollback_release_id)
+        ) &&
+        ota_manager_copy_exact_platform_field(
+            rollback_of_deployment_id,
+            deployment_out->rollback_of_deployment_id,
+            sizeof(deployment_out->rollback_of_deployment_id)
+        );
+    if (!fields_fit) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    deployment_out->update_available = update_available;
+    deployment_out->rollback_available = rollback_available;
     JsonObject release_value = response["release"].as<JsonObject>();
     if (release_value.isNull()) {
         return ESP_ERR_NOT_FOUND;
@@ -556,31 +690,56 @@ static esp_err_t ota_manager_fetch_manifest(
 static esp_err_t ota_manager_report_event(
     const char *event_name,
     const char *release_id,
+    const char *deployment_id,
     const char *error_code,
     const char *firmware_version,
     const char *artifact_sha256,
-    double progress_percent
+    double progress_percent,
+    bool enforce_sequence
 ) {
     if (event_name == NULL || release_id == NULL ||
-        event_name[0] == '\0' || release_id[0] == '\0') {
+        deployment_id == NULL || event_name[0] == '\0' ||
+        release_id[0] == '\0' || deployment_id[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    const size_t event_index = ota_manager_event_log_count;
-    const ota_event_sequence_error_t sequence_result =
-        ota_event_sequence_append(
-            ota_manager_event_log,
-            event_index,
-            sizeof(ota_manager_event_log) /
-                sizeof(ota_manager_event_log[0]),
-            event_name
-        );
-    if (sequence_result != OTA_EVENT_SEQUENCE_OK) {
+    char current_deployment_id[OTA_MANAGER_DEPLOYMENT_ID_SIZE] = {};
+    char current_release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {};
+    ota_manager_copy_current_identity(
+        current_deployment_id,
+        sizeof(current_deployment_id),
+        current_release_id,
+        sizeof(current_release_id)
+    );
+    const bool identity_matches =
+        strcmp(current_deployment_id, deployment_id) == 0 &&
+        strcmp(current_release_id, release_id) == 0;
+    memset(current_deployment_id, 0, sizeof(current_deployment_id));
+    memset(current_release_id, 0, sizeof(current_release_id));
+    if (!identity_matches) {
         ESP_LOGW(
             TAG,
-            "OTA event rejected by sequence guard: %s",
-            event_name
+            "refusing OTA event for a non-active transaction"
         );
         return ESP_ERR_INVALID_STATE;
+    }
+    const size_t event_index = ota_manager_event_log_count;
+    if (enforce_sequence) {
+        const ota_event_sequence_error_t sequence_result =
+            ota_event_sequence_append(
+                ota_manager_event_log,
+                event_index,
+                sizeof(ota_manager_event_log) /
+                    sizeof(ota_manager_event_log[0]),
+                event_name
+            );
+        if (sequence_result != OTA_EVENT_SEQUENCE_OK) {
+            ESP_LOGW(
+                TAG,
+                "OTA event rejected by sequence guard: %s",
+                event_name
+            );
+            return ESP_ERR_INVALID_STATE;
+        }
     }
     char device_id[DEVICE_IDENTIFIER_SIZE] = {0};
     esp_err_t result = device_identity_copy(device_id, sizeof(device_id));
@@ -604,6 +763,7 @@ static esp_err_t ota_manager_report_event(
         firmware_for_event = version_info_get().firmware_version;
     }
     ota_manager_format_event_id(
+        deployment_id,
         release_id,
         event_name,
         progress_percent,
@@ -616,6 +776,7 @@ static esp_err_t ota_manager_report_event(
     }
     payload["event_id"] = event_id;
     payload["release_id"] = release_id;
+    payload["deployment_id"] = deployment_id;
     payload["event_type"] = event_name;
     payload["progress_percent"] = progress_percent;
     payload["firmware_version"] = firmware_for_event;
@@ -656,9 +817,9 @@ static esp_err_t ota_manager_report_event(
     memset(request_body, 0, sizeof(request_body));
     memset(event_id, 0, sizeof(event_id));
     memset(session_token, 0, sizeof(session_token));
-    if (result == ESP_OK) {
+    if (result == ESP_OK && enforce_sequence) {
         ota_manager_event_log_count = event_index + 1;
-    } else {
+    } else if (enforce_sequence) {
         ota_manager_event_log[event_index] = NULL;
     }
     return result;
@@ -760,7 +921,13 @@ static esp_err_t ota_manager_poll_update(void) {
     if (release_id[0] == '\0') {
         return ESP_OK;
     }
-    if (strcmp(release_id, ota_manager_last_release_id) == 0) {
+    const char *deployment_id = response["deployment_id"] | "";
+    if (strcmp(release_id, ota_manager_last_release_id) == 0 &&
+        ota_manager_string_is_nonempty(deployment_id) &&
+        strcmp(
+            deployment_id,
+            ota_manager_last_deployment_id
+        ) == 0) {
         return ESP_OK;
     }
     return ota_manager_handle_firmware_update_command(NULL, release_id);
@@ -776,6 +943,124 @@ static esp_err_t ota_manager_record_pending_release(
         OTA_MANAGER_PENDING_RELEASE_KEY,
         release_id
     );
+}
+
+static const char *ota_manager_transaction_kind_name(
+    ota_manager_deployment_kind_t kind
+) {
+    return kind == OTA_MANAGER_DEPLOYMENT_KIND_ROLLBACK
+               ? "rollback"
+               : "install";
+}
+
+static ota_manager_deployment_kind_t ota_manager_transaction_kind_from_name(
+    const char *kind
+) {
+    if (kind == NULL) {
+        return OTA_MANAGER_DEPLOYMENT_KIND_UNKNOWN;
+    }
+    if (strcmp(kind, "install") == 0) {
+        return OTA_MANAGER_DEPLOYMENT_KIND_INSTALL;
+    }
+    if (strcmp(kind, "rollback") == 0) {
+        return OTA_MANAGER_DEPLOYMENT_KIND_ROLLBACK;
+    }
+    return OTA_MANAGER_DEPLOYMENT_KIND_UNKNOWN;
+}
+
+static esp_err_t ota_manager_store_transaction(
+    const char *deployment_id,
+    const char *release_id,
+    ota_manager_deployment_kind_t kind
+) {
+    if (!ota_manager_string_is_nonempty(deployment_id) ||
+        !ota_manager_string_is_nonempty(release_id) ||
+        (kind != OTA_MANAGER_DEPLOYMENT_KIND_INSTALL &&
+         kind != OTA_MANAGER_DEPLOYMENT_KIND_ROLLBACK)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char value[256] = {};
+    const int written = snprintf(
+        value,
+        sizeof(value),
+        "%s|%s|%s",
+        deployment_id,
+        release_id,
+        ota_manager_transaction_kind_name(kind)
+    );
+    if (written <= 0 || (size_t)written >= sizeof(value)) {
+        memset(value, 0, sizeof(value));
+        return ESP_ERR_INVALID_SIZE;
+    }
+    const esp_err_t result = config_store_set_string(
+        OTA_MANAGER_TRANSACTION_KEY,
+        value
+    );
+    memset(value, 0, sizeof(value));
+    return result;
+}
+
+static esp_err_t ota_manager_load_transaction(
+    ota_manager_transaction_t *transaction_out
+) {
+    if (transaction_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(transaction_out, 0, sizeof(*transaction_out));
+    char value[256] = {};
+    const esp_err_t result = config_store_get_string(
+        OTA_MANAGER_TRANSACTION_KEY,
+        value,
+        sizeof(value)
+    );
+    if (result != ESP_OK) {
+        memset(value, 0, sizeof(value));
+        return result;
+    }
+    char *first_separator = strchr(value, '|');
+    char *second_separator =
+        first_separator != NULL ? strchr(first_separator + 1, '|') : NULL;
+    if (first_separator == NULL || second_separator == NULL ||
+        first_separator == value ||
+        second_separator == first_separator + 1 ||
+        second_separator[1] == '\0' ||
+        strchr(second_separator + 1, '|') != NULL ||
+        (size_t)(first_separator - value) >=
+            sizeof(transaction_out->deployment_id) ||
+        (size_t)(second_separator - first_separator - 1) >=
+            sizeof(transaction_out->release_id)) {
+        memset(value, 0, sizeof(value));
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    const size_t deployment_length = (size_t)(first_separator - value);
+    const size_t release_length =
+        (size_t)(second_separator - first_separator - 1);
+    memcpy(
+        transaction_out->deployment_id,
+        value,
+        deployment_length
+    );
+    transaction_out->deployment_id[deployment_length] = '\0';
+    memcpy(
+        transaction_out->release_id,
+        first_separator + 1,
+        release_length
+    );
+    transaction_out->release_id[release_length] = '\0';
+    transaction_out->kind = ota_manager_transaction_kind_from_name(
+        second_separator + 1
+    );
+    if (!ota_manager_transaction_kind_is_valid(transaction_out->kind)) {
+        memset(transaction_out, 0, sizeof(*transaction_out));
+        memset(value, 0, sizeof(value));
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    memset(value, 0, sizeof(value));
+    return ESP_OK;
+}
+
+static esp_err_t ota_manager_clear_transaction(void) {
+    return config_store_erase_key(OTA_MANAGER_TRANSACTION_KEY);
 }
 
 static bool ota_manager_has_trusted_pending_release(void) {
@@ -914,6 +1199,24 @@ static esp_err_t ota_manager_finalize_candidate_release(
         "%s",
         release_id
     );
+    ota_manager_transaction_t transaction = {};
+    if (ota_manager_load_transaction(&transaction) != ESP_OK ||
+        strcmp(transaction.release_id, release_id) != 0) {
+        ESP_LOGE(
+            TAG,
+            "cannot finalize OTA candidate without its deployment transaction"
+        );
+        memset(&transaction, 0, sizeof(transaction));
+        memset(release_id, 0, sizeof(release_id));
+        return ESP_ERR_INVALID_STATE;
+    }
+    snprintf(
+        ota_manager_last_deployment_id,
+        sizeof(ota_manager_last_deployment_id),
+        "%s",
+        transaction.deployment_id
+    );
+    memset(&transaction, 0, sizeof(transaction));
     if (ota_rollback_is_pending_verify()) {
         snprintf(release_id_out, output_size, "%s", release_id);
         memset(release_id, 0, sizeof(release_id));
@@ -957,6 +1260,8 @@ static esp_err_t ota_manager_finalize_candidate_release(
             esp_err_to_name(clear_pending_result)
         );
     }
+    // The success event remains queued by release id and reads the durable
+    // deployment transaction when it is eventually delivered.
     snprintf(release_id_out, output_size, "%s", release_id);
     memset(release_id, 0, sizeof(release_id));
     return ESP_OK;
@@ -984,6 +1289,7 @@ static esp_err_t ota_manager_recover_candidate_release(void) {
 
 static void ota_manager_report_previous_rollback(void) {
     char pending_release[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    ota_manager_transaction_t transaction = {};
     const esp_err_t read_result = config_store_get_string(
         OTA_MANAGER_PENDING_RELEASE_KEY,
         pending_release,
@@ -1003,6 +1309,19 @@ static void ota_manager_report_previous_rollback(void) {
         memset(pending_release, 0, sizeof(pending_release));
         return;
     }
+    if (ota_manager_load_transaction(&transaction) != ESP_OK ||
+        strcmp(transaction.release_id, pending_release) != 0 ||
+        !ota_manager_string_is_nonempty(transaction.deployment_id)) {
+        ESP_LOGW(
+            TAG,
+            "rollback event lacks a matching persisted deployment transaction"
+        );
+        memset(pending_release, 0, sizeof(pending_release));
+        memset(&transaction, 0, sizeof(transaction));
+        return;
+    }
+    ota_manager_set_release(pending_release);
+    ota_manager_set_deployment(transaction.deployment_id);
     ota_manager_transition(
         OTA_MANAGER_STAGE_ROLLED_BACK,
         OTA_MANAGER_EVENT_ROLLED_BACK
@@ -1010,17 +1329,21 @@ static void ota_manager_report_previous_rollback(void) {
     const esp_err_t report_result = ota_manager_report_event(
         "rolled_back",
         pending_release,
+        transaction.deployment_id,
         "boot_validation_failed",
         NULL,
         NULL,
-        100.0
+        100.0,
+        false
     );
     if (report_result == ESP_OK) {
         // Only forget the pending record once the platform has acknowledged
         // the rollback; otherwise the next network-ready poll retries it.
         (void)ota_manager_clear_pending_release();
+        (void)ota_manager_clear_transaction();
     }
     memset(pending_release, 0, sizeof(pending_release));
+    memset(&transaction, 0, sizeof(transaction));
 }
 
 // A successful image can boot before the network is ready. Persist the
@@ -1028,6 +1351,7 @@ static void ota_manager_report_previous_rollback(void) {
 // until the platform acknowledges it.
 static void ota_manager_report_pending_success(void) {
     char pending_success[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    ota_manager_transaction_t transaction = {};
     if (config_store_get_string(
             OTA_MANAGER_PENDING_SUCCESS_KEY,
             pending_success,
@@ -1037,18 +1361,30 @@ static void ota_manager_report_pending_success(void) {
         memset(pending_success, 0, sizeof(pending_success));
         return;
     }
+    if (ota_manager_load_transaction(&transaction) != ESP_OK ||
+        strcmp(transaction.release_id, pending_success) != 0) {
+        memset(pending_success, 0, sizeof(pending_success));
+        memset(&transaction, 0, sizeof(transaction));
+        return;
+    }
+    ota_manager_set_release(pending_success);
+    ota_manager_set_deployment(transaction.deployment_id);
     const esp_err_t report_result = ota_manager_report_event(
         "succeeded",
         pending_success,
+        transaction.deployment_id,
         NULL,
         version_info_get().firmware_version,
         NULL,
-        100.0
+        100.0,
+        false
     );
     if (report_result == ESP_OK) {
         (void)config_store_erase_key(OTA_MANAGER_PENDING_SUCCESS_KEY);
+        (void)ota_manager_clear_transaction();
     }
     memset(pending_success, 0, sizeof(pending_success));
+    memset(&transaction, 0, sizeof(transaction));
 }
 
 static esp_err_t ota_manager_poll_runtime_firmware_update(
@@ -1131,6 +1467,14 @@ static esp_err_t ota_manager_mark_running_image_healthy(void) {
     if (!ota_rollback_is_pending_verify()) {
         return recovery_result;
     }
+    ota_manager_transaction_t transaction = {};
+    if (ota_manager_load_transaction(&transaction) != ESP_OK ||
+        !ota_manager_string_is_nonempty(transaction.deployment_id)) {
+        memset(&transaction, 0, sizeof(transaction));
+        return ESP_ERR_INVALID_STATE;
+    }
+    ota_manager_set_deployment(transaction.deployment_id);
+    memset(&transaction, 0, sizeof(transaction));
     char release_id[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
     if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_INVALID_STATE;
@@ -1219,9 +1563,10 @@ static esp_err_t ota_manager_mark_running_image_healthy(void) {
 
 static esp_err_t ota_manager_install_manifest(
     const ota_manifest_t *manifest,
-    const char *command_id
+    const char *command_id,
+    const char *deployment_id
 ) {
-    if (manifest == NULL) {
+    if (manifest == NULL || !ota_manager_string_is_nonempty(deployment_id)) {
         return ESP_ERR_INVALID_ARG;
     }
     const esp_partition_t *target =
@@ -1240,24 +1585,41 @@ static esp_err_t ota_manager_install_manifest(
         .maximum_retries = CONFIG_OTA_DOWNLOAD_MAX_RETRIES,
         .timeout_ms = CONFIG_OTA_DOWNLOAD_TIMEOUT_SECONDS * 1000U,
     };
+    ota_manager_download_context_t download_context = {};
+    snprintf(
+        download_context.deployment_id,
+        sizeof(download_context.deployment_id),
+        "%s",
+        deployment_id
+    );
+    snprintf(
+        download_context.release_id,
+        sizeof(download_context.release_id),
+        "%s",
+        manifest->release_id
+    );
     esp_err_t result = ota_download_to_partition(
         &request,
         target,
         ota_manager_progress_callback,
-        NULL,
+        &download_context,
         ota_manager_cancel_callback,
         NULL
     );
+    memset(&download_context, 0, sizeof(download_context));
     if (result != ESP_OK) {
+        (void)ota_manager_clear_transaction();
         return result;
     }
     (void)ota_manager_report_event(
         "downloaded",
         manifest->release_id,
+        deployment_id,
         NULL,
         manifest->firmware_version,
         manifest->sha256,
-        100.0
+        100.0,
+        true
     );
     bool state_updated = false;
     if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
@@ -1274,6 +1636,7 @@ static esp_err_t ota_manager_install_manifest(
     }
     result = ota_validate_partition(target, manifest);
     if (result != ESP_OK) {
+        (void)ota_manager_clear_transaction();
         return result;
     }
     bool install_allowed = false;
@@ -1289,19 +1652,36 @@ static esp_err_t ota_manager_install_manifest(
         xSemaphoreGive(ota_manager_mutex);
     }
     if (!install_allowed) {
+        (void)ota_manager_clear_transaction();
         return ESP_ERR_INVALID_STATE;
     }
     (void)ota_manager_report_event(
         "installing",
         manifest->release_id,
+        deployment_id,
         NULL,
         manifest->firmware_version,
         manifest->sha256,
-        100.0
+        100.0,
+        true
     );
-    const esp_err_t pending_result =
-        ota_manager_record_pending_release(manifest->release_id);
+    ota_manager_transaction_t transaction = {};
+    const esp_err_t transaction_result = ota_manager_load_transaction(
+        &transaction
+    );
+    if (transaction_result != ESP_OK ||
+        strcmp(transaction.deployment_id, deployment_id) != 0 ||
+        strcmp(transaction.release_id, manifest->release_id) != 0) {
+        (void)ota_manager_clear_transaction();
+        memset(&transaction, 0, sizeof(transaction));
+        return ESP_ERR_INVALID_STATE;
+    }
+    memset(&transaction, 0, sizeof(transaction));
+    const esp_err_t pending_result = ota_manager_record_pending_release(
+        manifest->release_id
+    );
     if (pending_result != ESP_OK) {
+        (void)ota_manager_clear_transaction();
         return pending_result;
     }
     result = esp_ota_set_boot_partition(target);
@@ -1312,6 +1692,15 @@ static esp_err_t ota_manager_install_manifest(
                 TAG,
                 "boot selection failed and transaction cleanup failed: %s",
                 esp_err_to_name(clear_result)
+            );
+        }
+        const esp_err_t clear_transaction_result =
+            ota_manager_clear_transaction();
+        if (clear_transaction_result != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "boot selection failed and transaction cleanup failed: %s",
+                esp_err_to_name(clear_transaction_result)
             );
         }
         return result;
@@ -1325,23 +1714,29 @@ static esp_err_t ota_manager_install_manifest(
         xSemaphoreGive(ota_manager_mutex);
     }
     if (!state_updated) {
+        (void)ota_manager_clear_pending_release();
+        (void)ota_manager_clear_transaction();
         return ESP_ERR_INVALID_STATE;
     }
     (void)ota_manager_report_event(
         "validated",
         manifest->release_id,
+        deployment_id,
         NULL,
         manifest->firmware_version,
         manifest->sha256,
-        100.0
+        100.0,
+        true
     );
     (void)ota_manager_report_event(
         "pending_verify",
         manifest->release_id,
+        deployment_id,
         NULL,
         manifest->firmware_version,
         manifest->sha256,
-        100.0
+        100.0,
+        true
     );
     if (xSemaphoreTake(ota_manager_mutex, portMAX_DELAY) == pdTRUE) {
         ota_manager_snapshot.pending_reboot = true;
@@ -1363,18 +1758,189 @@ static esp_err_t ota_manager_execute(
     if (ota_rollback_is_pending_verify()) {
         return ESP_OK;
     }
-    if (strcmp(release_id, ota_manager_last_release_id) == 0 &&
-        command_id != NULL &&
-        strcmp(command_id, ota_manager_last_command_id) == 0) {
-        return ESP_OK;
-    }
+    ota_manager_set_error("");
     ota_manager_event_log_count = 0;
     memset(
         ota_manager_event_log,
         0,
         sizeof(ota_manager_event_log)
     );
+    ota_manifest_t manifest = {};
+    ota_manager_transaction_t previous_transaction = {};
+    const esp_err_t previous_transaction_result =
+        ota_manager_load_transaction(&previous_transaction);
+    if (previous_transaction_result == ESP_OK) {
+        bool pending_success_exists = false;
+        const esp_err_t pending_success_result = config_store_has_key(
+            OTA_MANAGER_PENDING_SUCCESS_KEY,
+            &pending_success_exists
+        );
+        const bool has_durable_pending_work =
+            ota_rollback_is_pending_verify() ||
+            ota_manager_has_trusted_pending_release() ||
+            (pending_success_result == ESP_OK && pending_success_exists);
+        const bool is_same_release =
+            strcmp(previous_transaction.release_id, release_id) == 0;
+        if (!is_same_release && has_durable_pending_work) {
+            ESP_LOGW(
+                TAG,
+                "refusing to replace an unfinished OTA transaction"
+            );
+            memset(&previous_transaction, 0, sizeof(previous_transaction));
+            memset(&manifest, 0, sizeof(manifest));
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (!is_same_release) {
+            (void)ota_manager_clear_transaction();
+        }
+    }
+    memset(&previous_transaction, 0, sizeof(previous_transaction));
+    if (ota_manager_state.stage != OTA_MANAGER_STAGE_IDLE) {
+        ota_manager_transition(
+            ota_manager_state.stage == OTA_MANAGER_STAGE_VALID ||
+                    ota_manager_state.stage == OTA_MANAGER_STAGE_FAILED ||
+                    ota_manager_state.stage == OTA_MANAGER_STAGE_ROLLED_BACK
+                ? OTA_MANAGER_STAGE_CHECKING
+                : OTA_MANAGER_STAGE_IDLE,
+            OTA_MANAGER_EVENT_NONE
+        );
+    }
+    ota_manager_deployment_context_t deployment = {};
+    esp_err_t result = ota_manager_fetch_manifest(
+        release_id,
+        &manifest,
+        &deployment
+    );
+    if (result != ESP_OK) {
+        ota_manager_set_error("manifest_unavailable");
+        return result;
+    }
+    const ota_manager_deployment_error_t deployment_validation =
+        ota_manager_validate_deployment_context(
+            &deployment,
+            manifest.release_id,
+            manifest.firmware_version,
+            manifest.rollback_allowed
+        );
+    if (deployment_validation != OTA_MANAGER_DEPLOYMENT_OK) {
+        ESP_LOGW(
+            TAG,
+            "deployment rejected: %s",
+            ota_manager_deployment_error_name(deployment_validation)
+        );
+        ota_manager_set_error(
+            ota_manager_deployment_error_name(deployment_validation)
+        );
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    ota_manager_transaction_t existing_transaction = {};
+    const esp_err_t existing_transaction_result =
+        ota_manager_load_transaction(&existing_transaction);
+    if (existing_transaction_result == ESP_OK) {
+        const bool is_same_release =
+            strcmp(existing_transaction.release_id, release_id) == 0;
+        const bool is_same_transaction =
+            ota_manager_transaction_identity_matches(
+                deployment.deployment_id,
+                release_id,
+                existing_transaction.deployment_id,
+                existing_transaction.release_id
+            );
+        if (is_same_transaction) {
+            memset(&existing_transaction, 0, sizeof(existing_transaction));
+            memset(&deployment, 0, sizeof(deployment));
+            memset(&manifest, 0, sizeof(manifest));
+            return ESP_OK;
+        }
+        bool pending_success_exists = false;
+        const esp_err_t pending_success_result = config_store_has_key(
+            OTA_MANAGER_PENDING_SUCCESS_KEY,
+            &pending_success_exists
+        );
+        const bool has_unfinished_work =
+            ota_rollback_is_pending_verify() ||
+            ota_manager_has_trusted_pending_release() ||
+            (pending_success_result == ESP_OK && pending_success_exists);
+        if (!ota_manager_deployment_can_replace(
+                &deployment,
+                release_id,
+                existing_transaction.deployment_id,
+                existing_transaction.release_id,
+                has_unfinished_work
+            )) {
+            ESP_LOGW(
+                TAG,
+                "refusing to replace an unfinished OTA transaction"
+            );
+            memset(&existing_transaction, 0, sizeof(existing_transaction));
+            memset(&deployment, 0, sizeof(deployment));
+            memset(&manifest, 0, sizeof(manifest));
+            return ESP_ERR_INVALID_STATE;
+        }
+        if (!is_same_release) {
+            // A completed delivery can leave its identity behind until the
+            // next terminal acknowledgement. Only an unfinished transaction
+            // is allowed to block a different release.
+            const bool is_unfinished =
+                ota_rollback_is_pending_verify() ||
+                ota_manager_has_trusted_pending_release() ||
+                (pending_success_result == ESP_OK && pending_success_exists);
+            if (is_unfinished) {
+                ESP_LOGW(
+                    TAG,
+                    "refusing to overwrite an unfinished OTA transaction"
+                );
+                memset(
+                    &existing_transaction,
+                    0,
+                    sizeof(existing_transaction)
+                );
+                memset(&deployment, 0, sizeof(deployment));
+                memset(&manifest, 0, sizeof(manifest));
+                return ESP_ERR_INVALID_STATE;
+            }
+        }
+    } else if (existing_transaction_result != CONFIG_STORE_ERR_NOT_FOUND) {
+        memset(&existing_transaction, 0, sizeof(existing_transaction));
+        memset(&deployment, 0, sizeof(deployment));
+        memset(&manifest, 0, sizeof(manifest));
+        return existing_transaction_result;
+    }
+    if (existing_transaction_result == ESP_OK) {
+        // The same release may receive a new deployment id after an operator
+        // retry, but only when no pending image or terminal event still owns
+        // the previous transaction.
+        bool pending_success_exists = false;
+        const esp_err_t pending_success_result = config_store_has_key(
+            OTA_MANAGER_PENDING_SUCCESS_KEY,
+            &pending_success_exists
+        );
+        if (ota_rollback_is_pending_verify() ||
+            ota_manager_has_trusted_pending_release() ||
+            (pending_success_result == ESP_OK && pending_success_exists)) {
+            ESP_LOGW(
+                TAG,
+                "refusing a new deployment while OTA recovery is pending"
+            );
+            memset(&existing_transaction, 0, sizeof(existing_transaction));
+            memset(&deployment, 0, sizeof(deployment));
+            memset(&manifest, 0, sizeof(manifest));
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+    memset(&existing_transaction, 0, sizeof(existing_transaction));
+    result = ota_manager_store_transaction(
+        deployment.deployment_id,
+        release_id,
+        deployment.kind
+    );
+    if (result != ESP_OK) {
+        memset(&deployment, 0, sizeof(deployment));
+        memset(&manifest, 0, sizeof(manifest));
+        return result;
+    }
     ota_manager_set_release(release_id);
+    ota_manager_set_deployment(deployment.deployment_id);
     ota_manager_transition(
         OTA_MANAGER_STAGE_CHECKING,
         OTA_MANAGER_EVENT_STARTED
@@ -1382,24 +1948,20 @@ static esp_err_t ota_manager_execute(
     (void)ota_manager_report_event(
         "started",
         release_id,
+        deployment.deployment_id,
         NULL,
         NULL,
         NULL,
-        0.0
+        0.0,
+        true
     );
-    ota_manifest_t manifest = {};
-    esp_err_t result = ota_manager_fetch_manifest(release_id, &manifest);
-    if (result != ESP_OK) {
-        ota_manager_set_error("manifest_unavailable");
-        return result;
-    }
     const version_info_t versions = version_info_get();
     const ota_manifest_error_t validation = ota_manifest_validate_device(
         &manifest,
         versions.firmware_version,
         CONFIG_OTA_MANAGER_HARDWARE_REVISION,
         CONFIG_OTA_MANAGER_CHANNEL,
-        false
+        deployment.kind == OTA_MANAGER_DEPLOYMENT_KIND_ROLLBACK
     );
     if (validation != OTA_MANIFEST_OK) {
         ESP_LOGW(TAG, "device validation failed: %s",
@@ -1412,11 +1974,14 @@ static esp_err_t ota_manager_execute(
         (void)ota_manager_report_event(
             "failed",
             release_id,
+            deployment.deployment_id,
             ota_manifest_error_name(validation),
             manifest.firmware_version,
             manifest.sha256,
-            0.0
+            0.0,
+            true
         );
+        (void)ota_manager_clear_transaction();
         return ESP_ERR_INVALID_VERSION;
     }
     const ota_manifest_error_t signature_validation =
@@ -1437,14 +2002,21 @@ static esp_err_t ota_manager_execute(
         (void)ota_manager_report_event(
             "failed",
             release_id,
+            deployment.deployment_id,
             ota_manifest_error_name(signature_validation),
             manifest.firmware_version,
             manifest.sha256,
-            0.0
+            0.0,
+            true
         );
+        (void)ota_manager_clear_transaction();
         return ESP_ERR_OTA_VALIDATE_FAILED;
     }
-    result = ota_manager_install_manifest(&manifest, command_id);
+    result = ota_manager_install_manifest(
+        &manifest,
+        command_id,
+        deployment.deployment_id
+    );
     if (result != ESP_OK) {
         ota_manager_set_error("install_failed");
         ota_manager_transition(
@@ -1454,11 +2026,26 @@ static esp_err_t ota_manager_execute(
         (void)ota_manager_report_event(
             "failed",
             release_id,
+            deployment.deployment_id,
             "install_failed",
             manifest.firmware_version,
             manifest.sha256,
-            0.0
+            0.0,
+            true
         );
+        ota_manager_transaction_t failed_transaction = {};
+        if (ota_manager_load_transaction(&failed_transaction) == ESP_OK &&
+            strcmp(
+                failed_transaction.deployment_id,
+                deployment.deployment_id
+            ) == 0 &&
+            strcmp(
+                failed_transaction.release_id,
+                release_id
+            ) == 0) {
+            (void)ota_manager_clear_transaction();
+        }
+        memset(&failed_transaction, 0, sizeof(failed_transaction));
         return result;
     }
     if (command_id != NULL) {
@@ -1475,6 +2062,14 @@ static esp_err_t ota_manager_execute(
         "%s",
         release_id
     );
+    snprintf(
+        ota_manager_last_deployment_id,
+        sizeof(ota_manager_last_deployment_id),
+        "%s",
+        deployment.deployment_id
+    );
+    memset(&deployment, 0, sizeof(deployment));
+    memset(&manifest, 0, sizeof(manifest));
     return ESP_OK;
 }
 
@@ -1562,6 +2157,32 @@ esp_err_t ota_manager_init(void) {
     ota_manager_snapshot.ready = true;
     ota_manager_apply_state_locked();
     ota_manager_load_applied_release();
+    ota_manager_transaction_t recovery_transaction = {};
+    if (ota_manager_load_transaction(&recovery_transaction) == ESP_OK) {
+        snprintf(
+            ota_manager_last_deployment_id,
+            sizeof(ota_manager_last_deployment_id),
+            "%s",
+            recovery_transaction.deployment_id
+        );
+        if (recovery_transaction.release_id[0] != '\0') {
+            snprintf(
+                ota_manager_snapshot.release_id,
+                sizeof(ota_manager_snapshot.release_id),
+                "%s",
+                recovery_transaction.release_id
+            );
+        }
+        if (recovery_transaction.deployment_id[0] != '\0') {
+            snprintf(
+                ota_manager_snapshot.deployment_id,
+                sizeof(ota_manager_snapshot.deployment_id),
+                "%s",
+                recovery_transaction.deployment_id
+            );
+        }
+        memset(&recovery_transaction, 0, sizeof(recovery_transaction));
+    }
     const esp_err_t recovery_result =
         ota_manager_recover_candidate_release();
     if (recovery_result != ESP_OK &&
