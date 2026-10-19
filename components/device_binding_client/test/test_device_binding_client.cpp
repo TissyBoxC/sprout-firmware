@@ -418,9 +418,10 @@ void test_clear_session_token_removes_persisted_and_memory_state() {
     assert(device_binding_client_register("token", "model", "1.0") == ESP_OK);
     assert(device_binding_client_authenticate() == ESP_OK);
     assert(device_binding_client_clear_session_token() == ESP_OK);
+    char cleared_session[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {};
     assert(
         device_binding_client_copy_session_token(
-            (char[DEVICE_BINDING_SESSION_TOKEN_SIZE]){0},
+            cleared_session,
             DEVICE_BINDING_SESSION_TOKEN_SIZE
         ) == ESP_ERR_INVALID_STATE
     );
@@ -577,9 +578,10 @@ void test_refresh_state_restores_all_persisted_flags() {
     );
     assert(!device_binding_client_is_bound());
     assert(!device_binding_client_is_registered());
+    char missing_session[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {};
     assert(
         device_binding_client_copy_session_token(
-            (char[DEVICE_BINDING_SESSION_TOKEN_SIZE]){0},
+            missing_session,
             DEVICE_BINDING_SESSION_TOKEN_SIZE
         ) == ESP_ERR_INVALID_STATE
     );
