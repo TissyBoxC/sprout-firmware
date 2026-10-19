@@ -45,8 +45,12 @@ static playback_queue_item_t make_item(
     strncpy(item.item_id, id, sizeof(item.item_id) - 1);
     item.priority = priority;
     item.is_interruptible = interruptible;
-    item.frame_count = frame_count;
-    for (size_t index = 0; index < frame_count; ++index) {
+    const size_t initialized_frames =
+        frame_count < PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM
+            ? frame_count
+            : PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM;
+    item.frame_count = initialized_frames;
+    for (size_t index = 0; index < initialized_frames; ++index) {
         item.frames[index].pcm_size = AUDIO_CODEC_FRAME_PCM_BYTES;
     }
     return item;
@@ -118,8 +122,9 @@ static void test_enqueue_validates_the_item(void) {
     item = make_interruptible(
         "too-many",
         PLAYBACK_PRIORITY_PROMPT,
-        PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM + 1
+        PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM
     );
+    item.frame_count = PLAYBACK_QUEUE_MAX_FRAMES_PER_ITEM + 1;
     assert(playback_queue_enqueue(&item) == PLAYBACK_QUEUE_ERR_INVALID_ARGUMENT);
 }
 
