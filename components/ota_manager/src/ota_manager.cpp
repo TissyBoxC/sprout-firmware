@@ -856,6 +856,25 @@ static esp_err_t ota_manager_clear_candidate_release(void) {
     return config_store_erase_key(OTA_MANAGER_CANDIDATE_RELEASE_KEY);
 }
 
+static bool ota_manager_pending_success_matches(
+    const char *release_id
+) {
+    if (release_id == NULL || release_id[0] == '\0') {
+        return false;
+    }
+    char pending_success[OTA_MANAGER_RELEASE_ID_SIZE] = {0};
+    const esp_err_t read_result = config_store_get_string(
+        OTA_MANAGER_PENDING_SUCCESS_KEY,
+        pending_success,
+        sizeof(pending_success)
+    );
+    const bool matches =
+        read_result == ESP_OK &&
+        strcmp(pending_success, release_id) == 0;
+    memset(pending_success, 0, sizeof(pending_success));
+    return matches;
+}
+
 static esp_err_t ota_manager_finalize_candidate_release(
     char *release_id_out,
     size_t output_size
@@ -903,10 +922,13 @@ static esp_err_t ota_manager_finalize_candidate_release(
     // Persist the terminal event before removing the install transaction.
     // A power loss after this point is recovered by the outbox poll, while a
     // crash before this point still has the candidate transaction to replay.
-    const esp_err_t queue_result = config_store_set_string(
-        OTA_MANAGER_PENDING_SUCCESS_KEY,
-        release_id
-    );
+    const esp_err_t queue_result =
+        ota_manager_pending_success_matches(release_id)
+            ? ESP_OK
+            : config_store_set_string(
+                OTA_MANAGER_PENDING_SUCCESS_KEY,
+                release_id
+            );
     if (queue_result != ESP_OK) {
         ESP_LOGE(
             TAG,

@@ -580,17 +580,20 @@ void test_version_comparison() {
 
 const char *const PLATFORM_SHA256 =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const char *const PLATFORM_SIGNATURE =
-    "50IR36ZPyidQNAefjdW1lFUqMVbvcoZ5f6Kt+yghQAK+Z1IlauZINfH5aYazbt+BQ"
-    "FcPKxqXfSqNLlqGIyAaCQ==";
+const char *const PLATFORM_SIGNATURE_MIN_ZERO =
+    "OdGDAW23aFJ8zQ1nVzzwjbbVOWFMpt/h/qKh+jsGmeXEU2R2q+xC72r70i8hbldD"
+    "mOQu2vzlMUIDVfNUmJztBw==";
+const char *const PLATFORM_SIGNATURE_MIN_090 =
+    "QeKamxp6NMOxC0cyU7ddtA4WLs2zrhTvR6tfts6UuOQHGx6AInlLAsY+5ir5vg7jp"
+    "b+fCXSVeN5xUXMCVo4HCQ==";
 const char *const PLATFORM_PUBLIC_KEY =
-    "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
+    "UUwLadjICBWjAVy8jjAJgVFNL7gpalWjBSDty5aUGRg=";
 const char *const TRUSTED_KEYRING =
-    "{\"release-key-1\":\"A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\"}";
+    "{\"release-key-1\":\"UUwLadjICBWjAVy8jjAJgVFNL7gpalWjBSDty5aUGRg=\"}";
 
 void test_platform_release_adapter_maps_real_platform_shape() {
     // Mirrors the platform DeviceRelease projection: `version` instead of
-    // `firmware_version`, a real detached signature, and a null publish time.
+    // `firmware_version`, a real detached signature, and explicit policy.
     const ota_platform_release_t release = {
         .release_id = "rel_2026_10_09_001",
         .version = "0.10.0",
@@ -603,11 +606,11 @@ void test_platform_release_adapter_maps_real_platform_shape() {
         .signature_key_id = "release-key-1",
         .signature_algorithm = "ed25519",
         .signature_payload_version = "2",
-        .signature = PLATFORM_SIGNATURE,
+        .signature = PLATFORM_SIGNATURE_MIN_ZERO,
         .rollback_allowed = false,
         .mandatory = true,
         .published_at = NULL,
-        .min_source_version = NULL,
+        .min_source_version = "0.0.0",
     };
     ota_manifest_t manifest = {};
     check(
@@ -624,14 +627,17 @@ void test_platform_release_adapter_maps_real_platform_shape() {
     );
     check(
         std::strcmp(manifest.min_source_version, "0.0.0") == 0,
-        "absent min source version must default safely"
+        "explicit minimum source version must be preserved"
     );
     check(
         std::strcmp(manifest.published_at, "2026-10-09T00:00:00Z") == 0,
         "absent published_at must use the trusted fallback"
     );
     check(
-        std::strcmp(manifest.signature, PLATFORM_SIGNATURE) == 0,
+        std::strcmp(
+            manifest.signature,
+            PLATFORM_SIGNATURE_MIN_ZERO
+        ) == 0,
         "detached signature must be preserved verbatim"
     );
     check(
@@ -651,8 +657,8 @@ void test_platform_release_adapter_maps_real_platform_shape() {
     );
     check(
         ota_manifest_verify_signature(&manifest, TRUSTED_KEYRING) ==
-            OTA_MANIFEST_ERR_SIGNATURE,
-        "a defaulted unsigned minimum source must not verify as signed policy"
+            OTA_MANIFEST_OK,
+        "explicit signed policy must verify"
     );
 }
 
@@ -669,7 +675,7 @@ void test_platform_release_adapter_preserves_signed_min_source_version() {
         .signature_key_id = "release-key-1",
         .signature_algorithm = "ed25519",
         .signature_payload_version = "2",
-        .signature = PLATFORM_SIGNATURE,
+        .signature = PLATFORM_SIGNATURE_MIN_090,
         .rollback_allowed = false,
         .mandatory = true,
         .published_at = "2026-10-09T00:00:00Z",
@@ -708,7 +714,7 @@ void test_platform_release_adapter_fails_closed() {
         .signature_key_id = "release-key-1",
         .signature_algorithm = "ed25519",
         .signature_payload_version = "2",
-        .signature = PLATFORM_SIGNATURE,
+        .signature = PLATFORM_SIGNATURE_MIN_090,
         .rollback_allowed = true,
         .mandatory = true,
         .published_at = "2026-10-09T00:00:00Z",
@@ -780,6 +786,28 @@ void test_platform_release_adapter_fails_closed() {
             &manifest
         ) == OTA_MANIFEST_ERR_MISSING_FIELD,
         "absent signature payload version must fail closed"
+    );
+
+    ota_platform_release_t absent_minimum_source = base;
+    absent_minimum_source.min_source_version = NULL;
+    check(
+        ota_manifest_from_platform_release(
+            &absent_minimum_source,
+            "2026-10-09T00:00:00Z",
+            &manifest
+        ) == OTA_MANIFEST_ERR_MIN_SOURCE_VERSION,
+        "absent minimum source version must not be defaulted"
+    );
+
+    ota_platform_release_t empty_minimum_source = base;
+    empty_minimum_source.min_source_version = "";
+    check(
+        ota_manifest_from_platform_release(
+            &empty_minimum_source,
+            "2026-10-09T00:00:00Z",
+            &manifest
+        ) == OTA_MANIFEST_ERR_MIN_SOURCE_VERSION,
+        "empty minimum source version must not be defaulted"
     );
 
     ota_platform_release_t bad_hash = base;
@@ -871,7 +899,7 @@ void test_detached_signature_fails_closed() {
         .signature_key_id = "release-key-1",
         .signature_algorithm = "ed25519",
         .signature_payload_version = "2",
-        .signature = PLATFORM_SIGNATURE,
+        .signature = PLATFORM_SIGNATURE_MIN_090,
         .rollback_allowed = false,
         .mandatory = true,
         .published_at = "2026-10-09T00:00:00Z",

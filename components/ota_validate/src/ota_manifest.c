@@ -1318,11 +1318,10 @@ ota_manifest_error_t ota_manifest_from_platform_release(
     manifest_out->rollback_allowed = release->rollback_allowed;
     manifest_out->mandatory = release->mandatory;
 
-    const char *min_source_version =
-        release->min_source_version != NULL &&
-                release->min_source_version[0] != '\0'
-            ? release->min_source_version
-            : "0.0.0";
+    const char *min_source_version = release->min_source_version;
+    if (min_source_version == NULL || min_source_version[0] == '\0') {
+        return OTA_MANIFEST_ERR_MIN_SOURCE_VERSION;
+    }
     if (!ota_manifest_semver_is_valid(min_source_version) ||
         !ota_manifest_copy_field(
             manifest_out->min_source_version,
