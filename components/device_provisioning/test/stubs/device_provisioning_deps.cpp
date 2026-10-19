@@ -143,7 +143,8 @@ static host_config_entry_t *host_allocate(const char *key) {
 
 void device_provisioning_host_reset(void) {
     memset(host_config, 0, sizeof(host_config));
-    memcpy(host_mac, (uint8_t[]){0x00, 0x11, 0x22, 0x33, 0x44, 0x55}, 6);
+    const uint8_t default_mac[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+    memcpy(host_mac, default_mac, sizeof(default_mac));
     host_binding_refresh_result = ESP_OK;
     host_bound = false;
     host_registered = true;

@@ -5,6 +5,7 @@
 #include "provisioning_payload.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace {
