@@ -1,5 +1,7 @@
 #include "version_info.h"
 
+#include <stddef.h>
+
 #include "esp_app_desc.h"
 
 version_info_t version_info_get(void) {
@@ -13,7 +15,7 @@ version_info_t version_info_get(void) {
     return version_information;
 }
 
-static esp_err_t version_info_initialize(void) {
+esp_err_t version_info_initialize(void) {
     return version_info_get().firmware_version[0] == '\0'
                ? ESP_ERR_INVALID_STATE
                : ESP_OK;

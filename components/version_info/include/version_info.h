@@ -17,6 +17,9 @@ typedef struct {
 /** @brief Return a snapshot of compile-time and application version data. */
 version_info_t version_info_get(void);
 
+/** @brief Validate that the running application exposes a firmware version. */
+esp_err_t version_info_initialize(void);
+
 /** @brief Return the removable-module descriptor for version_info. */
 const module_descriptor_t *version_info_module_descriptor(void);
 
