@@ -1,3 +1,7 @@
+#ifndef ESP_PLATFORM
+#define _DEFAULT_SOURCE
+#endif
+
 #include "time_sync_host.h"
 
 #include <stddef.h>
