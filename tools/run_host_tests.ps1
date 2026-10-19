@@ -469,23 +469,11 @@ Invoke-HostTest `
     -CCompiler $cCompiler `
     -Compiler $compiler
 
-$repositoryRoot = Split-Path -Parent $firmwareRoot
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($null -ne $python) {
-    Push-Location $repositoryRoot
-    try {
-        $previousPythonPath = $env:PYTHONPATH
-        try {
-            $env:PYTHONPATH = $repositoryRoot
-            & $python.Source -m unittest tools.test_ota_signing_firmware_verify -v
-        } finally {
-            $env:PYTHONPATH = $previousPythonPath
-        }
-        if ($LASTEXITCODE -ne 0) {
-            throw 'OTA signing-to-firmware verification failed.'
-        }
-    } finally {
-        Pop-Location
+    & $python.Source (Join-Path $PSScriptRoot 'test_ota_signing_firmware_verify.py') -v
+    if ($LASTEXITCODE -ne 0) {
+        throw 'OTA signing-to-firmware verification failed.'
     }
 } else {
     throw 'OTA signing-to-firmware verification requires Python.'
