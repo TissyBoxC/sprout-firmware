@@ -680,6 +680,7 @@ Invoke-HostTest `
     -Compiler $compiler
 
 $voiceSessionRoot = Join-Path $firmwareRoot 'components/voice_session'
+$voiceWakeRoot = Join-Path $firmwareRoot 'components/voice_wake'
 Invoke-HostTest `
     -Name 'voice_session_protocol' `
     -Sources @(
@@ -726,6 +727,26 @@ Invoke-HostTest `
     ) `
     -AdditionalArguments @() `
     -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'voice_session_wake_observer' `
+    -Sources @(
+        (Join-Path $voiceSessionRoot 'src/voice_session_wake_observer.c')
+        (Join-Path $voiceSessionRoot 'test/test_voice_session_wake_observer.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceSessionRoot 'src')
+        (Join-Path $voiceWakeRoot 'include')
+        (Join-Path $voiceWakeRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/audio_codec/include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+& (Join-Path $voiceSessionRoot 'test/run_voice_session_wake_runtime.ps1') `
+    -Compiler $compiler `
+    -CCompiler $cCompiler `
+    -FirmwareRoot $firmwareRoot
 
 $transportSecurityRoot = Join-Path $firmwareRoot 'components/transport_security'
 Invoke-HostTest `
@@ -3260,7 +3281,6 @@ Invoke-HostTest `
     -Language 'c' `
     -Compiler $cCompiler
 
-$voiceWakeRoot = Join-Path $firmwareRoot 'components/voice_wake'
 Invoke-HostTest `
     -Name 'voice_wake_contract' `
     -Sources @(

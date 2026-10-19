@@ -28,6 +28,7 @@
 #include "sdkconfig.h"
 #include "voice_session_protocol.h"
 #include "voice_session_token.h"
+#include "voice_session_wake_observer.h"
 
 #if CONFIG_FEATURE_TRANSPORT_SECURITY && __has_include("transport_security.h")
 #include "transport_security.h"
@@ -72,6 +73,11 @@
 #endif
 
 static const char *const TAG = "voice_session";
+
+esp_err_t voice_session_start_session(
+    const char *stream_id,
+    const char *session_id
+);
 
 // ---------------------------------------------------------------------------
 // Bounded configuration and buffers
@@ -151,7 +157,7 @@ typedef struct {
     voice_session_pending_t pending;
 
     uint32_t next_audio_sequence;
-    uint32_t last_wake_detection_count;
+    voice_session_wake_observer_t wake_observer;
 
 #if CONFIG_FEATURE_VOICE_DUPLEX
     voice_duplex_state_t duplex;
@@ -181,13 +187,36 @@ typedef struct {
 static voice_session_runtime_t voice_session_state;
 static portMUX_TYPE voice_session_counter_lock = portMUX_INITIALIZER_UNLOCKED;
 
+#ifdef VOICE_SESSION_WAKE_HOST_TESTS
+static esp_err_t voice_session_host_start_session(
+    const char *stream_id,
+    const char *session_id
+) {
+    return voice_session_start_session(stream_id, session_id);
+}
+
+typedef struct {
+    esp_err_t (*start_session)(const char *stream_id, const char *session_id);
+} voice_session_host_hooks_t;
+
+static voice_session_host_hooks_t voice_session_host_hooks = {
+    .start_session = voice_session_host_start_session,
+};
+#endif
+
 #if CONFIG_FEATURE_VOICE_DUPLEX
 static void voice_session_send_quality(void);
 #endif
 
+#ifdef VOICE_SESSION_WAKE_HOST_TESTS
+static void voice_session_poll_wake(void);
+#endif
+
+#if CONFIG_FEATURE_VOICE_DUPLEX
 static uint32_t voice_session_now_ms(void) {
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
+#endif
 
 static void voice_session_increment(uint32_t *counter) {
     portENTER_CRITICAL(&voice_session_counter_lock);
@@ -202,6 +231,73 @@ static void voice_session_publish_state(voice_session_runtime_t *state) {
     voice_session_state.counters.has_active_session = state->has_active_session;
     portEXIT_CRITICAL(&voice_session_counter_lock);
 }
+
+static esp_err_t voice_session_request_session_start(
+    const char *stream_id,
+    const char *session_id
+) {
+#ifdef VOICE_SESSION_WAKE_HOST_TESTS
+    return voice_session_host_hooks.start_session(stream_id, session_id);
+#else
+    return voice_session_start_session(stream_id, session_id);
+#endif
+}
+
+static void voice_session_initialize_observer_baseline(void) {
+#ifdef VOICE_SESSION_WAKE_HOST_TESTS
+    voice_session_wake_observer_reset(
+        &voice_session_state.wake_observer,
+        0
+    );
+#else
+    voice_session_wake_observer_reset(
+        &voice_session_state.wake_observer,
+        0
+    );
+#if CONFIG_FEATURE_VOICE_WAKE
+    voice_wake_snapshot_t snapshot = {0};
+    if (voice_wake_get_snapshot(&snapshot) == ESP_OK) {
+        (void)voice_session_wake_observer_observe(
+            &voice_session_state.wake_observer,
+            &snapshot
+        );
+    }
+#endif
+#endif
+}
+
+static void voice_session_start_wake_observer(void) {
+    voice_session_initialize_observer_baseline();
+}
+
+#ifdef VOICE_SESSION_WAKE_HOST_TESTS
+void voice_session_host_set_active_session(bool active) {
+    voice_session_state.has_active_session = active;
+}
+
+bool voice_session_host_has_pending_wake(void) {
+    return voice_session_state.pending == VOICE_SESSION_PENDING_WAKE;
+}
+
+void voice_session_host_set_start_session_handler(
+    esp_err_t (*handler)(const char *stream_id, const char *session_id)
+) {
+    voice_session_host_hooks.start_session = handler;
+}
+
+uint32_t voice_session_host_wake_observation_sequence(void) {
+    return voice_session_state.wake_observer.observation_sequence;
+}
+
+void voice_session_host_reset_runtime(void) {
+    memset(&voice_session_state, 0, sizeof(voice_session_state));
+    voice_session_state.state = VOICE_SESSION_STATE_IDLE;
+}
+
+void voice_session_host_poll_wake_once(void) {
+    voice_session_poll_wake();
+}
+#endif
 
 // FNV-1a over the bounded session id. The playback queue item id is much
 // shorter than a session id, so the id is folded into a small stable value
@@ -267,6 +363,7 @@ static esp_err_t voice_session_copy_token(char *output, size_t output_size) {
 }
 
 // Bounded response collector for the voice-token request.
+#if CONFIG_FEATURE_DEVICE_BINDING_CLIENT && CONFIG_FEATURE_DEVICE_IDENTITY
 typedef struct {
     char *body;
     size_t capacity;
@@ -297,6 +394,7 @@ static esp_err_t voice_session_token_http_event(
     response->body[response->length] = '\0';
     return ESP_OK;
 }
+#endif
 
 // Request a short-lived signed voice credential from the platform. The device
 // session token authenticates the request; the returned token is what the voice
@@ -420,8 +518,14 @@ static void voice_session_format_timestamp(char *output, size_t output_size) {
     // RFC3339 with a fixed UTC form; the clock is synchronized before a
     // session starts, so the value is meaningful to the gateway.
     const time_t now = time(NULL);
-    struct tm utc = {0};
+    struct tm utc = {};
+#if defined(_WIN32)
+    if (gmtime_s(&utc, &now) != 0) {
+        memset(&utc, 0, sizeof(utc));
+    }
+#else
     gmtime_r(&now, &utc);
+#endif
     strftime(
         output,
         output_size,
@@ -564,6 +668,7 @@ static size_t voice_session_build_wake_detected(
     return voice_session_serialize(root, output, output_size);
 }
 
+#if CONFIG_FEATURE_VOICE_DUPLEX
 static size_t voice_session_build_barge_in(
     uint32_t microphone_level_q15,
     uint32_t reference_level_q15,
@@ -644,7 +749,9 @@ static size_t voice_session_build_quality(
     );
     return voice_session_serialize(root, output, output_size);
 }
+#endif
 
+#if CONFIG_FEATURE_VOICE_DUPLEX
 static esp_err_t voice_session_enqueue_control(
     uint32_t type,
     const uint8_t *payload,
@@ -668,6 +775,7 @@ static esp_err_t voice_session_enqueue_control(
     }
     return ESP_OK;
 }
+#endif
 
 static size_t voice_session_build_reason_frame(
     const char *type,
@@ -780,13 +888,59 @@ static void voice_session_poll_wake(void) {
     if (voice_wake_get_snapshot(&snapshot) != ESP_OK) {
         return;
     }
-    if (snapshot.detections == voice_session_state.last_wake_detection_count) {
+    const voice_session_wake_observation_t observation =
+        voice_session_wake_observer_observe(
+            &voice_session_state.wake_observer,
+            &snapshot
+        );
+    if (observation.result == VOICE_SESSION_WAKE_OBSERVATION_INVALID) {
+        voice_session_wake_observer_clear_pending(
+            &voice_session_state.wake_observer
+        );
         return;
     }
-    voice_session_state.last_wake_detection_count = snapshot.detections;
+    voice_wake_event_t event = {0};
+    if (observation.result != VOICE_SESSION_WAKE_OBSERVATION_NEW &&
+        !voice_session_wake_observer_take(
+            &voice_session_state.wake_observer,
+            &event
+        )) {
+        return;
+    }
+    if (observation.result == VOICE_SESSION_WAKE_OBSERVATION_NEW) {
+        event = observation.event;
+        voice_session_wake_observer_clear_pending(
+            &voice_session_state.wake_observer
+        );
+    }
+    if (voice_session_state.has_active_session ||
+        voice_session_state.client != NULL) {
+        if (voice_session_state.has_active_session) {
+            (void)voice_session_send_wake_detected(
+                event.wake_word_name,
+                event.confidence_milli
+            );
+        } else {
+            // The previous detection has already opened the transport and
+            // staged its pending wake. A later detection during the handshake
+            // belongs to that same session, not to a second start attempt.
+            strncpy(
+                voice_session_state.wake_word,
+                event.wake_word_name,
+                sizeof(voice_session_state.wake_word) - 1
+            );
+            voice_session_state.wake_word[
+                sizeof(voice_session_state.wake_word) - 1
+            ] = '\0';
+            voice_session_state.wake_confidence_milli =
+                event.confidence_milli;
+            voice_session_state.pending = VOICE_SESSION_PENDING_WAKE;
+        }
+        return;
+    }
     (void)voice_session_notify_wake_detected(
-        "ni hao xiao zhi",
-        snapshot.last_confidence_milli
+        event.wake_word_name,
+        event.confidence_milli
     );
 #endif
 }
@@ -1551,7 +1705,7 @@ static esp_err_t voice_session_open_transport_locked(void) {
     // the platform cannot issue one (for example a build without the binding
     // client), fall back to the configured endpoint with the device session
     // token so a local/debug environment still connects.
-    voice_session_token_t voice_token = {0};
+    voice_session_token_t voice_token = {};
     const bool use_issued =
         voice_session_fetch_voice_token(&voice_token) == ESP_OK;
     char endpoint[VOICE_SESSION_TOKEN_URL_SIZE] = {0};
@@ -1780,19 +1934,21 @@ esp_err_t voice_session_notify_wake_detected(
         return voice_session_send_wake_detected(wake_word, confidence_milli);
     }
 
-    // No active session: remember the wake so the sender can deliver it after
-    // session_started. This matches the gateway, which rejects wake_detected
-    // until a session exists.
+    // Start first, then stage the wake. A failed start must not leave a wake
+    // that could be sent by a later, unrelated handshake.
+    const esp_err_t start_result =
+        voice_session_request_session_start(NULL, NULL);
+    if (start_result != ESP_OK) {
+        return start_result;
+    }
     strncpy(
         voice_session_state.wake_word,
         wake_word,
         sizeof(voice_session_state.wake_word) - 1
     );
+    voice_session_state.wake_word[sizeof(voice_session_state.wake_word) - 1] =
+        '\0';
     voice_session_state.wake_confidence_milli = confidence_milli;
-    const esp_err_t start_result = voice_session_start_session(NULL, NULL);
-    if (start_result != ESP_OK) {
-        return start_result;
-    }
     voice_session_state.pending = VOICE_SESSION_PENDING_WAKE;
     return ESP_OK;
 }
@@ -1984,20 +2140,7 @@ esp_err_t voice_session_init(void) {
         return ESP_ERR_NO_MEM;
     }
 
-    voice_session_state.sender_running = true;
-    if (xTaskCreate(
-            voice_session_sender_task,
-            "voice_session",
-            VOICE_SESSION_TASK_STACK_SIZE,
-            NULL,
-            VOICE_SESSION_TASK_PRIORITY,
-            &voice_session_state.sender_task
-        ) != pdPASS) {
-        voice_session_state.sender_running = false;
-        voice_session_shutdown();
-        return ESP_ERR_NO_MEM;
-    }
-
+    voice_session_state.sender_running = false;
     voice_session_state.state = VOICE_SESSION_STATE_IDLE;
 #if CONFIG_FEATURE_VOICE_DUPLEX
     const voice_duplex_config_t duplex_config = {
@@ -2014,7 +2157,6 @@ esp_err_t voice_session_init(void) {
     memset(&voice_session_state.quality, 0, sizeof(voice_session_state.quality));
     voice_session_state.duplex_active = false;
 #endif
-    voice_session_state.is_initialized = true;
     portENTER_CRITICAL(&voice_session_counter_lock);
     memset(
         &voice_session_state.counters,
@@ -2024,6 +2166,25 @@ esp_err_t voice_session_init(void) {
     voice_session_state.counters.is_initialized = true;
     portEXIT_CRITICAL(&voice_session_counter_lock);
     voice_session_publish_state(&voice_session_state);
+    // Establish the baseline before the sender starts. Reading the current
+    // sequence here preserves any detection that happened between detector
+    // initialization and this point; resetting to an empty value would hide it.
+    voice_session_start_wake_observer();
+    voice_session_state.sender_running = true;
+    if (xTaskCreate(
+            voice_session_sender_task,
+            "voice_session",
+            VOICE_SESSION_TASK_STACK_SIZE,
+            NULL,
+            VOICE_SESSION_TASK_PRIORITY,
+            &voice_session_state.sender_task
+        ) != pdPASS) {
+        voice_session_state.sender_running = false;
+        voice_session_shutdown();
+        return ESP_ERR_NO_MEM;
+    }
+    voice_session_state.is_initialized = true;
+
     return ESP_OK;
 }
 
@@ -2107,6 +2268,13 @@ void voice_session_shutdown(void) {
     voice_session_state.wake_suspended = false;
     voice_session_state.client = NULL;
     voice_session_state.stopping = false;
+    voice_session_state.pending = VOICE_SESSION_PENDING_NONE;
+    voice_session_state.wake_word[0] = '\0';
+    voice_session_state.wake_confidence_milli = 0;
+    voice_session_wake_observer_reset(
+        &voice_session_state.wake_observer,
+        0
+    );
 
     portENTER_CRITICAL(&voice_session_counter_lock);
     voice_session_state.counters.is_initialized =

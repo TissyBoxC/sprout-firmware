@@ -5,6 +5,7 @@ if(CONFIG_FEATURE_VOICE_SESSION)
         "src/voice_session.c"
         "src/voice_session_protocol.c"
         "src/voice_session_token.c"
+        "src/voice_session_wake_observer.c"
         "src/voice_duplex_core.c"
     )
 endif()

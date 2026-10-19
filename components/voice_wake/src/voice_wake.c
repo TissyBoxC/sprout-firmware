@@ -62,6 +62,7 @@ typedef struct {
     atomic_uint false_wake_rejections;
     atomic_uint last_confidence_milli;
     atomic_ullong last_detected_at_ms;
+    atomic_uint observation_sequence;
     atomic_uint session_nonce;
     atomic_ullong playback_stopped_at_ms;
     atomic_ullong cooldown_until_ms;
@@ -69,6 +70,7 @@ typedef struct {
     atomic_uint deterministic_run_frames;
     atomic_bool task_stop_requested;
     atomic_bool is_running;
+    voice_wake_event_t latest_event;
     voice_wake_handler_t handler;
     void *handler_context;
     SemaphoreHandle_t lifecycle_mutex;
@@ -90,6 +92,8 @@ typedef struct {
 static voice_wake_context_t voice_wake_state;
 static portMUX_TYPE voice_wake_handler_lock =
     portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE voice_wake_snapshot_lock =
+    portMUX_INITIALIZER_UNLOCKED;
 
 #ifdef VOICE_WAKE_HOST_TESTS
 void voice_wake_host_reset_state(void) {
@@ -110,6 +114,9 @@ void voice_wake_host_reset_state(void) {
     atomic_store(&voice_wake_state.false_wake_rejections, 0);
     atomic_store(&voice_wake_state.last_confidence_milli, 0);
     atomic_store(&voice_wake_state.last_detected_at_ms, 0);
+    atomic_store(&voice_wake_state.observation_sequence, 0);
+    memset(&voice_wake_state.latest_event, 0,
+           sizeof(voice_wake_state.latest_event));
     atomic_store(&voice_wake_state.session_nonce, 0);
     atomic_store(&voice_wake_state.playback_stopped_at_ms, 0);
     atomic_store(&voice_wake_state.cooldown_until_ms, 0);
@@ -240,6 +247,21 @@ static bool voice_wake_word_is_valid(uint32_t wake_word_id) {
     return wake_word_id > 0;
 }
 
+static bool voice_wake_event_name_is_valid(const char *name) {
+    if (name == NULL || name[0] == '\0') {
+        return false;
+    }
+    size_t length = 0;
+    while (length < VOICE_WAKE_WORD_NAME_SIZE && name[length] != '\0') {
+        const unsigned char character = (unsigned char)name[length];
+        if (character < 0x20u || character == 0x7Fu) {
+            return false;
+        }
+        ++length;
+    }
+    return length > 0 && length < VOICE_WAKE_WORD_NAME_SIZE;
+}
+
 static void voice_wake_publish_detection(
     uint32_t wake_word_id,
     const char *wake_word_name,
@@ -254,6 +276,9 @@ static void voice_wake_publish_detection(
         );
         return;
     }
+    // The detector display name can be absent or model-specific. The accepted
+    // event still has a stable wake-word id, and the snapshot observer must not
+    // silently lose a valid detection because only the display name is empty.
     if (confidence_milli < CONFIG_VOICE_WAKE_MIN_CONFIDENCE_MILLI) {
         voice_wake_report_rejection(
             VOICE_WAKE_REJECTION_LOW_CONFIDENCE,
@@ -326,14 +351,43 @@ static void voice_wake_publish_detection(
         wake_word_id,
         confidence_milli
     );
-    if (wake_word_name != NULL) {
+    if (voice_wake_event_name_is_valid(wake_word_name)) {
         strncpy(
             event.wake_word_name,
             wake_word_name,
             sizeof(event.wake_word_name) - 1
         );
         event.wake_word_name[sizeof(event.wake_word_name) - 1] = '\0';
+    } else {
+        snprintf(
+            event.wake_word_name,
+            sizeof(event.wake_word_name),
+            "wake_%lu",
+            (unsigned long)wake_word_id
+        );
     }
+
+    atomic_store(
+        &voice_wake_state.cooldown_until_ms,
+        detected_at_ms + CONFIG_VOICE_WAKE_COOLDOWN_MS
+    );
+    atomic_store(&voice_wake_state.last_confidence_milli, confidence_milli);
+    atomic_store(&voice_wake_state.last_detected_at_ms, detected_at_ms);
+    (void)atomic_fetch_add(&voice_wake_state.detections, 1u);
+    portENTER_CRITICAL(&voice_wake_snapshot_lock);
+    voice_wake_state.latest_event = event;
+    uint32_t observation_sequence =
+        atomic_load(&voice_wake_state.observation_sequence);
+    // Zero always means "no accepted event since initialization". Skip it on
+    // wrap so an observer never mistakes the wrapped value for an empty state.
+    observation_sequence = observation_sequence == UINT32_MAX
+        ? 1u
+        : observation_sequence + 1u;
+    atomic_store(
+        &voice_wake_state.observation_sequence,
+        observation_sequence
+    );
+    portEXIT_CRITICAL(&voice_wake_snapshot_lock);
 
     voice_wake_handler_t handler;
     void *handler_context;
@@ -344,14 +398,6 @@ static void voice_wake_publish_detection(
     if (handler != NULL) {
         handler(&event, handler_context);
     }
-
-    atomic_store(
-        &voice_wake_state.cooldown_until_ms,
-        detected_at_ms + CONFIG_VOICE_WAKE_COOLDOWN_MS
-    );
-    atomic_store(&voice_wake_state.last_confidence_milli, confidence_milli);
-    atomic_store(&voice_wake_state.last_detected_at_ms, detected_at_ms);
-    atomic_fetch_add(&voice_wake_state.detections, 1u);
 }
 
 static bool voice_wake_is_suppressed(uint64_t now_ms) {
@@ -978,6 +1024,7 @@ esp_err_t voice_wake_get_snapshot(voice_wake_snapshot_t *snapshot_out) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(snapshot_out, 0, sizeof(*snapshot_out));
+    portENTER_CRITICAL(&voice_wake_snapshot_lock);
     snapshot_out->is_ready = atomic_load(&voice_wake_state.is_ready);
     snapshot_out->is_armed = atomic_load(&voice_wake_state.is_armed);
     snapshot_out->is_suspended =
@@ -994,6 +1041,10 @@ esp_err_t voice_wake_get_snapshot(voice_wake_snapshot_t *snapshot_out) {
         atomic_load(&voice_wake_state.last_confidence_milli);
     snapshot_out->last_detected_at_ms =
         atomic_load(&voice_wake_state.last_detected_at_ms);
+    snapshot_out->observation_sequence =
+        atomic_load(&voice_wake_state.observation_sequence);
+    snapshot_out->latest_event = voice_wake_state.latest_event;
+    portEXIT_CRITICAL(&voice_wake_snapshot_lock);
     return ESP_OK;
 }
 

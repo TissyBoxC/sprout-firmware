@@ -61,6 +61,15 @@ code embeds the wake-word id and a confidence bucket, for example
 sent to the diagnostic heartbeat. The callback runs on the wake task and must
 return promptly.
 
+`voice_wake_get_snapshot` also returns `observation_sequence` and
+`latest_event`. The sequence advances once per accepted detection and skips
+zero on a `uint32_t` wrap. `latest_event` is copied with the sequence under one
+lock, so a consumer that cannot replace the single feedback handler can still
+observe the exact bounded wake name and metadata. A missing or blank detector
+display name is normalized to `wake_<id>`; it does not discard an otherwise
+valid detection. This polling path is advisory to the existing callback and
+does not change feedback ordering or delivery.
+
 Rejected detections are counted locally by reason and emit at most one
 `wake_rejected` interaction event per reason within the configured
 `VOICE_WAKE_REJECTION_EVENT_INTERVAL_MS` window. `duration_ms` is always zero

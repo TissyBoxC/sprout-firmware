@@ -53,13 +53,27 @@ typedef struct {
     uint32_t session_nonce;
 } voice_wake_event_t;
 
-/** @brief Callback invoked once for each accepted wake event. */
+/**
+ * @brief Callback invoked once for each accepted wake event.
+ *
+ * voice_wake supports one handler. Consumers that need to observe detections
+ * without replacing this callback must poll voice_wake_get_snapshot() and
+ * compare observation_sequence.
+ */
 typedef void (*voice_wake_handler_t)(
     const voice_wake_event_t *event,
     void *context
 );
 
-/** @brief Bounded detector state and counters for diagnostics. */
+/**
+ * @brief Bounded detector state, counters, and latest accepted wake event.
+ *
+ * observation_sequence increases once for every accepted detection. The
+ * latest_event is copied atomically as part of the same snapshot so an
+ * observer can correlate a new sequence with the wake word that caused it.
+ * After a uint32 wrap, sequence zero is skipped and observation restarts at
+ * one, so zero always means "no observation since initialization".
+ */
 typedef struct {
     bool is_ready;
     bool is_armed;
@@ -70,6 +84,8 @@ typedef struct {
     uint32_t false_wake_rejections;
     uint32_t last_confidence_milli;
     uint64_t last_detected_at_ms;
+    uint32_t observation_sequence;
+    voice_wake_event_t latest_event;
 } voice_wake_snapshot_t;
 
 /**
