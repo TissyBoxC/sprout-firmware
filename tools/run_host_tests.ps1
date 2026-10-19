@@ -474,7 +474,13 @@ $python = Get-Command python -ErrorAction SilentlyContinue
 if ($null -ne $python) {
     Push-Location $repositoryRoot
     try {
-        & $python.Source -m unittest tools.test_ota_signing_firmware_verify -v
+        $previousPythonPath = $env:PYTHONPATH
+        try {
+            $env:PYTHONPATH = $repositoryRoot
+            & $python.Source -m unittest tools.test_ota_signing_firmware_verify -v
+        } finally {
+            $env:PYTHONPATH = $previousPythonPath
+        }
         if ($LASTEXITCODE -ne 0) {
             throw 'OTA signing-to-firmware verification failed.'
         }
