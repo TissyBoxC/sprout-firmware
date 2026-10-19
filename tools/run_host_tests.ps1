@@ -3289,6 +3289,7 @@ Invoke-HostTest `
         '-DCONFIG_VOICE_WAKE_DETERMINISTIC_RMS_THRESHOLD=900'
         '-DCONFIG_VOICE_WAKE_DETERMINISTIC_MIN_RUN_FRAMES=4'
     ) `
+    -LinkArguments @('-lm') `
     -Language 'c' `
     -Compiler $cCompiler
 
