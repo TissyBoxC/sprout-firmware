@@ -27,6 +27,7 @@ SECTION_ORDER = (
 SECTION_TITLES = {
     "feat": "新功能",
     "fix": "问题修复",
+    "ota": "OTA 与发布",
     "perf": "性能优化",
     "refactor": "代码重构",
     "security": "安全与隐私",
@@ -49,6 +50,7 @@ SCOPE_TITLES = {
     "system_core": "系统核心",
     "ui_text": "界面文本",
     "version_info": "版本信息",
+    "ota": "OTA",
 }
 
 DESCRIPTION_TITLES = {

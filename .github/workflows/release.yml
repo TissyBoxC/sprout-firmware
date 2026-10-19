@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect version and existing release
         id: detect
@@ -31,60 +32,287 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          version="$(tr -d '[:space:]' < VERSION)"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid VERSION: $version" >&2
-            exit 1
-          fi
-          tag="v$version"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            # A tag without a complete release is not a successful publish.
-            # Verify every immutable asset and its checksum before skipping.
-            if [[ -z "${GH_TOKEN:-}" ]]; then
-              echo "GH_TOKEN is required to verify the existing immutable release." >&2
-              exit 1
-            fi
-            if ! gh release view "$tag" \
-                --repo "$GITHUB_REPOSITORY" \
-                --json assets \
-                --jq '.assets[].name' > "$RUNNER_TEMP/existing-assets.txt"; then
-              echo "Tag $tag exists but its GitHub Release is missing or unreadable." >&2
-              exit 1
-            fi
-            if ! grep -qx 'SHA256SUMS' "$RUNNER_TEMP/existing-assets.txt"; then
-              echo "Existing release $tag is missing SHA256SUMS." >&2
-              exit 1
-            fi
-            expected_assets=(
-              "sprout-firmware-$tag.bin"
-              "bootloader.bin"
-              "partitions.bin"
-              "firmware.elf"
-              "firmware.map"
-              "SHA256SUMS"
-            )
-            for asset in "${expected_assets[@]}"; do
-              if ! grep -qx "$asset" "$RUNNER_TEMP/existing-assets.txt"; then
-                echo "Existing release $tag is missing required asset $asset." >&2
-                exit 1
-              fi
-            done
-            gh release download "$tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              --dir "$RUNNER_TEMP/existing-release"
-            (
-              cd "$RUNNER_TEMP/existing-release"
-              sha256sum -c SHA256SUMS
-            )
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Existing release $tag and all assets are intact; skipping publication."
-            exit 0
-          fi
-          {
-            echo "should_release=true"
-            echo "version=$version"
-            echo "tag=$tag"
-          } >> "$GITHUB_OUTPUT"
+          python - <<'PY_RELEASE_STATE'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+
+          VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+          SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
+          CHECKSUM_PATTERN = re.compile(r"^([0-9a-fA-F]{64}) [ *](.+)$")
+
+          class WorkflowError(RuntimeError):
+              pass
+
+          def run(command):
+              result = subprocess.run(
+                  command,
+                  text=True,
+                  capture_output=True,
+              )
+              if result.returncode != 0:
+                  detail = (result.stderr or result.stdout).strip()
+                  raise WorkflowError(
+                      f"command failed ({result.returncode}): "
+                      f"{' '.join(command)}\n{detail}"
+                  )
+              return result.stdout
+
+          def read_release(repository, tag):
+              command = [
+                  "gh",
+                  "api",
+                  f"repos/{repository}/releases/tags/{tag}",
+              ]
+              result = subprocess.run(
+                  command,
+                  text=True,
+                  capture_output=True,
+              )
+              if result.returncode == 0:
+                  try:
+                      return json.loads(result.stdout)
+                  except json.JSONDecodeError as error:
+                      raise WorkflowError(
+                          f"GitHub returned invalid release data: {error}"
+                      ) from error
+              detail = (result.stderr or result.stdout).strip()
+              if "HTTP 404" in detail or "Not Found" in detail:
+                  return None
+              raise WorkflowError(f"Unable to read release {tag}: {detail}")
+
+          def resolve_tag(tag):
+              command = [
+                  "git",
+                  "ls-remote",
+                  "--tags",
+                  "origin",
+                  f"refs/tags/{tag}",
+                  f"refs/tags/{tag}^{{}}",
+              ]
+              direct = None
+              peeled = None
+              for line in run(command).splitlines():
+                  fields = line.split()
+                  if len(fields) != 2:
+                      continue
+                  sha, ref = fields
+                  if ref == f"refs/tags/{tag}":
+                      direct = sha
+                  elif ref == f"refs/tags/{tag}^{{}}":
+                      peeled = sha
+              commit_sha = peeled or direct
+              if commit_sha is not None and not SHA_PATTERN.fullmatch(commit_sha):
+                  raise WorkflowError(
+                      f"Tag {tag} resolved to an invalid commit SHA."
+                  )
+              return direct, commit_sha
+
+          def verify_release_assets(
+              repository,
+              tag,
+              release,
+              expected_assets,
+          ):
+              assets = release.get("assets")
+              if not isinstance(assets, list):
+                  return False, "release assets are missing"
+              names = []
+              for asset in assets:
+                  if not isinstance(asset, dict):
+                      return False, "release asset metadata is invalid"
+                  name = asset.get("name")
+                  if not isinstance(name, str):
+                      return False, "release asset name is invalid"
+                  names.append(name)
+              if len(names) != len(set(names)):
+                  return False, "release contains duplicate asset names"
+              if set(names) != set(expected_assets):
+                  missing = sorted(set(expected_assets) - set(names))
+                  extra = sorted(set(names) - set(expected_assets))
+                  return (
+                      False,
+                      f"asset set mismatch; missing={missing}, extra={extra}",
+                  )
+
+              runner_temp = Path(os.environ["RUNNER_TEMP"])
+              download_dir = Path(
+                  tempfile.mkdtemp(
+                      prefix="existing-release-",
+                      dir=runner_temp,
+                  )
+              )
+              try:
+                  for name in expected_assets:
+                      run(
+                          [
+                              "gh",
+                              "release",
+                              "download",
+                              tag,
+                              "--repo",
+                              repository,
+                              "--pattern",
+                              name,
+                              "--dir",
+                              str(download_dir),
+                          ]
+                      )
+                  checksum_path = download_dir / "SHA256SUMS"
+                  if (
+                      not checksum_path.is_file()
+                      or checksum_path.is_symlink()
+                      or checksum_path.stat().st_size > 65536
+                  ):
+                      return False, "SHA256SUMS is missing or invalid"
+                  checksum_data = checksum_path.read_text(
+                      encoding="utf-8"
+                  )
+                  checksums = {}
+                  for line in checksum_data.splitlines():
+                      match = CHECKSUM_PATTERN.fullmatch(line)
+                      if match is None:
+                          return False, "SHA256SUMS contains an invalid entry"
+                      digest, name = match.groups()
+                      if (
+                          Path(name).name != name
+                          or name in checksums
+                          or name == "SHA256SUMS"
+                      ):
+                          return False, "SHA256SUMS contains an unsafe entry"
+                      checksums[name] = digest.lower()
+                  checksum_assets = set(expected_assets) - {"SHA256SUMS"}
+                  if set(checksums) != checksum_assets:
+                      return False, "SHA256SUMS does not cover the asset set"
+                  for name, expected_digest in checksums.items():
+                      asset_path = download_dir / name
+                      if not asset_path.is_file() or asset_path.is_symlink():
+                          return False, f"downloaded asset {name} is invalid"
+                      actual_digest = hashlib.sha256(
+                          asset_path.read_bytes()
+                      ).hexdigest()
+                      if actual_digest != expected_digest:
+                          return False, f"checksum mismatch for {name}"
+                  return True, ""
+              finally:
+                  shutil.rmtree(download_dir, ignore_errors=True)
+
+          def write_outputs(values):
+              with open(
+                  os.environ["GITHUB_OUTPUT"],
+                  "a",
+                  encoding="utf-8",
+              ) as output:
+                  for name, value in values.items():
+                      output.write(f"{name}={value}\n")
+
+          def main():
+              root = Path(os.environ.get("GITHUB_WORKSPACE", os.getcwd()))
+              version = (root / "VERSION").read_text(
+                  encoding="utf-8"
+              ).strip()
+              if VERSION_PATTERN.fullmatch(version) is None:
+                  raise WorkflowError(f"Invalid VERSION: {version}")
+              tag = f"v{version}"
+              repository = os.environ["GITHUB_REPOSITORY"]
+              expected_head = os.environ["GITHUB_SHA"].lower()
+              actual_head = run(["git", "rev-parse", "HEAD"]).strip().lower()
+              if actual_head != expected_head:
+                  raise WorkflowError(
+                      "Checked-out commit does not match the workflow commit."
+                  )
+
+              direct_tag_sha, tag_sha = resolve_tag(tag)
+              tag_exists = direct_tag_sha is not None
+              release = read_release(repository, tag)
+
+              if tag_exists and tag_sha != actual_head:
+                  raise WorkflowError(
+                      f"Refusing to replace tag {tag}: it points to "
+                      f"{tag_sha}, not the workflow commit {actual_head}."
+                  )
+              if release is not None and not tag_exists:
+                  raise WorkflowError(
+                      f"Release {tag} exists without its tag; refusing to repair."
+                  )
+
+              expected_assets = (
+                  f"sprout-firmware-{tag}.bin",
+                  "bootloader.bin",
+                  "partitions.bin",
+                  "firmware.elf",
+                  "firmware.map",
+                  "SHA256SUMS",
+              )
+              if release is None:
+                  publish_mode = "attach" if tag_exists else "create"
+                  reason = (
+                      "tag exists but release is missing"
+                      if tag_exists
+                      else "tag and release are missing"
+                  )
+              else:
+                  release_tag = release.get("tag_name")
+                  if release_tag != tag:
+                      raise WorkflowError(
+                          f"Release metadata names {release_tag!r}, not {tag!r}."
+                      )
+                  target_commitish = release.get("target_commitish")
+                  if (
+                      isinstance(target_commitish, str)
+                      and SHA_PATTERN.fullmatch(target_commitish)
+                      and target_commitish.lower() != actual_head
+                  ):
+                      raise WorkflowError(
+                          f"Release {tag} targets {target_commitish}, not "
+                          f"the workflow commit {actual_head}."
+                      )
+                  complete, reason = verify_release_assets(
+                      repository,
+                      tag,
+                      release,
+                      expected_assets,
+                  )
+                  if complete:
+                      print(
+                          f"Existing release {tag} and all assets "
+                          "are intact; skipping publication."
+                      )
+                      write_outputs({"should_release": "false"})
+                      return
+                  if release.get("immutable", False):
+                      raise WorkflowError(
+                          f"Release {tag} is immutable but incomplete: {reason}"
+                      )
+                  if release.get("draft", False):
+                      publish_mode = "rebuild_draft"
+                      reason = "draft release has incomplete or mutable assets"
+                  else:
+                      publish_mode = "rebuild"
+
+              write_outputs(
+                  {
+                      "should_release": "true",
+                      "version": version,
+                      "tag": tag,
+                      "publish_mode": publish_mode,
+                  }
+              )
+              print(f"Publishing {tag} using mode {publish_mode}: {reason}")
+
+          if __name__ == "__main__":
+              try:
+                  main()
+              except (KeyError, OSError, WorkflowError) as error:
+                  print(f"Release state check failed: {error}", file=sys.stderr)
+                  sys.exit(1)
+          PY_RELEASE_STATE
 
       - name: Set up Python
         if: steps.detect.outputs.should_release == 'true'
@@ -230,10 +458,228 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.detect.outputs.tag }}
           RELEASE_VERSION: ${{ steps.detect.outputs.version }}
+          RELEASE_PUBLISH_MODE: ${{ steps.detect.outputs.publish_mode }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" dist/* \
-            --target "$GITHUB_SHA" \
-            --title "初芽固件 $RELEASE_VERSION" \
-            --notes-file release-notes.md
+          python - <<'PY_RELEASE_PUBLISH'
+          import hashlib
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
+          CHECKSUM_PATTERN = re.compile(r"^([0-9a-fA-F]{64}) [ *](.+)$")
+
+          class WorkflowError(RuntimeError):
+              pass
+
+          def run(command):
+              result = subprocess.run(
+                  command,
+                  text=True,
+                  capture_output=True,
+              )
+              if result.returncode != 0:
+                  detail = (result.stderr or result.stdout).strip()
+                  raise WorkflowError(
+                      f"command failed ({result.returncode}): "
+                      f"{' '.join(command)}\n{detail}"
+                  )
+              return result.stdout
+
+          def resolve_tag(tag):
+              command = [
+                  "git",
+                  "ls-remote",
+                  "--tags",
+                  "origin",
+                  f"refs/tags/{tag}",
+                  f"refs/tags/{tag}^{{}}",
+              ]
+              direct = None
+              peeled = None
+              for line in run(command).splitlines():
+                  fields = line.split()
+                  if len(fields) != 2:
+                      continue
+                  sha, ref = fields
+                  if ref == f"refs/tags/{tag}":
+                      direct = sha
+                  elif ref == f"refs/tags/{tag}^{{}}":
+                      peeled = sha
+              commit_sha = peeled or direct
+              if commit_sha is not None and not SHA_PATTERN.fullmatch(commit_sha):
+                  raise WorkflowError(
+                      f"Tag {tag} resolved to an invalid commit SHA."
+                  )
+              return direct, commit_sha
+
+          def verify_local_assets(dist_dir, expected_assets):
+              entries = list(dist_dir.iterdir())
+              names = [entry.name for entry in entries]
+              if (
+                  len(names) != len(set(names))
+                  or set(names) != set(expected_assets)
+              ):
+                  raise WorkflowError(
+                      "Release asset directory does not contain exactly "
+                      f"the expected files: {sorted(names)}"
+                  )
+              for entry in entries:
+                  if not entry.is_file() or entry.is_symlink():
+                      raise WorkflowError(
+                          f"Release asset {entry.name} is not a regular file."
+                      )
+              checksum_path = dist_dir / "SHA256SUMS"
+              if checksum_path.stat().st_size > 65536:
+                  raise WorkflowError("SHA256SUMS is unexpectedly large.")
+              checksums = {}
+              for line in checksum_path.read_text(encoding="utf-8").splitlines():
+                  match = CHECKSUM_PATTERN.fullmatch(line)
+                  if match is None:
+                      raise WorkflowError(
+                          "SHA256SUMS contains an invalid entry."
+                      )
+                  digest, name = match.groups()
+                  if (
+                      Path(name).name != name
+                      or name in checksums
+                      or name == "SHA256SUMS"
+                  ):
+                      raise WorkflowError("SHA256SUMS contains an unsafe entry.")
+                  checksums[name] = digest.lower()
+              expected_checksum_names = set(expected_assets) - {"SHA256SUMS"}
+              if set(checksums) != expected_checksum_names:
+                  raise WorkflowError(
+                      "SHA256SUMS does not cover the generated asset set."
+                  )
+              for name, expected_digest in checksums.items():
+                  actual_digest = hashlib.sha256(
+                      (dist_dir / name).read_bytes()
+                  ).hexdigest()
+                  if actual_digest != expected_digest:
+                      raise WorkflowError(
+                          f"Generated asset {name} failed checksum verification."
+                      )
+
+          def create_release(
+              tag,
+              repository,
+              assets,
+              title,
+              notes_path,
+              target,
+          ):
+              command = [
+                  "gh",
+                  "release",
+                  "create",
+                  tag,
+                  *[str(path) for path in assets],
+                  "--repo",
+                  repository,
+                  "--draft",
+                  "--title",
+                  title,
+                  "--notes-file",
+                  str(notes_path),
+              ]
+              if target is None:
+                  command.append("--verify-tag")
+              else:
+                  command.extend(["--target", target])
+              run(command)
+              run(
+                  [
+                      "gh",
+                      "release",
+                      "edit",
+                      tag,
+                      "--repo",
+                      repository,
+                      "--draft=false",
+                  ]
+              )
+
+          def main():
+              root = Path(os.environ.get("GITHUB_WORKSPACE", os.getcwd()))
+              tag = os.environ["RELEASE_TAG"]
+              version = os.environ["RELEASE_VERSION"]
+              mode = os.environ["RELEASE_PUBLISH_MODE"]
+              repository = os.environ["GITHUB_REPOSITORY"]
+              head = os.environ["GITHUB_SHA"].lower()
+              dist_dir = root / "dist"
+              expected_assets = (
+                  f"sprout-firmware-{tag}.bin",
+                  "bootloader.bin",
+                  "partitions.bin",
+                  "firmware.elf",
+                  "firmware.map",
+                  "SHA256SUMS",
+              )
+              verify_local_assets(dist_dir, expected_assets)
+              notes_path = root / "release-notes.md"
+              if not notes_path.is_file() or notes_path.stat().st_size == 0:
+                  raise WorkflowError("Chinese release notes are missing.")
+              assets = [dist_dir / name for name in expected_assets]
+
+              if mode == "create":
+                  direct, tag_sha = resolve_tag(tag)
+                  if direct is not None:
+                      raise WorkflowError(
+                          f"Tag {tag} appeared after state detection; rerun "
+                          "the workflow so it can be verified safely."
+                      )
+                  create_release(
+                      tag,
+                      repository,
+                      assets,
+                      f"初芽固件 {version}",
+                      notes_path,
+                      head,
+                  )
+                  return
+
+              if mode not in {"attach", "rebuild", "rebuild_draft"}:
+                  raise WorkflowError(f"Unsupported publish mode: {mode}")
+              direct, tag_sha = resolve_tag(tag)
+              if direct is None:
+                  raise WorkflowError(
+                      f"Tag {tag} disappeared after state detection."
+                  )
+              if tag_sha != head:
+                  raise WorkflowError(
+                      f"Refusing to replace tag {tag}: it points to "
+                      f"{tag_sha}, not the workflow commit {head}."
+                  )
+              if mode in {"rebuild", "rebuild_draft"}:
+                  run(
+                      [
+                          "gh",
+                          "release",
+                          "delete",
+                          tag,
+                          "--repo",
+                          repository,
+                          "--yes",
+                      ]
+                  )
+              create_release(
+                  tag,
+                  repository,
+                  assets,
+                  f"初芽固件 {version}",
+                  notes_path,
+                  None,
+              )
+
+          if __name__ == "__main__":
+              try:
+                  main()
+              except (KeyError, OSError, WorkflowError) as error:
+                  print(f"Release publication failed: {error}", file=sys.stderr)
+                  sys.exit(1)
+          PY_RELEASE_PUBLISH
