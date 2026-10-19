@@ -1,9 +1,10 @@
-set(ota_rollback_sources "")
+set(ota_rollback_sources
+    "src/ota_rollback_policy.c"
+    "src/ota_rollback_health_policy.c"
+)
 
 if(CONFIG_FEATURE_OTA_ROLLBACK)
     list(APPEND ota_rollback_sources
-        "src/ota_rollback_policy.c"
-        "src/ota_rollback_health_policy.c"
         "src/ota_rollback.c"
     )
 endif()

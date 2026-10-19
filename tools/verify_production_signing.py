@@ -183,8 +183,8 @@ if _production_environment():
         )
         env.Exit(1)  # noqa: F821
     overlay_path = _write_overlay(project_dir, ota_keyring)
-    defaults = env.GetProjectOption(  # noqa: F821
-        "board_build.cmake_extra_args", ""
+    defaults = env.BoardConfig().get(  # noqa: F821
+        "build.cmake_extra_args", ""
     )
     match = re.search(r'-DSDKCONFIG_DEFAULTS="([^"]+)"', defaults)
     if match is None:

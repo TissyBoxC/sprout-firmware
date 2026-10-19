@@ -45,8 +45,8 @@ if env.subst("$PIOENV").endswith("-production"):  # noqa: F821
         newline="\n",
     )
 
-    option = env.GetProjectOption(  # noqa: F821
-        "board_build.cmake_extra_args",
+    option = env.BoardConfig().get(  # noqa: F821
+        "build.cmake_extra_args",
         "",
     )
     match = re.search(r'-DSDKCONFIG_DEFAULTS="([^"]+)"', option)
