@@ -40,6 +40,8 @@ function Invoke-HostTest {
         # binding an empty array to a mandatory parameter fails under pwsh 7.
         [string[]]$AdditionalArguments = @(),
 
+        [string[]]$LinkArguments = @(),
+
         [ValidateSet('c', 'c++')]
         [string]$Language = 'c++',
 
@@ -132,6 +134,7 @@ function Invoke-HostTest {
             }
         }
         $arguments += $objectFiles
+        $arguments += $LinkArguments
         $arguments += @('-o', $executable)
 
         Write-Host "Building host test $Name"
@@ -3158,8 +3161,8 @@ Invoke-HostTest `
         '-DCONFIG_AUDIO_INPUT_VAD_HANGOVER_FRAMES=12'
         '-DCONFIG_AUDIO_INPUT_VAD_NOISE_DOWNWARD_PERMILLE=150'
         '-DCONFIG_AUDIO_INPUT_VAD_NOISE_UPWARD_PERMILLE=980'
-        '-lm'
     ) `
+    -LinkArguments @('-lm') `
     -Language 'c' `
     -Compiler $cCompiler
 
@@ -3194,8 +3197,8 @@ Invoke-HostTest `
         '-DCONFIG_AUDIO_INPUT_VAD_HANGOVER_FRAMES=12'
         '-DCONFIG_AUDIO_INPUT_VAD_NOISE_DOWNWARD_PERMILLE=150'
         '-DCONFIG_AUDIO_INPUT_VAD_NOISE_UPWARD_PERMILLE=980'
-        '-lm'
     ) `
+    -LinkArguments @('-lm') `
     -Language 'c' `
     -Compiler $cCompiler
 
