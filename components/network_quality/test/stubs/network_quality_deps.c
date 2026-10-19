@@ -2,6 +2,8 @@
 #include "esp_wifi.h"
 #include "network_manager.h"
 
+#include <stddef.h>
+
 static network_manager_state_t host_network_state = NETWORK_MANAGER_STATE_CONNECTED;
 static network_manager_state_callback_t host_network_callback;
 static esp_err_t host_ap_info_result = ESP_OK;
