@@ -327,6 +327,10 @@ if(CONFIG_FEATURE_LONG_TERM_MEMORY)
     list(APPEND app_requires "long_term_memory")
 endif()
 
+if(CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED)
+    list(APPEND app_requires "long_term_memory_sync")
+endif()
+
 if(CONFIG_FEATURE_ENGLISH_COURSE)
     list(APPEND app_requires "english_course")
 endif()

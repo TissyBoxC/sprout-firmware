@@ -89,6 +89,10 @@
 #include "long_term_memory.h"
 #endif
 
+#if CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED
+#include "long_term_memory_sync.h"
+#endif
+
 #if CONFIG_FEATURE_ENGLISH_COURSE
 #include "english_course.h"
 #endif
@@ -1068,6 +1072,11 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_LONG_TERM_MEMORY
     ESP_ERROR_CHECK(module_registry_add(long_term_memory_module_descriptor()));
+#endif
+#if CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED
+    ESP_ERROR_CHECK(
+        module_registry_add(long_term_memory_sync_module_descriptor())
+    );
 #endif
 #if CONFIG_FEATURE_ENGLISH_COURSE
     ESP_ERROR_CHECK(module_registry_add(english_course_module_descriptor()));

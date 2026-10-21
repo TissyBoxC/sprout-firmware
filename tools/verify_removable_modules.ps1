@@ -216,6 +216,7 @@ function Test-OptionalModuleRemoval {
         'companionship'
         'growth_record'
         'habit_reminder'
+        'long_term_memory_sync'
         'long_term_memory'
         'english_course'
         'playback_request'

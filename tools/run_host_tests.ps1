@@ -1690,6 +1690,56 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$longTermMemorySyncRoot = Join-Path $firmwareRoot 'components/long_term_memory_sync'
+Invoke-HostTest `
+    -Name 'long_term_memory_sync_core' `
+    -Sources @(
+        (Join-Path $longTermMemorySyncRoot 'src/long_term_memory_sync_core.c')
+        (Join-Path $longTermMemorySyncRoot 'test/test_long_term_memory_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $longTermMemorySyncRoot 'include')
+        (Join-Path $longTermMemorySyncRoot 'src')
+        (Join-Path $longTermMemorySyncRoot 'test/stubs')
+        (Join-Path $longTermMemoryRoot 'include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'long_term_memory_sync_runtime' `
+    -Sources @(
+        (Join-Path $longTermMemoryRoot 'src/long_term_memory_core.c')
+        (Join-Path $longTermMemoryRoot 'src/long_term_memory.c')
+        (Join-Path $longTermMemorySyncRoot 'test/stubs/config_store.c')
+        (Join-Path $longTermMemorySyncRoot 'src/long_term_memory_sync_core.c')
+        (Join-Path $longTermMemorySyncRoot 'src/long_term_memory_sync_store.c')
+        (Join-Path $longTermMemorySyncRoot 'src/long_term_memory_sync.cpp')
+        (Join-Path $longTermMemorySyncRoot 'test/stubs/long_term_memory_sync_deps.cpp')
+        (Join-Path $longTermMemorySyncRoot 'test/test_long_term_memory_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $longTermMemoryRoot 'include')
+        (Join-Path $longTermMemoryRoot 'src')
+        (Join-Path $longTermMemorySyncRoot 'include')
+        (Join-Path $longTermMemorySyncRoot 'src')
+        (Join-Path $longTermMemorySyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DLONG_TERM_MEMORY_SYNC_HOST_TESTS=1'
+        '-DCONFIG_LONG_TERM_MEMORY_SYNC_ENABLED=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $englishCourseRoot = Join-Path $firmwareRoot 'components/english_course'
 Invoke-HostTest `
     -Name 'english_course_core' `
