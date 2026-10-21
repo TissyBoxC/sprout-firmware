@@ -143,7 +143,7 @@ void test_now_rejects_unusable_identity_and_base_url() {
 void test_full_pull_merges_remote_memories() {
     reset_all(true);
     set_pull_response(
-        "{\"data\":{\"memories\":["
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":["
         "{\"memory_key\":\"favorite_color\",\"memory_value\":\"蓝色\","
         "\"confidence\":65536,\"revision\":4,\"updated_at\":1700000100},"
         "{\"memory_key\":\"pet_name\",\"memory_value\":\"布丁\","
@@ -172,17 +172,22 @@ void test_full_pull_merges_remote_memories() {
     assert(count_request_path(UPLOAD_PATH) == 1);
 
     long_term_memory_entry_t recalled = {};
+    // Memories are keyed by the child the server named, not by this device, so
+    // the same child keeps one shared memory across devices.
     assert(
         long_term_memory_recall(
-            "device-0001",
+            "child-1",
             "favorite_color",
             &recalled
         )
     );
     assert(std::strcmp(recalled.value, "蓝色") == 0);
     assert(recalled.updated_at_epoch_seconds == 1700000100);
-    assert(long_term_memory_recall("device-0001", "pet_name", &recalled));
+    assert(long_term_memory_recall("child-1", "pet_name", &recalled));
     assert(std::strcmp(recalled.value, "布丁") == 0);
+    // The device id must never become a memory owner, or two devices serving
+    // the same child would each keep a private copy.
+    assert(!long_term_memory_recall("device-0001", "favorite_color", &recalled));
 
     const long_term_memory_sync_status_snapshot_t after = status();
     assert(after.status == LONG_TERM_MEMORY_SYNC_STATUS_IDLE);
@@ -194,7 +199,7 @@ void test_full_pull_merges_remote_memories() {
 void test_second_pull_uses_since_revision() {
     reset_all(true);
     set_pull_response(
-        "{\"data\":{\"memories\":[{\"memory_key\":\"pet_name\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
         "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":7,"
         "\"updated_at\":1700000200}],\"revision\":7}}"
     );
@@ -202,7 +207,7 @@ void test_second_pull_uses_since_revision() {
     assert(status().revision == 7);
 
     long_term_memory_sync_host_reset();
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":7}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":7}}");
     assert(long_term_memory_sync_now() == ESP_OK);
     assert(
         std::strstr(
@@ -222,7 +227,7 @@ void test_empty_snapshot_clears_local_memories() {
     assert(long_term_memory_remember(&local) == ESP_OK);
     assert(long_term_memory_count() == 1);
 
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":9}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":9}}");
     assert(long_term_memory_sync_now() == ESP_OK);
 
     assert(long_term_memory_count() == 0);
@@ -246,11 +251,11 @@ void test_unusable_payload_keeps_local_memories() {
     assert(long_term_memory_sync_now() == ESP_ERR_INVALID_ARG);
     assert(long_term_memory_count() == 1);
 
-    set_pull_response("{\"data\":{\"memories\":[{\"memory_key\":\"\"}]}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"\"}]}}");
     assert(long_term_memory_sync_now() == ESP_ERR_INVALID_ARG);
     assert(long_term_memory_count() == 1);
 
-    set_pull_response("{\"data\":{\"revision\":3}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"revision\":3}}");
     assert(long_term_memory_sync_now() == ESP_ERR_INVALID_ARG);
     assert(long_term_memory_count() == 1);
 
@@ -338,7 +343,7 @@ void test_oversized_snapshot_is_rejected() {
     const int prefix = snprintf(
         body,
         sizeof(body),
-        "{\"data\":{\"memories\":["
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":["
     );
     assert(prefix > 0);
     used = (size_t)prefix;
@@ -365,12 +370,12 @@ void test_oversized_snapshot_is_rejected() {
 
 void test_stale_revision_is_rejected() {
     reset_all(true);
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":12}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":12}}");
     assert(long_term_memory_sync_now() == ESP_OK);
     assert(status().revision == 12);
 
     long_term_memory_sync_host_reset();
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":3}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":3}}");
     assert(long_term_memory_sync_now() == ESP_ERR_INVALID_ARG);
     assert(status().revision == 12);
 }
@@ -385,7 +390,7 @@ void test_local_entries_win_over_remote_snapshot() {
     assert(long_term_memory_remember(&local) == ESP_OK);
 
     set_pull_response(
-        "{\"data\":{\"memories\":[{\"memory_key\":\"favorite_color\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"favorite_color\","
         "\"memory_value\":\"蓝色\",\"confidence\":65536,\"revision\":2,"
         "\"updated_at\":1700000000}],\"revision\":2}}"
     );
@@ -415,10 +420,10 @@ void test_local_memory_is_uploaded_then_marked_synced() {
     assert(status().pending_count == 1);
 
     set_pull_then_upload(
-        "{\"data\":{\"memories\":[{\"memory_key\":\"pet_name\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
         "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":3,"
         "\"updated_at\":1700000200}],\"revision\":3}}",
-        "{\"data\":{\"revision\":4,\"accepted\":1}}"
+        "{\"data\":{\"child_id\":\"child-1\",\"revision\":4,\"accepted\":1}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
 
@@ -463,7 +468,7 @@ void test_rejected_upload_keeps_the_memory_pending() {
     const char *bodies[] = {
         // A non-empty snapshot keeps the locally produced entry in place; an
         // empty snapshot would legitimately clear it before the upload runs.
-        "{\"data\":{\"memories\":[{\"memory_key\":\"pet_name\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
         "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":2,"
         "\"updated_at\":1700000200}],\"revision\":2}}",
         "{}",
@@ -477,10 +482,10 @@ void test_rejected_upload_keeps_the_memory_pending() {
 
     long_term_memory_sync_host_reset();
     set_pull_then_upload(
-        "{\"data\":{\"memories\":[{\"memory_key\":\"pet_name\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
         "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":2,"
         "\"updated_at\":1700000200}],\"revision\":2}}",
-        "{\"data\":{\"revision\":4,\"accepted\":1}}"
+        "{\"data\":{\"child_id\":\"child-1\",\"revision\":4,\"accepted\":1}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
     assert(!long_term_memory_sync_host_is_pending("favorite_color"));
@@ -510,10 +515,10 @@ void test_partial_acceptance_keeps_the_batch_pending() {
     set_pull_then_upload(
         // A non-empty snapshot keeps both local entries available for upload;
         // an empty one would clear them first.
-        "{\"data\":{\"memories\":[{\"memory_key\":\"favorite_food\","
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"favorite_food\","
         "\"memory_value\":\"面条\",\"confidence\":65536,\"revision\":5,"
         "\"updated_at\":1700000300}],\"revision\":5}}",
-        "{\"data\":{\"revision\":6,\"accepted\":1}}"
+        "{\"data\":{\"child_id\":\"child-1\",\"revision\":6,\"accepted\":1}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
 
@@ -539,7 +544,7 @@ void test_forgotten_memory_leaves_the_pending_queue() {
     assert(long_term_memory_sync_enqueue_key("favorite_color") == ESP_OK);
     assert(long_term_memory_forget("favorite_color") == ESP_OK);
 
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":1}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":1}}");
     assert(long_term_memory_sync_now() == ESP_OK);
 
     // Nothing is uploaded for a key whose local entry is gone.
@@ -615,7 +620,7 @@ void test_worker_syncs_then_stops_cleanly() {
     reset_all(true);
     const module_descriptor_t *descriptor =
         long_term_memory_sync_module_descriptor();
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":1}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":1}}");
     long_term_memory_sync_host_set_stop_after_delays(0);
     assert(descriptor->initialize() == ESP_OK);
 
@@ -627,7 +632,7 @@ void test_worker_syncs_then_stops_cleanly() {
 
 void test_state_survives_reinitialization() {
     reset_all(true);
-    set_pull_response("{\"data\":{\"memories\":[],\"revision\":21}}");
+    set_pull_response("{\"data\":{\"child_id\":\"child-1\",\"memories\":[],\"revision\":21}}");
     assert(long_term_memory_sync_now() == ESP_OK);
     assert(status().revision == 21);
 

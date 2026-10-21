@@ -355,6 +355,9 @@ static esp_err_t long_term_memory_sync_pull(
     xSemaphoreGive(s_lock);
 
     char url[LONG_TERM_MEMORY_SYNC_URL_SIZE] = {0};
+    // Filled from the server response below; the device id is not the memory
+    // owner, so it must never be used as the local child key.
+    char child_id[LONG_TERM_MEMORY_CHILD_ID_SIZE] = {0};
     const int written = snprintf(
         url,
         sizeof(url),
@@ -408,6 +411,21 @@ static esp_err_t long_term_memory_sync_pull(
     }
     const int64_t response_revision = (int64_t)(data["revision"] | -1LL);
     if (response_revision < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // The server resolves which child this device serves and returns it. The
+    // device must store memories under that id rather than under its own id,
+    // otherwise the same child on two devices would never share a fact and
+    // the whole point of syncing would be lost.
+    const char *response_child_id = data["child_id"] | "";
+    if (response_child_id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!long_term_memory_sync_copy_field(
+            child_id,
+            sizeof(child_id),
+            response_child_id
+        )) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -475,7 +493,7 @@ static esp_err_t long_term_memory_sync_pull(
         // for every child. A failed clear keeps the revision unadvanced.
         size_t removed = 0;
         const esp_err_t forget_result = long_term_memory_forget_child(
-            device_id,
+            child_id,
             &removed
         );
         if (forget_result != ESP_OK) {
@@ -509,7 +527,7 @@ static esp_err_t long_term_memory_sync_pull(
     const esp_err_t merge_result = long_term_memory_sync_merge(
         local,
         local_count,
-        device_id,
+        child_id,
         validated,
         validated_count
     );
