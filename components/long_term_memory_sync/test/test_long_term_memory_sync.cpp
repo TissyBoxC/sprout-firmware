@@ -196,8 +196,32 @@ void test_full_pull_merges_remote_memories() {
     assert(after.pending_count == 0);
 }
 
-void test_second_pull_uses_since_revision() {
+// A guardian deleting one memory leaves no live row, so the only signal the
+// device gets is deleted_keys; the revoked fact must stop being recalled.
+void test_deleted_keys_remove_local_memory() {
     reset_all(true);
+    set_pull_response(
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
+        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":7,"
+        "\"updated_at\":1700000200}],\"revision\":7}}"
+    );
+    assert(long_term_memory_sync_now() == ESP_OK);
+
+    long_term_memory_entry_t recalled = {};
+    assert(long_term_memory_recall("child-1", "pet_name", &recalled));
+
+    long_term_memory_sync_host_reset();
+    set_pull_response(
+        "{\"data\":{\"child_id\":\"child-1\",\"memories\":[],"
+        "\"deleted_keys\":[\"pet_name\"],\"revision\":8}}"
+    );
+    assert(long_term_memory_sync_now() == ESP_OK);
+
+    assert(!long_term_memory_recall("child-1", "pet_name", &recalled));
+    assert(status().revision == 8);
+}
+
+void test_second_pull_uses_since_revision() {    reset_all(true);
     set_pull_response(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
         "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":7,"
@@ -660,6 +684,7 @@ int main() {
     test_now_requires_trusted_runtime_state();
     test_now_rejects_unusable_identity_and_base_url();
     test_full_pull_merges_remote_memories();
+    test_deleted_keys_remove_local_memory();
     test_second_pull_uses_since_revision();
     test_empty_snapshot_clears_local_memories();
     test_unusable_payload_keeps_local_memories();

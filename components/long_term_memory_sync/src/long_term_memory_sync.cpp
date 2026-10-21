@@ -429,6 +429,40 @@ static esp_err_t long_term_memory_sync_pull(
         return ESP_ERR_INVALID_ARG;
     }
 
+    // A guardian deleting one memory produces no live row, so the delta carries
+    // the key in deleted_keys. Ignoring it would leave the device reciting a
+    // fact the guardian revoked.
+    JsonArrayConst deleted = data["deleted_keys"].as<JsonArrayConst>();
+    if (!deleted.isNull()) {
+        size_t deleted_count = 0;
+        for (JsonVariantConst value : deleted) {
+            (void)value;
+            deleted_count += 1;
+        }
+        if (deleted_count > LONG_TERM_MEMORY_SYNC_REMOTE_CAPACITY) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        long_term_memory_entry_t held[LONG_TERM_MEMORY_CAPACITY] = {};
+        size_t held_count = 0;
+        if (long_term_memory_list(held, LONG_TERM_MEMORY_CAPACITY, &held_count) ==
+            ESP_OK) {
+            for (JsonVariantConst value : deleted) {
+                const char *revoked = value | "";
+                if (revoked[0] == '\0') {
+                    continue;
+                }
+                for (size_t index = 0; index < held_count; ++index) {
+                    if (strcmp(held[index].child_id, child_id) != 0 ||
+                        strcmp(held[index].key, revoked) != 0) {
+                        continue;
+                    }
+                    (void)long_term_memory_forget(held[index].entry_id);
+                    break;
+                }
+            }
+        }
+    }
+
     size_t entry_count = 0;
     for (JsonVariantConst value : memories) {
         (void)value;
