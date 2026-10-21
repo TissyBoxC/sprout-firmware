@@ -54,7 +54,7 @@ authenticated HTTPS request.
 
 ### Configuration
 
-`CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED` defaults to `n` (secure by default) and
+`CONFIG_FEATURE_LONG_TERM_MEMORY_SYNC` defaults to `n` (secure by default) and
 depends on the long-term memory, binding client, network manager and time sync
 modules. `CONFIG_LONG_TERM_MEMORY_SYNC_INTERVAL_SECONDS` and
 `CONFIG_LONG_TERM_MEMORY_SYNC_RETRY_INTERVAL_SECONDS` tune the cadence.
@@ -77,6 +77,6 @@ surviving a restart.
 
 Delete the component directory, its `src/main.c` include and
 `module_registry_add` block, its `src/CMakeLists.txt` dependency block, and the
-`CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED` switch. Local long-term memory keeps
+`CONFIG_FEATURE_LONG_TERM_MEMORY_SYNC` switch. Local long-term memory keeps
 working in full: `long_term_memory` owns its own blob and never calls into this
 component.

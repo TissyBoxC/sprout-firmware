@@ -1735,7 +1735,7 @@ Invoke-HostTest `
     ) `
     -AdditionalArguments @(
         '-DLONG_TERM_MEMORY_SYNC_HOST_TESTS=1'
-        '-DCONFIG_LONG_TERM_MEMORY_SYNC_ENABLED=1'
+        '-DCONFIG_FEATURE_LONG_TERM_MEMORY_SYNC=1'
         '-Wno-missing-field-initializers'
     ) `
     -Compiler $compiler

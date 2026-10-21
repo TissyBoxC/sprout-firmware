@@ -89,7 +89,7 @@
 #include "long_term_memory.h"
 #endif
 
-#if CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED
+#if CONFIG_FEATURE_LONG_TERM_MEMORY_SYNC
 #include "long_term_memory_sync.h"
 #endif
 
@@ -1073,7 +1073,7 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_LONG_TERM_MEMORY
     ESP_ERROR_CHECK(module_registry_add(long_term_memory_module_descriptor()));
 #endif
-#if CONFIG_LONG_TERM_MEMORY_SYNC_ENABLED
+#if CONFIG_FEATURE_LONG_TERM_MEMORY_SYNC
     ESP_ERROR_CHECK(
         module_registry_add(long_term_memory_sync_module_descriptor())
     );

@@ -2,7 +2,7 @@ menu "Sprout feature modules"
 
 # Secure by default: the sync component stays off in every profile until the
 # cloud memory contract ships and the guardian consents to cloud storage.
-config LONG_TERM_MEMORY_SYNC_ENABLED
+config FEATURE_LONG_TERM_MEMORY_SYNC
     bool "Enable long-term memory cloud sync"
     default n
     depends on FEATURE_LONG_TERM_MEMORY && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
@@ -14,13 +14,13 @@ config LONG_TERM_MEMORY_SYNC_ENABLED
 
 config LONG_TERM_MEMORY_SYNC_INTERVAL_SECONDS
     int "Long-term memory sync interval in seconds"
-    depends on LONG_TERM_MEMORY_SYNC_ENABLED
+    depends on FEATURE_LONG_TERM_MEMORY_SYNC
     range 60 86400
     default 900
 
 config LONG_TERM_MEMORY_SYNC_RETRY_INTERVAL_SECONDS
     int "Long-term memory sync retry interval while offline"
-    depends on LONG_TERM_MEMORY_SYNC_ENABLED
+    depends on FEATURE_LONG_TERM_MEMORY_SYNC
     range 5 300
     default 15
 
