@@ -145,9 +145,9 @@ void test_full_pull_merges_remote_memories() {
     set_pull_response(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":["
         "{\"memory_key\":\"favorite_color\",\"memory_value\":\"蓝色\","
-        "\"confidence\":65536,\"revision\":4,\"updated_at\":1700000100},"
+        "\"confidence\":1.0,\"revision\":4,\"updated_at\":1700000100},"
         "{\"memory_key\":\"pet_name\",\"memory_value\":\"布丁\","
-        "\"confidence\":60000,\"revision\":5,\"updated_at\":1700000200}"
+        "\"confidence\":0.9,\"revision\":5,\"updated_at\":1700000200}"
         "],\"revision\":5}}"
     );
 
@@ -202,7 +202,7 @@ void test_deleted_keys_remove_local_memory() {
     reset_all(true);
     set_pull_response(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
-        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":7,"
+        "\"memory_value\":\"布丁\",\"confidence\":1.0,\"revision\":7,"
         "\"updated_at\":1700000200}],\"revision\":7}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
@@ -224,7 +224,7 @@ void test_deleted_keys_remove_local_memory() {
 void test_second_pull_uses_since_revision() {    reset_all(true);
     set_pull_response(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
-        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":7,"
+        "\"memory_value\":\"布丁\",\"confidence\":1.0,\"revision\":7,"
         "\"updated_at\":1700000200}],\"revision\":7}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
@@ -376,7 +376,7 @@ void test_oversized_snapshot_is_rejected() {
             body + used,
             sizeof(body) - used,
             "%s{\"memory_key\":\"memory_%03d\",\"memory_value\":\"v\","
-            "\"confidence\":65536,\"revision\":1,\"updated_at\":0}",
+            "\"confidence\":1.0,\"revision\":1,\"updated_at\":0}",
             index == 0 ? "" : ",",
             index
         );
@@ -415,7 +415,7 @@ void test_local_entries_win_over_remote_snapshot() {
 
     set_pull_response(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"favorite_color\","
-        "\"memory_value\":\"蓝色\",\"confidence\":65536,\"revision\":2,"
+        "\"memory_value\":\"蓝色\",\"confidence\":1.0,\"revision\":2,"
         "\"updated_at\":1700000000}],\"revision\":2}}"
     );
     assert(long_term_memory_sync_now() == ESP_OK);
@@ -445,7 +445,7 @@ void test_local_memory_is_uploaded_then_marked_synced() {
 
     set_pull_then_upload(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
-        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":3,"
+        "\"memory_value\":\"布丁\",\"confidence\":1.0,\"revision\":3,"
         "\"updated_at\":1700000200}],\"revision\":3}}",
         "{\"data\":{\"child_id\":\"child-1\",\"revision\":4,\"accepted\":1}}"
     );
@@ -465,7 +465,11 @@ void test_local_memory_is_uploaded_then_marked_synced() {
         long_term_memory_sync_host_request_body(1);
     assert(std::strstr(request_body, "\"memory_key\":\"favorite_color\""));
     assert(std::strstr(request_body, "\"memory_value\":\"蓝色\""));
-    assert(std::strstr(request_body, "\"confidence\":65536"));
+    // The serializer emits a whole-valued float as 1, which JSON reads as the
+    // number 1 and the platform accepts as full weight; the Q16 form the
+    // device uses internally must never reach the wire.
+    assert(std::strstr(request_body, "\"confidence\":1"));
+    assert(std::strstr(request_body, "65536") == nullptr);
     assert(std::strstr(request_body, "pet_name") == nullptr);
 
     assert(!long_term_memory_sync_host_is_pending("favorite_color"));
@@ -493,7 +497,7 @@ void test_rejected_upload_keeps_the_memory_pending() {
         // A non-empty snapshot keeps the locally produced entry in place; an
         // empty snapshot would legitimately clear it before the upload runs.
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
-        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":2,"
+        "\"memory_value\":\"布丁\",\"confidence\":1.0,\"revision\":2,"
         "\"updated_at\":1700000200}],\"revision\":2}}",
         "{}",
     };
@@ -507,7 +511,7 @@ void test_rejected_upload_keeps_the_memory_pending() {
     long_term_memory_sync_host_reset();
     set_pull_then_upload(
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"pet_name\","
-        "\"memory_value\":\"布丁\",\"confidence\":65536,\"revision\":2,"
+        "\"memory_value\":\"布丁\",\"confidence\":1.0,\"revision\":2,"
         "\"updated_at\":1700000200}],\"revision\":2}}",
         "{\"data\":{\"child_id\":\"child-1\",\"revision\":4,\"accepted\":1}}"
     );
@@ -540,7 +544,7 @@ void test_partial_acceptance_keeps_the_batch_pending() {
         // A non-empty snapshot keeps both local entries available for upload;
         // an empty one would clear them first.
         "{\"data\":{\"child_id\":\"child-1\",\"memories\":[{\"memory_key\":\"favorite_food\","
-        "\"memory_value\":\"面条\",\"confidence\":65536,\"revision\":5,"
+        "\"memory_value\":\"面条\",\"confidence\":1.0,\"revision\":5,"
         "\"updated_at\":1700000300}],\"revision\":5}}",
         "{\"data\":{\"child_id\":\"child-1\",\"revision\":6,\"accepted\":1}}"
     );

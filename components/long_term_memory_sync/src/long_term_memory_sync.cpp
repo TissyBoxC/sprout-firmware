@@ -487,7 +487,15 @@ static esp_err_t long_term_memory_sync_pull(
         }
         keys[parsed] = value["memory_key"] | "";
         values[parsed] = value["memory_value"] | "";
-        confidences[parsed] = value["confidence"] | 0;
+        // The wire carries a 0..1 ratio while the core validates Q16, so the
+        // conversion belongs here at the parsing boundary; feeding the ratio
+        // straight into the Q16 check would reject every entry.
+        const float ratio = value["confidence"] | 0.0f;
+        confidences[parsed] = ratio <= 0.0f
+            ? 0
+            : (ratio >= 1.0f
+                ? LONG_TERM_MEMORY_SYNC_CONFIDENCE_MAX
+                : (int32_t)(ratio * LONG_TERM_MEMORY_SYNC_CONFIDENCE_MAX));
         revisions[parsed] = (int64_t)(value["revision"] | 0LL);
         updated_at[parsed] = (int64_t)(value["updated_at"] | 0LL);
         parsed += 1;
@@ -670,7 +678,11 @@ static esp_err_t long_term_memory_sync_push(
         // The value leaves the device only through this authenticated request
         // and is never written to a log line.
         item["memory_value"] = entry->value;
-        item["confidence"] = LONG_TERM_MEMORY_SYNC_UPLOAD_CONFIDENCE;
+        // Written as a float so the serialized field stays a ratio (1.0) and
+        // never collapses to an integer that a stricter parser could read as a
+        // different unit.
+        item["confidence"] =
+            static_cast<float>(LONG_TERM_MEMORY_SYNC_UPLOAD_CONFIDENCE);
         is_included[index] = true;
         included_count += 1;
     }

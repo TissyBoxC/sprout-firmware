@@ -5,9 +5,9 @@
 
 // Confidence is a Q16 weight in the range 0..65536. A server value outside the
 // range would silently distort the recall ranking, so it is treated as
-// unusable instead of being clamped.
+// unusable instead of being clamped. The upper bound lives in the header
+// because the parsing boundary needs it for the wire-ratio conversion.
 #define LONG_TERM_MEMORY_SYNC_CONFIDENCE_MIN 0
-#define LONG_TERM_MEMORY_SYNC_CONFIDENCE_MAX 65536
 
 void long_term_memory_sync_state_reset(long_term_memory_sync_state_t *state) {
     if (state == NULL) {

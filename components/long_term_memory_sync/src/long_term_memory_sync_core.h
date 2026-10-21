@@ -23,9 +23,14 @@ extern "C" {
  * @brief Confidence reported for a memory the device produced itself.
  *
  * A fact the child stated directly is the strongest signal the platform can
- * receive, so it is uploaded at full Q16 weight.
+ * receive, so it is uploaded at full weight. The platform stores confidence as
+ * a 0..1 ratio; the internal Q16 store is a separate representation and must
+ * be converted at the wire boundary, otherwise the whole upload is rejected.
  */
-#define LONG_TERM_MEMORY_SYNC_UPLOAD_CONFIDENCE 65536
+#define LONG_TERM_MEMORY_SYNC_UPLOAD_CONFIDENCE 1.0
+
+/** @brief Full weight in the internal Q16 confidence representation. */
+#define LONG_TERM_MEMORY_SYNC_CONFIDENCE_MAX 65536
 
 /** @brief One remote memory as delivered by the pull endpoint. */
 typedef struct {
