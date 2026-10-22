@@ -30,6 +30,7 @@
 #include "voice_session.h"
 #endif
 #if CONFIG_FEATURE_VOICE_INTERCOM
+#include "care_view.h"
 #include "voice_intercom.h"
 #endif
 #if CONFIG_FEATURE_CONVERSATION_CONTEXT
@@ -771,6 +772,12 @@ static void handle_button_gesture(const button_input_event_t *event) {
     // keep their own meaning.
     (void)voice_intercom_handle_button(event->gesture);
 #endif
+#if CONFIG_FEATURE_CARE_VIEW
+    // Any press ends a running care view, so the child can stop being watched
+    // with one physical action. The call returns false, so the handlers above
+    // keep their own meaning.
+    (void)care_view_handle_button(event->gesture);
+#endif
 }
 #endif
 
@@ -1044,6 +1051,9 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_VOICE_INTERCOM
     ESP_ERROR_CHECK(module_registry_add(voice_intercom_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_CARE_VIEW
+    ESP_ERROR_CHECK(module_registry_add(care_view_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_CONTENT_LIBRARY
     ESP_ERROR_CHECK(module_registry_add(content_library_module_descriptor()));
 #endif
@@ -1167,6 +1177,41 @@ static void start_voice_intercom_timer(void) {
 }
 #endif
 
+#if CONFIG_FEATURE_CARE_VIEW
+static esp_timer_handle_t care_view_poll_timer;
+
+static void care_view_poll_tick(void *argument) {
+    (void)argument;
+    care_view_poll();
+}
+
+static void start_care_view_timer(void) {
+    if (care_view_poll_timer != NULL) {
+        return;
+    }
+    const esp_timer_create_args_t timer_config = {
+        .callback = care_view_poll_tick,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "care_view",
+        .skip_unhandled_events = true,
+    };
+    if (esp_timer_create(&timer_config, &care_view_poll_timer) != ESP_OK) {
+        care_view_poll_timer = NULL;
+        ESP_LOGE(TAG, "care view timer unavailable");
+        return;
+    }
+    // The device enforces the view deadline itself, so this poll must run even
+    // when the uplink is silent.
+    if (esp_timer_start_periodic(
+            care_view_poll_timer,
+            1000ULL * 1000ULL
+        ) != ESP_OK) {
+        ESP_LOGE(TAG, "care view timer failed to start");
+    }
+}
+#endif
+
 static void start_voice_interaction(void) {
 #if CONFIG_FEATURE_VOICE_WAKE
     const esp_err_t wake_result = voice_wake_start();
@@ -1185,6 +1230,9 @@ static void start_voice_interaction(void) {
 #endif
 #if CONFIG_FEATURE_VOICE_INTERCOM
     start_voice_intercom_timer();
+#endif
+#if CONFIG_FEATURE_CARE_VIEW
+    start_care_view_timer();
 #endif
 }
 

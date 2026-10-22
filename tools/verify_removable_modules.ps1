@@ -228,6 +228,7 @@ function Test-OptionalModuleRemoval {
         'content_downloader'
         'content_library'
         'voice_intercom'
+        'care_view'
         'voice_session'
         'privacy_guard'
         'conversation_context'

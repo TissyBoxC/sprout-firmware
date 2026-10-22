@@ -1,0 +1,56 @@
+menu "Sprout feature modules"
+
+# Secure by default: a care view turns on a camera in a child's room, so the
+# capability stays off until the product enables it for the profile AND a
+# guardian has explicitly turned it on in the parent app. The device additionally
+# refuses to start unless it can show a visible and audible indication.
+config FEATURE_CARE_VIEW
+    bool "Enable guardian live camera view"
+    default n
+    depends on FEATURE_CAMERA_CAPTURE && FEATURE_SCREEN_SURFACE && FEATURE_AUDIO_OUTPUT && FEATURE_PROMPT_TONE && FEATURE_BUTTON_INPUT && FEATURE_DEVICE_MESSAGE && FEATURE_DEVICE_IDENTITY
+    help
+        Lets a guardian open a short live view of the device camera from the
+        parent app. The device shows an on-screen notice and plays a prompt when
+        a view starts, refuses to start if either is unavailable, stops the view
+        when the child presses the button, and enforces the session deadline on
+        its own instead of trusting the platform. Frames are sent over the relay
+        and are never written to flash, the SD card, or the logs.
+
+config CARE_VIEW_MAX_SECONDS
+    int "Longest single care view, in seconds"
+    depends on FEATURE_CARE_VIEW
+    range 30 300
+    default 180
+    help
+        Hard upper bound the device enforces regardless of what the platform
+        asks for. A camera left running in a child's room is the failure mode
+        this limit exists to prevent.
+
+config CARE_VIEW_FRAME_INTERVAL_MS
+    int "Milliseconds between captured frames"
+    depends on FEATURE_CARE_VIEW
+    range 200 5000
+    default 500
+    help
+        Lower values give a smoother view at the cost of bandwidth and power. The
+        relay may serve a slower rate than this, never a faster one.
+
+config CARE_VIEW_MAX_FRAME_BYTES
+    int "Largest single frame in bytes"
+    depends on FEATURE_CARE_VIEW
+    range 8192 262144
+    default 131072
+    help
+        A frame larger than this is dropped rather than sent, so one bad capture
+        cannot stall the uplink or exhaust memory.
+
+config CARE_VIEW_MAX_SESSION_SECONDS
+    int "Longest accepted session, in seconds"
+    depends on FEATURE_CARE_VIEW
+    range 30 300
+    default 180
+    help
+        A session whose deadline is further out than this is clamped, so the
+        platform cannot extend a view beyond the device's own policy.
+
+endmenu

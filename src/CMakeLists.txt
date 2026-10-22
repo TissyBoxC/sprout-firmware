@@ -275,6 +275,10 @@ if(CONFIG_FEATURE_VOICE_INTERCOM)
     list(APPEND app_requires "voice_intercom")
 endif()
 
+if(CONFIG_FEATURE_CARE_VIEW)
+    list(APPEND app_requires "care_view")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_LIBRARY)
     list(APPEND app_requires "content_library")
 endif()

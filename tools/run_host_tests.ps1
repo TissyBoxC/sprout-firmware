@@ -1740,6 +1740,18 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$careViewRoot = Join-Path $firmwareRoot 'components/care_view'
+Invoke-HostTest `
+    -Name 'care_view_core' `
+    -Sources @(
+        (Join-Path $careViewRoot 'src/care_view_core.c')
+        (Join-Path $careViewRoot 'test/test_care_view_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $careViewRoot 'src')
+    ) `
+    -Compiler $compiler
+
 $voiceIntercomRoot = Join-Path $firmwareRoot 'components/voice_intercom'
 Invoke-HostTest `
     -Name 'voice_intercom_core' `
