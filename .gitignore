@@ -83,3 +83,7 @@ dev-docs/
 !README.*.md
 !**/README.md
 !**/README.*.md
+# Release notes are an input to the release workflow rather than documentation:
+# the workflow publishes release-notes/<tag>.md verbatim, so they must be tracked.
+!release-notes/
+!release-notes/*.md

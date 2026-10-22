@@ -267,10 +267,28 @@ def main() -> int:
     parser.add_argument("--current-tag")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--output", default="release-notes.md")
+    parser.add_argument(
+        "--notes-file",
+        help=(
+            "Hand-written notes for this release. When the file exists its "
+            "content is published verbatim; otherwise the notes are built from "
+            "the commit log."
+        ),
+    )
     arguments = parser.parse_args()
 
     if not re.fullmatch(r"\d+\.\d+\.\d+", arguments.version):
         raise SystemExit(f"invalid release version: {arguments.version}")
+    # A hand-written file wins because a list of commit subjects does not tell a
+    # reader what changed for them, which is what release notes are for.
+    if arguments.notes_file:
+        handwritten = Path(arguments.notes_file)
+        if handwritten.is_file():
+            body = handwritten.read_text(encoding="utf-8").strip()
+            if not body:
+                raise SystemExit(f"release notes file is empty: {handwritten}")
+            Path(arguments.output).write_text(body + chr(10), encoding="utf-8")
+            return 0
     previous_tag = resolve_previous_tag(arguments.current_ref, arguments.current_tag)
     notes = render_release_notes(
         arguments.version,

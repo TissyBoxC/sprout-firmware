@@ -432,6 +432,7 @@ jobs:
             --version "${{ steps.detect.outputs.version }}" \
             --current-tag "${{ steps.detect.outputs.tag }}" \
             --repository "$GITHUB_REPOSITORY" \
+            --notes-file "release-notes/${{ steps.detect.outputs.tag }}.md" \
             --output release-notes.md
           cat release-notes.md
 
