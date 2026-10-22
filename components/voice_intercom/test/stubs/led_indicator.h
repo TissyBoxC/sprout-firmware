@@ -1,0 +1,42 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "esp_err.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum {
+    LED_INDICATOR_STATE_OFF = 0,
+    LED_INDICATOR_STATE_BOOTING,
+    LED_INDICATOR_STATE_PROVISIONING,
+    LED_INDICATOR_STATE_WIFI_CONNECTING,
+    LED_INDICATOR_STATE_CONNECTING,
+    LED_INDICATOR_STATE_IDLE,
+    LED_INDICATOR_STATE_LISTENING,
+    LED_INDICATOR_STATE_THINKING,
+    LED_INDICATOR_STATE_SPEAKING,
+    LED_INDICATOR_STATE_MUTED,
+    LED_INDICATOR_STATE_ERROR,
+    LED_INDICATOR_STATE_LOW_BATTERY,
+    LED_INDICATOR_STATE_FACTORY_RESET,
+    LED_INDICATOR_STATE_OTA_UPGRADING,
+    LED_INDICATOR_STATE_COUNT,
+} led_indicator_state_t;
+
+typedef enum {
+    LED_INDICATOR_OK = 0,
+    LED_INDICATOR_ERR_NOT_INITIALIZED,
+    LED_INDICATOR_ERR_INVALID_STATE,
+    LED_INDICATOR_ERR_GPIO_UNAVAILABLE,
+    LED_INDICATOR_ERR_NO_MEM,
+} led_indicator_error_t;
+
+led_indicator_error_t led_indicator_set_state(led_indicator_state_t state);
+
+#ifdef __cplusplus
+}
+#endif

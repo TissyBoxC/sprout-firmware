@@ -1740,6 +1740,41 @@ Invoke-HostTest `
     ) `
     -Compiler $compiler
 
+$voiceIntercomRoot = Join-Path $firmwareRoot 'components/voice_intercom'
+Invoke-HostTest `
+    -Name 'voice_intercom_core' `
+    -Sources @(
+        (Join-Path $voiceIntercomRoot 'src/voice_intercom_core.c')
+        (Join-Path $voiceIntercomRoot 'test/test_voice_intercom_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceIntercomRoot 'src')
+    ) `
+    -AdditionalArguments @(
+        '-DVOICE_INTERCOM_HOST_TESTS=1'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'voice_intercom_runtime' `
+    -Sources @(
+        (Join-Path $voiceIntercomRoot 'src/voice_intercom_core.c')
+        (Join-Path $voiceIntercomRoot 'src/voice_intercom.cpp')
+        (Join-Path $voiceIntercomRoot 'test/stubs/voice_intercom_deps.cpp')
+        (Join-Path $voiceIntercomRoot 'test/test_voice_intercom_runtime.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $voiceIntercomRoot 'include')
+        (Join-Path $voiceIntercomRoot 'src')
+        (Join-Path $voiceIntercomRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_VOICE_INTERCOM=1'
+    ) `
+    -Compiler $compiler
+
 $englishCourseRoot = Join-Path $firmwareRoot 'components/english_course'
 Invoke-HostTest `
     -Name 'english_course_core' `

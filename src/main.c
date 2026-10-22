@@ -29,6 +29,9 @@
 #if CONFIG_FEATURE_VOICE_SESSION
 #include "voice_session.h"
 #endif
+#if CONFIG_FEATURE_VOICE_INTERCOM
+#include "voice_intercom.h"
+#endif
 #if CONFIG_FEATURE_CONVERSATION_CONTEXT
 #include "conversation_context.h"
 #endif
@@ -761,6 +764,13 @@ static void handle_button_gesture(const button_input_event_t *event) {
         }
     }
 #endif
+#if CONFIG_FEATURE_VOICE_INTERCOM
+    // The intercom only reacts while a call is in flight: a short press
+    // accepts a ring or ends an active call, and a long press declines a ring.
+    // Outside a call both gestures stay no-ops so the other handlers above
+    // keep their own meaning.
+    (void)voice_intercom_handle_button(event->gesture);
+#endif
 }
 #endif
 
@@ -1031,6 +1041,9 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_VOICE_SESSION
     ESP_ERROR_CHECK(module_registry_add(voice_session_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_VOICE_INTERCOM
+    ESP_ERROR_CHECK(module_registry_add(voice_intercom_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_CONTENT_LIBRARY
     ESP_ERROR_CHECK(module_registry_add(content_library_module_descriptor()));
 #endif
@@ -1118,6 +1131,42 @@ static void register_modules(void) {
 }
 #endif
 
+#if CONFIG_FEATURE_VOICE_INTERCOM
+// The ring timeout and the maximum call duration are device-side guarantees,
+// so they are driven by a periodic timer rather than by network events.
+static esp_timer_handle_t voice_intercom_poll_timer;
+
+static void voice_intercom_poll_tick(void *argument) {
+    (void)argument;
+    (void)voice_intercom_poll();
+}
+
+static void start_voice_intercom_timer(void) {
+    if (voice_intercom_poll_timer != NULL) {
+        return;
+    }
+    const esp_timer_create_args_t timer_config = {
+        .callback = voice_intercom_poll_tick,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "voice_intercom",
+        .skip_unhandled_events = true,
+    };
+    if (esp_timer_create(&timer_config, &voice_intercom_poll_timer) != ESP_OK) {
+        voice_intercom_poll_timer = NULL;
+        ESP_LOGE(TAG, "voice intercom timer unavailable");
+        return;
+    }
+    // One second matches the resolution the module reports to the guardian.
+    if (esp_timer_start_periodic(
+            voice_intercom_poll_timer,
+            1000ULL * 1000ULL
+        ) != ESP_OK) {
+        ESP_LOGE(TAG, "voice intercom timer failed to start");
+    }
+}
+#endif
+
 static void start_voice_interaction(void) {
 #if CONFIG_FEATURE_VOICE_WAKE
     const esp_err_t wake_result = voice_wake_start();
@@ -1133,6 +1182,9 @@ static void start_voice_interaction(void) {
         ESP_LOGE(TAG, "button handler registration failed: %s",
                  esp_err_to_name(handler_result));
     }
+#endif
+#if CONFIG_FEATURE_VOICE_INTERCOM
+    start_voice_intercom_timer();
 #endif
 }
 

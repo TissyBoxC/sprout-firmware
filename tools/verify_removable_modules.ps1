@@ -227,6 +227,7 @@ function Test-OptionalModuleRemoval {
         'content_package_manager'
         'content_downloader'
         'content_library'
+        'voice_intercom'
         'voice_session'
         'privacy_guard'
         'conversation_context'

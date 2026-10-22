@@ -271,6 +271,10 @@ if(CONFIG_FEATURE_VOICE_SESSION)
     list(APPEND app_requires "voice_session")
 endif()
 
+if(CONFIG_FEATURE_VOICE_INTERCOM)
+    list(APPEND app_requires "voice_intercom")
+endif()
+
 if(CONFIG_FEATURE_CONTENT_LIBRARY)
     list(APPEND app_requires "content_library")
 endif()

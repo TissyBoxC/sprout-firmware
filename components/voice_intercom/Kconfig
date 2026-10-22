@@ -1,0 +1,33 @@
+menu "Sprout feature modules"
+
+# Secure by default: a guardian call needs an explicit accept on the device, so
+# the whole capability stays off until the parent app ships the call commands
+# and the product enables it for the profile.
+config FEATURE_VOICE_INTERCOM
+    bool "Enable guardian voice intercom calls"
+    default n
+    depends on FEATURE_VOICE_SESSION && FEATURE_BUTTON_INPUT && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_DEVICE_IDENTITY && FEATURE_NETWORK_MANAGER && FEATURE_DEVICE_MESSAGE
+    help
+        Lets a guardian call the device from the parent app. The device rings
+        on the screen and speaker, captures no audio while ringing, and starts
+        the realtime voice session only after the child accepts with a
+        physical button. A decline, a hangup, the ring timeout, the maximum
+        call duration and the guardian side hanging up all release the audio
+        path immediately.
+
+config VOICE_INTERCOM_RING_TIMEOUT_SECONDS
+    int "Seconds the device rings before the call is declined automatically"
+    depends on FEATURE_VOICE_INTERCOM
+    range 10 120
+    default 30
+
+config VOICE_INTERCOM_MAX_CALL_SECONDS
+    int "Maximum duration of one guardian call in seconds"
+    depends on FEATURE_VOICE_INTERCOM
+    range 30 1800
+    default 300
+    help
+        Hard upper bound enforced on the device, independent of the server or
+        the guardian. When it expires the call ends exactly like a hangup.
+
+endmenu
