@@ -1,3 +1,10 @@
+// gmtime_r is a POSIX extension. Without this feature macro glibc hides its
+// declaration, so the Linux host test build fails under -Werror while the ESP-IDF
+// and Windows builds happen to see it. It must precede time.h.
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "voice_session.h"
 
 #include <stdio.h>
