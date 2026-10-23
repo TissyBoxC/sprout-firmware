@@ -315,6 +315,12 @@ if(CONFIG_FEATURE_COMPANIONSHIP)
     list(APPEND app_requires "companionship")
 endif()
 
+# The reporter is a registered module, so the composition root needs its
+# descriptor header available at the same time as companionship's.
+if(CONFIG_FEATURE_EMOTION_REPORT)
+    list(APPEND app_requires "emotion_report")
+endif()
+
 if(CONFIG_FEATURE_GROWTH_RECORD)
     list(APPEND app_requires "growth_record")
 endif()

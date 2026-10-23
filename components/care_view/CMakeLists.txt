@@ -21,7 +21,13 @@ idf_component_register(
     REQUIRES
         module_registry
     PRIV_REQUIRES
+        device_binding_client
+        device_identity
+        esp_http_client
+        esp_timer
         freertos
+        espressif__mqtt
+        mbedtls
 )
 
 # Every capability this module uses is itself removable, so each edge is declared
@@ -34,6 +40,7 @@ if(CONFIG_FEATURE_CARE_VIEW)
             button_input
             camera_capture
             config_store
+            device_identity
             device_message
             espressif__mqtt
             led_indicator

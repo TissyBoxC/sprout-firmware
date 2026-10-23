@@ -14,6 +14,12 @@ CONFIG_FEATURE_VERSION_INFO=y
 CONFIG_FEATURE_ERROR_CODE=y
 CONFIG_FEATURE_DEVICE_IDENTITY=y
 CONFIG_FEATURE_DEVICE_CAPABILITIES=y
+# 鍒濊娊 carries a camera and a touch display. These advertise the hardware so the
+# capture and screen-surface components are linked at all; each capability still
+# stays gated behind its own feature flag and guardian consent at runtime.
+CONFIG_CAPABILITY_CAMERA=y
+CONFIG_CAPABILITY_DISPLAY=y
+CONFIG_CAPABILITY_TOUCH=y
 # Shared security and child safety baseline. Transport validation, guardian
 # consent, and content moderation are part of every production image.
 CONFIG_FEATURE_TRANSPORT_SECURITY=y
@@ -140,3 +146,18 @@ CONFIG_FEATURE_UI_TEXT_SYNC=y
 CONFIG_FEATURE_FORM_FACTOR_PROFILE=y
 CONFIG_FEATURE_FORM_FACTOR_REPORT=y
 CONFIG_FEATURE_CONNECTIVITY_REPORT=y
+
+# 初芽 hardware. The camera capture pipeline still requires guardian consent per
+# upload, and the screen surface is what shows the visible notice a care view
+# must display before it may start.
+CONFIG_FEATURE_CAMERA_CAPTURE=y
+CONFIG_FEATURE_SCREEN_SURFACE=y
+# Guardian live view. Every runtime guard stays in force: a guardian must turn it
+# on in the parent app, the device shows a notice and plays a tone before it
+# starts, the child can stop it with the button, and the deadline above still
+# bounds the session.
+CONFIG_FEATURE_CARE_VIEW=y
+# 初芽 reports coarse mood samples so the guardian distribution has a source.
+# The family switch in the parent app still gates it: the platform refuses
+# samples while that switch is off, and no conversation text leaves the device.
+CONFIG_FEATURE_EMOTION_REPORT=y

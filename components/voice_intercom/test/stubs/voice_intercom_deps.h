@@ -36,6 +36,13 @@ void voice_intercom_host_set_capture_missing(void);
 
 void voice_intercom_host_deliver_mqtt_data(const char *payload, int length);
 
+// Call-state reports the module sent to the platform. A declined ring must show
+// up here as a decline so a guardian is not shown a call that never happened.
+int esp_http_client_host_perform_count(void);
+const char *esp_http_client_host_perform_url(size_t index);
+const char *esp_http_client_host_perform_body(size_t index);
+void esp_http_client_host_reset(void);
+
 int voice_intercom_host_session_start_calls(void);
 int voice_intercom_host_session_end_calls(void);
 int voice_intercom_host_session_shutdown_calls(void);

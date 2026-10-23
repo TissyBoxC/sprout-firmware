@@ -173,8 +173,10 @@ void test_accept_starts_audio_only_after_the_button(void) {
         "the acknowledgement reports the accept"
     );
     check(
-        std::strstr(voice_intercom_host_mqtt_published_topic(), "/acks") !=
-            nullptr,
+        std::strstr(
+            voice_intercom_host_mqtt_published_topic(),
+            "/commands/ack"
+        ) != nullptr,
         "the acknowledgement goes to the device ack topic"
     );
     check(
@@ -220,6 +222,32 @@ void test_decline_releases_the_ring(void) {
     check(
         snapshot.audio_allowed == false,
         "the snapshot reports no audio path"
+    );
+    // A refused ring must reach the platform as a decline. Without it the
+    // guardian's screen keeps ringing a call the child already ended.
+    check(
+        esp_http_client_host_perform_count() == 1,
+        "a decline reports exactly one call state to the platform"
+    );
+    const char *decline_url = esp_http_client_host_perform_url(0);
+    check(
+        std::strstr(decline_url, "/intercom-calls/call-1/decline") != nullptr,
+        "the refusal is reported on the decline route"
+    );
+    check(
+        std::strstr(decline_url, "https://") == decline_url,
+        "the report uses the platform endpoint over TLS"
+    );
+    check(
+        std::strstr(
+            esp_http_client_host_perform_body(0),
+            "local_decline"
+        ) != nullptr,
+        "the report names the reason the call ended"
+    );
+    check(
+        std::strstr(esp_http_client_host_perform_body(0), "audio") == nullptr,
+        "the report carries no call audio"
     );
 }
 
@@ -300,6 +328,31 @@ void test_hangup_releases_every_resource(void) {
     check(
         voice_intercom_host_session_shutdown_calls() == 1,
         "a repeated hangup does not tear down twice"
+    );
+    // The accepted call reports twice: once when it connected and once when it
+    // ended. A hangup sends the platform to its hangup route, never to decline,
+    // so a guardian is not told the child refused a call they answered.
+    check(
+        esp_http_client_host_perform_count() == 2,
+        "an answered call reports its accept and its hangup"
+    );
+    check(
+        std::strstr(
+            esp_http_client_host_perform_url(0),
+            "/intercom-calls/call-1/accept"
+        ) != nullptr,
+        "the answered call is reported on the accept route"
+    );
+    check(
+        std::strstr(
+            esp_http_client_host_perform_url(1),
+            "/intercom-calls/call-1/hangup"
+        ) != nullptr,
+        "the ended call is reported on the hangup route"
+    );
+    check(
+        std::strstr(esp_http_client_host_perform_url(1), "decline") == nullptr,
+        "an answered call is never reported as a decline"
     );
 }
 

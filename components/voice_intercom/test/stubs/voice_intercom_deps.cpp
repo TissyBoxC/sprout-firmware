@@ -16,7 +16,9 @@
 #include "config_store.h"
 #include "device_identity.h"
 #include "device_message.h"
+#include "esp_crt_bundle.h"
 #include "esp_err.h"
+#include "esp_http_client.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -102,8 +104,8 @@ void voice_intercom_host_reset(void) {
     host_capture_enabled = false;
     host_capture_missing = false;
     host_reset_counters();
+    esp_http_client_host_reset();
 }
-
 void voice_intercom_host_advance_ticks(uint32_t ticks) {
     host_ticks += ticks;
 }
@@ -565,6 +567,155 @@ int esp_mqtt_client_publish(
         host_published_payload[bounded] = '\0';
     }
     return 1;
+}
+
+// --- device binding client ------------------------------------------------
+
+esp_err_t device_binding_client_copy_session_token(
+    char *output,
+    size_t output_size
+) {
+    if (output == nullptr || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const char *token = "session-token-1";
+    const size_t length = strlen(token);
+    if (length >= output_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(output, token, length + 1);
+    return ESP_OK;
+}
+
+esp_err_t device_binding_client_get_platform_base_url(
+    char *output,
+    size_t output_size
+) {
+    if (output == nullptr || output_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const char *base_url = "https://api.example.invalid";
+    const size_t length = strlen(base_url);
+    if (length >= output_size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(output, base_url, length + 1);
+    return ESP_OK;
+}
+
+// --- HTTP client ----------------------------------------------------------
+
+// The real bundle installs the CA store on the TLS config. The host build has no
+// TLS stack, so the attach point only has to exist for the client code to link.
+int esp_crt_bundle_attach(void *conf) {
+    (void)conf;
+    return 0;
+}
+
+// Records every call-state report so a test can assert that a call the child
+// refused is reported as a decline and that no report carries call audio.
+esp_err_t esp_http_client_init_result(void);
+int esp_http_client_host_perform_count(void);
+const char *esp_http_client_host_perform_url(size_t index);
+const char *esp_http_client_host_perform_body(size_t index);
+void esp_http_client_host_reset(void);
+
+#define kHostHttpCapacity 16
+#define kHostUrlSize 256
+#define kHostBodySize 128
+
+typedef struct host_http_request_t {
+    char url[kHostUrlSize];
+    char body[kHostBodySize];
+} host_http_request_t;
+
+// The stub header forward-declares this type the way the real one does, so the
+// host build defines the body here before any dereference.
+struct esp_http_client {
+    host_http_request_t *request;
+};
+
+static host_http_request_t g_host_http_requests[kHostHttpCapacity];
+static size_t g_host_http_count;
+
+esp_http_client_handle_t esp_http_client_init(
+    const esp_http_client_config_t *config
+) {
+    if (config == nullptr || g_host_http_count >= kHostHttpCapacity) {
+        return nullptr;
+    }
+    esp_http_client *client =
+        (esp_http_client *)calloc(1, sizeof(esp_http_client));
+    if (client == nullptr) {
+        return nullptr;
+    }
+    host_http_request_t *request = &g_host_http_requests[g_host_http_count];
+    memset(request, 0, sizeof(*request));
+    if (config->url != nullptr) {
+        strncpy(request->url, config->url, kHostUrlSize - 1);
+    }
+    client->request = request;
+    g_host_http_count += 1;
+    return (esp_http_client_handle_t)client;
+}
+
+esp_err_t esp_http_client_set_header(
+    esp_http_client_handle_t client,
+    const char *key,
+    const char *value
+) {
+    if (client == nullptr || key == nullptr || value == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+esp_err_t esp_http_client_set_post_field(
+    esp_http_client_handle_t client,
+    const char *data,
+    int len
+) {
+    if (client == nullptr || data == nullptr || len <= 0 ||
+        (size_t)len >= kHostBodySize) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memcpy(client->request->body, data, (size_t)len);
+    client->request->body[len] = '\0';
+    return ESP_OK;
+}
+
+esp_err_t esp_http_client_perform(esp_http_client_handle_t client) {
+    return client == nullptr ? ESP_ERR_INVALID_ARG : ESP_OK;
+}
+
+int esp_http_client_get_status_code(esp_http_client_handle_t client) {
+    return client == nullptr ? 0 : 200;
+}
+
+esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client) {
+    free(client);
+    return ESP_OK;
+}
+
+esp_err_t esp_http_client_init_result(void) {
+    return ESP_OK;
+}
+
+int esp_http_client_host_perform_count(void) {
+    return (int)g_host_http_count;
+}
+
+const char *esp_http_client_host_perform_url(size_t index) {
+    return index < g_host_http_count ? g_host_http_requests[index].url : "";
+}
+
+const char *esp_http_client_host_perform_body(size_t index) {
+    return index < g_host_http_count ? g_host_http_requests[index].body : "";
+}
+
+void esp_http_client_host_reset(void) {
+    memset(g_host_http_requests, 0, sizeof(g_host_http_requests));
+    g_host_http_count = 0;
 }
 
 }  // extern "C"

@@ -72,6 +72,30 @@ extern "C" {
 #define DEVICE_RUNTIME_HAS_FACTORY_RESET 0
 #endif
 
+// Care view and voice intercom own their own session state machines and take a
+// raw command payload, so this module only routes commands to them. Routing
+// happens here rather than through the module registry because the registry
+// descriptor carries no command hook, and this reporter is the one component
+// that already receives every inbound device.command from the broker.
+#if CONFIG_FEATURE_CARE_VIEW && __has_include("care_view.h")
+#define DEVICE_RUNTIME_HAS_CARE_VIEW 1
+#else
+#define DEVICE_RUNTIME_HAS_CARE_VIEW 0
+#endif
+
+#if CONFIG_FEATURE_VOICE_INTERCOM && __has_include("voice_intercom.h")
+#define DEVICE_RUNTIME_HAS_VOICE_INTERCOM 1
+#else
+#define DEVICE_RUNTIME_HAS_VOICE_INTERCOM 0
+#endif
+
+#if DEVICE_RUNTIME_HAS_CARE_VIEW
+#include "care_view.h"
+#endif
+#if DEVICE_RUNTIME_HAS_VOICE_INTERCOM
+#include "voice_intercom.h"
+#endif
+
 #if DEVICE_RUNTIME_HAS_PARENT_POLICY
 #include "parent_policy.h"
 #endif
@@ -124,6 +148,12 @@ extern "C" {
 #define DEVICE_RUNTIME_USAGE_UPLOAD_BATCH 4
 #define DEVICE_RUNTIME_HEARTBEAT_ID_SIZE 64
 #define DEVICE_RUNTIME_COMMAND_ID_SIZE 64
+#define DEVICE_RUNTIME_COMMAND_TYPE_SIZE 32
+// The routed modules parse the payload themselves, so the reporter keeps the
+// verbatim bytes instead of re-serialising a parsed copy. The bound matches the
+// transport's own command buffer; a longer payload is rejected at the boundary
+// rather than silently truncated into a half-valid session command.
+#define DEVICE_RUNTIME_COMMAND_DATA_SIZE 1024
 #define DEVICE_RUNTIME_COMMAND_LIMIT 4
 #define DEVICE_RUNTIME_COMMAND_ACK_PAYLOAD_SIZE 256
 #if DEVICE_RUNTIME_HAS_DEVICE_MESSAGE
@@ -147,7 +177,13 @@ typedef struct {
 
 typedef struct {
     char id[DEVICE_RUNTIME_COMMAND_ID_SIZE];
-    char type[32];
+    char type[DEVICE_RUNTIME_COMMAND_TYPE_SIZE];
+    // Kept for the modules that own their own parsing. has_data distinguishes
+    // an empty payload from "the broker omitted it", because the session
+    // modules must reject the latter rather than treat it as defaults.
+    char data[DEVICE_RUNTIME_COMMAND_DATA_SIZE];
+    size_t data_length;
+    bool has_data;
 #if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD
     device_message_t message;
     bool has_message;
@@ -1255,6 +1291,29 @@ device_runtime_acknowledge_command(
     return DEVICE_RUNTIME_COMMAND_ACK_OK;
 }
 
+// Command types the care view module owns. The platform sends the same family
+// under two names because the start/stop pair predates the session API; both
+// must reach the module or a guardian's session would ring forever.
+static bool device_runtime_is_care_view_command(const char *command_type) {
+    if (command_type == nullptr) {
+        return false;
+    }
+    return strcmp(command_type, "care_view_start") == 0 ||
+        strcmp(command_type, "care_view_stop") == 0;
+}
+
+// Command types the intercom module owns. A control command can only end a
+// call, so routing it here never bypasses the physical accept step.
+static bool device_runtime_is_voice_intercom_command(
+    const char *command_type
+) {
+    if (command_type == nullptr) {
+        return false;
+    }
+    return strcmp(command_type, "voice_intercom_call") == 0 ||
+        strcmp(command_type, "voice_intercom_call_control") == 0;
+}
+
 static device_runtime_command_execution_t device_runtime_execute_command(
     const char *device_id,
     const device_runtime_command_t *command,
@@ -1361,6 +1420,38 @@ static device_runtime_command_execution_t device_runtime_execute_command(
             }
         }
 #endif
+    } else if (device_runtime_is_care_view_command(command->type)) {
+#if DEVICE_RUNTIME_HAS_CARE_VIEW
+        // The session module refuses a malformed payload itself; the reporter
+        // only guarantees it hands over the exact bytes it received.
+        result = care_view_handle_command(
+            command->data,
+            command->data_length
+        );
+        if (result == ESP_ERR_NOT_SUPPORTED) {
+            result_code = "unsupported_command";
+        } else if (result != ESP_OK) {
+            result_code = "care_view_rejected";
+        }
+#else
+        result_code = "care_view_unavailable";
+        result = ESP_ERR_NOT_SUPPORTED;
+#endif
+    } else if (device_runtime_is_voice_intercom_command(command->type)) {
+#if DEVICE_RUNTIME_HAS_VOICE_INTERCOM
+        result = voice_intercom_handle_command(
+            command->data,
+            command->data_length
+        );
+        if (result == ESP_ERR_NOT_SUPPORTED) {
+            result_code = "unsupported_command";
+        } else if (result != ESP_OK) {
+            result_code = "voice_intercom_rejected";
+        }
+#else
+        result_code = "voice_intercom_unavailable";
+        result = ESP_ERR_NOT_SUPPORTED;
+#endif
     } else {
         // Keep the command type contract open for future commands: report a
         // stable unsupported result instead of leaving the command without an
@@ -1458,6 +1549,18 @@ static bool device_runtime_copy_mqtt_command(
     memset(command_out, 0, sizeof(*command_out));
     snprintf(command_out->id, sizeof(command_out->id), "%s", command_id);
     snprintf(command_out->type, sizeof(command_out->type), "%s", command_type);
+
+    // Reject an over-long payload instead of truncating it: a session command
+    // cut in half would parse as a different, valid-looking request.
+    if (data_length >= sizeof(command_out->data)) {
+        return false;
+    }
+    if (data_length > 0) {
+        memcpy(command_out->data, data, data_length);
+    }
+    command_out->data[data_length] = '\0';
+    command_out->data_length = data_length;
+    command_out->has_data = data != nullptr;
 
     if (strcmp(command_type, "display_message") == 0) {
 #if DEVICE_RUNTIME_HAS_COMMAND_PAYLOAD

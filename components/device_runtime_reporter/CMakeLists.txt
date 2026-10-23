@@ -40,6 +40,18 @@ if(CONFIG_FEATURE_PARENT_POLICY AND EXISTS
     list(APPEND device_runtime_reporter_requires "parent_policy")
 endif()
 
+# The reporter routes session commands to these two modules, so the component
+# link must follow the same feature flags the source guard uses.
+if(CONFIG_FEATURE_CARE_VIEW AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../care_view/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "care_view")
+endif()
+
+if(CONFIG_FEATURE_VOICE_INTERCOM AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../voice_intercom/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "voice_intercom")
+endif()
+
 if(CONFIG_FEATURE_USAGE_LEDGER AND EXISTS
         "${CMAKE_CURRENT_LIST_DIR}/../usage_ledger/CMakeLists.txt")
     list(APPEND device_runtime_reporter_requires "usage_ledger")

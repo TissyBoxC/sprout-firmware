@@ -1659,6 +1659,59 @@ Invoke-HostTest `
     -AdditionalArguments @() `
     -Compiler $compiler
 
+$emotionReportRoot = Join-Path $firmwareRoot 'components/emotion_report'
+Invoke-HostTest `
+    -Name 'emotion_report_core' `
+    -Sources @(
+        (Join-Path $emotionReportRoot 'src/emotion_report_core.c')
+        (Join-Path $companionshipRoot 'src/companionship.c')
+        (Join-Path $companionshipRoot 'src/companionship_core.c')
+        (Join-Path $emotionReportRoot 'test/test_emotion_report_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $emotionReportRoot 'include')
+        (Join-Path $emotionReportRoot 'src')
+        (Join-Path $emotionReportRoot 'test/stubs')
+        (Join-Path $companionshipRoot 'include')
+        (Join-Path $companionshipRoot 'src')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @(
+        '-DCONFIG_FEATURE_COMPANIONSHIP=1'
+    ) `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'emotion_report_runtime' `
+    -Sources @(
+        (Join-Path $emotionReportRoot 'src/emotion_report.cpp')
+        (Join-Path $emotionReportRoot 'src/emotion_report_core.c')
+        (Join-Path $companionshipRoot 'src/companionship.c')
+        (Join-Path $companionshipRoot 'src/companionship_core.c')
+        (Join-Path $emotionReportRoot 'test/stubs/emotion_report_deps.cpp')
+        (Join-Path $emotionReportRoot 'test/test_emotion_report.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $emotionReportRoot 'include')
+        (Join-Path $emotionReportRoot 'src')
+        (Join-Path $emotionReportRoot 'test/stubs')
+        (Join-Path $companionshipRoot 'include')
+        (Join-Path $companionshipRoot 'src')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+    ) `
+    -AdditionalArguments @(
+        '-DEMOTION_REPORT_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_EMOTION_REPORT=1'
+        '-DCONFIG_FEATURE_COMPANIONSHIP=1'
+        '-Wno-missing-field-initializers'
+    ) `
+    -Compiler $compiler
+
 $longTermMemoryRoot = Join-Path $firmwareRoot 'components/long_term_memory'
 Invoke-HostTest `
     -Name 'long_term_memory_core' `
@@ -3602,6 +3655,49 @@ Invoke-HostTest `
         '-DCONFIG_FEATURE_CONFIG_STORE=1'
         '-DCONFIG_VOLUME_CONTROL_DEFAULT_PERCENT=40'
         '-DCONFIG_VOLUME_CONTROL_MAX_PERCENT=70'
+    ) `
+    -Compiler $compiler
+
+$assessmentSyncRoot = Join-Path $firmwareRoot 'components/assessment_sync'
+Invoke-HostTest `
+    -Name 'assessment_sync_core' `
+    -Sources @(
+        (Join-Path $assessmentSyncRoot 'src/assessment_sync_core.c')
+        (Join-Path $assessmentSyncRoot 'test/test_assessment_sync_core.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $assessmentSyncRoot 'include')
+        (Join-Path $assessmentSyncRoot 'src')
+        (Join-Path $assessmentSyncRoot 'test/stubs')
+    ) `
+    -AdditionalArguments @() `
+    -Compiler $compiler
+
+Invoke-HostTest `
+    -Name 'assessment_sync_runtime' `
+    -Sources @(
+        (Join-Path $assessmentSyncRoot 'src/assessment_sync_core.c')
+        (Join-Path $assessmentSyncRoot 'src/assessment_sync.cpp')
+        (Join-Path $assessmentSyncRoot 'test/stubs/assessment_sync_deps.cpp')
+        (Join-Path $assessmentSyncRoot 'test/test_assessment_sync.cpp')
+    ) `
+    -IncludeDirectories @(
+        (Join-Path $assessmentSyncRoot 'include')
+        (Join-Path $assessmentSyncRoot 'src')
+        (Join-Path $assessmentSyncRoot 'test/stubs')
+        (Join-Path $firmwareRoot 'components/device_binding_client/include')
+        (Join-Path $firmwareRoot 'components/device_identity/include')
+        (Join-Path $firmwareRoot 'components/network_manager/include')
+        (Join-Path $firmwareRoot 'components/time_sync/include')
+        (Join-Path $firmwareRoot 'components/transport_security/include')
+        (Join-Path $firmwareRoot 'components/module_registry/include')
+        $arduinoJsonPath
+    ) `
+    -AdditionalArguments @(
+        '-DASSESSMENT_SYNC_HOST_TESTS=1'
+        '-DCONFIG_FEATURE_ASSESSMENT_SYNC=1'
+        '-DCONFIG_FEATURE_TRANSPORT_SECURITY=1'
+        '-Wno-missing-field-initializers'
     ) `
     -Compiler $compiler
 

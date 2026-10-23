@@ -30,9 +30,11 @@ idf_component_register(
         config_store
         device_binding_client
         device_identity
+        esp_http_client
         espressif__mqtt
         freertos
         led_indicator
+        mbedtls
         network_manager
         prompt_tone
 )

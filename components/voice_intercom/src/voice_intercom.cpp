@@ -10,8 +10,11 @@
 #include "audio_output.h"
 #include "audio_pipeline.h"
 #include "config_store.h"
+#include "device_binding_client.h"
 #include "device_identity.h"
 #include "device_message.h"
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -53,6 +56,14 @@
 #define VOICE_INTERCOM_COMMAND_TOPIC_SIZE 128
 #define VOICE_INTERCOM_ACK_TOPIC_SIZE 128
 #define VOICE_INTERCOM_ENVELOPE_SIZE 1024
+
+// One call-state report addresses the platform directly, so it carries a URL and
+// a small reason body of its own, both bounded by the device contract rather than
+// by the broker envelope above.
+#define VOICE_INTERCOM_BASE_URL_SIZE 128
+#define VOICE_INTERCOM_URL_SIZE 256
+#define VOICE_INTERCOM_REPORT_BODY_SIZE 96
+#define VOICE_INTERCOM_REPORT_TIMEOUT_MS 6000
 
 // One command is bounded by the shared device command contract; the envelope
 // bound below keeps a hostile broker payload from forcing a larger buffer.
@@ -479,7 +490,7 @@ static esp_err_t voice_intercom_open_signalling(void) {
     snprintf(
         s_ack_topic,
         sizeof(s_ack_topic),
-        "sprout/v1/devices/%s/acks",
+        "sprout/v1/devices/%s/commands/ack",
         s_device_id
     );
     esp_err_t result = voice_intercom_read_pem(
@@ -619,9 +630,96 @@ static void voice_intercom_release_media(void) {
 
 // ------------------------------------------------------------- transitions
 
+// Report one call's transition to the platform.
+//
+// The broker acknowledgement above only reaches the MQTT command channel; the
+// platform's own call record is what the guardian application reads, and a call
+// that never reports stays "ringing" there until it expires. The request carries
+// no audio, no transcript, and no guardian identity: only the call's own state.
+//
+// A failure is not retried. The call has already changed state locally, and a
+// device that stalls on a dropped request would keep the microphone open for a
+// call the platform believes ended.
+static void voice_intercom_report_call_state(
+    const char *suffix,
+    const char *call_id,
+    const char *reason
+) {
+    if (call_id == NULL || call_id[0] == '\0') {
+        return;
+    }
+    char device_id[DEVICE_IDENTIFIER_SIZE] = {};
+    char base_url[VOICE_INTERCOM_BASE_URL_SIZE] = {};
+    char token[DEVICE_BINDING_SESSION_TOKEN_SIZE] = {};
+    if (device_identity_copy(device_id, sizeof(device_id)) != ESP_OK ||
+        device_id[0] == '\0' ||
+        device_binding_client_get_platform_base_url(
+            base_url,
+            sizeof(base_url)
+        ) != ESP_OK ||
+        base_url[0] == '\0' ||
+        device_binding_client_copy_session_token(token, sizeof(token)) != ESP_OK ||
+        token[0] == '\0') {
+        memset(token, 0, sizeof(token));
+        memset(base_url, 0, sizeof(base_url));
+        return;
+    }
+    char url[VOICE_INTERCOM_URL_SIZE] = {};
+    snprintf(
+        url,
+        sizeof(url),
+        "%s/api/v1/devices/%s/intercom-calls/%s%s",
+        base_url,
+        device_id,
+        call_id,
+        suffix
+    );
+    esp_http_client_config_t config = {};
+    config.url = url;
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = VOICE_INTERCOM_REPORT_TIMEOUT_MS;
+    config.crt_bundle_attach = esp_crt_bundle_attach;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        memset(url, 0, sizeof(url));
+        memset(token, 0, sizeof(token));
+        memset(base_url, 0, sizeof(base_url));
+        return;
+    }
+    char authorization[DEVICE_BINDING_SESSION_TOKEN_SIZE + 16] = {};
+    snprintf(authorization, sizeof(authorization), "Bearer %s", token);
+    esp_http_client_set_header(client, "Authorization", authorization);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    char payload[VOICE_INTERCOM_REPORT_BODY_SIZE] = {};
+    int length = 0;
+    if (reason != NULL && reason[0] != '\0') {
+        length = snprintf(payload, sizeof(payload), "{\"reason\":\"%s\"}", reason);
+    } else {
+        length = snprintf(payload, sizeof(payload), "{}");
+    }
+    if (length > 0 && (size_t)length < sizeof(payload)) {
+        esp_http_client_set_post_field(client, payload, length);
+        (void)esp_http_client_perform(client);
+    }
+    const int status_code = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    if (status_code < 200 || status_code >= 300) {
+        ESP_LOGW(TAG, "call state report failed status=%d", status_code);
+    }
+    memset(payload, 0, sizeof(payload));
+    memset(authorization, 0, sizeof(authorization));
+    memset(url, 0, sizeof(url));
+    memset(token, 0, sizeof(token));
+    memset(base_url, 0, sizeof(base_url));
+}
+
 // Applies one state-machine outcome to every owned resource so no phase can
-// keep audio or an indication alive.
-static void voice_intercom_apply_end(voice_intercom_end_reason_t reason) {
+// keep audio or an indication alive. The call id is passed in because the state
+// machine has already forgotten it by the time a call ends.
+static void voice_intercom_apply_end(
+    voice_intercom_end_reason_t reason,
+    const char *ended_call_id
+) {
     voice_intercom_clear_indication();
     voice_intercom_release_media();
     voice_intercom_lock();
@@ -629,7 +727,9 @@ static void voice_intercom_apply_end(voice_intercom_end_reason_t reason) {
     // accepted by a stale accept that never came from a button press.
     s_state.config.accept_enabled = false;
     char call_id[VOICE_INTERCOM_CALL_ID_SIZE] = {};
-    memcpy(call_id, s_state.call_id, sizeof(call_id));
+    if (ended_call_id != NULL) {
+        memcpy(call_id, ended_call_id, sizeof(call_id) - 1);
+    }
     switch (reason) {
         case VOICE_INTERCOM_END_RING_TIMEOUT:
             s_ring_timeouts += 1;
@@ -654,6 +754,23 @@ static void voice_intercom_apply_end(voice_intercom_end_reason_t reason) {
         voice_intercom_publish_ack(
             call_id,
             "failed",
+            voice_intercom_end_reason_name(reason)
+        );
+    }
+    // A ringing call the child refused is a decline; every other outcome closes a
+    // call that either connected or never should have. The platform keeps those
+    // two apart so a guardian can tell "nobody answered" from "the call dropped".
+    if (reason == VOICE_INTERCOM_END_LOCAL_DECLINE ||
+        reason == VOICE_INTERCOM_END_RING_TIMEOUT) {
+        voice_intercom_report_call_state(
+            "/decline",
+            call_id,
+            voice_intercom_end_reason_name(reason)
+        );
+    } else {
+        voice_intercom_report_call_state(
+            "/hangup",
+            call_id,
             voice_intercom_end_reason_name(reason)
         );
     }
@@ -767,16 +884,22 @@ static void voice_intercom_accept_ringing_call(void) {
     }
     voice_intercom_unlock();
     if (accept_result != VOICE_INTERCOM_RESULT_OK || !is_connecting) {
-        voice_intercom_apply_end(VOICE_INTERCOM_END_CONNECT_FAILED);
+        voice_intercom_apply_end(VOICE_INTERCOM_END_CONNECT_FAILED, call_id);
         return;
     }
     voice_intercom_publish_ack(call_id, "acknowledged", "accepted");
+    voice_intercom_report_call_state("/accept", call_id, NULL);
     voice_intercom_publish_indication();
     ESP_LOGI(TAG, "call active");
 }
 
 static void voice_intercom_end_call(voice_intercom_end_reason_t reason) {
     voice_intercom_lock();
+    // The core clears its call id when it ends a call, so the identifier is
+    // captured here: the platform report below needs it and would otherwise be
+    // handed an empty string for every call this device ends itself.
+    char call_id[VOICE_INTERCOM_CALL_ID_SIZE] = {};
+    memcpy(call_id, s_state.call_id, sizeof(call_id));
     const voice_intercom_result_t ended = voice_intercom_core_end(
         &s_state,
         reason,
@@ -786,19 +909,23 @@ static void voice_intercom_end_call(voice_intercom_end_reason_t reason) {
     // Only a call the state machine actually ended owns resources to release,
     // and the core refuses to end an idle call.
     if (ended == VOICE_INTERCOM_RESULT_OK) {
-        voice_intercom_apply_end(reason);
+        voice_intercom_apply_end(reason, call_id);
     }
 }
 
 static void voice_intercom_tick(void) {
     voice_intercom_lock();
+    // Same reason as the explicit end path: a timeout ends the call inside the
+    // core, which then forgets the identifier the platform report needs.
+    char call_id[VOICE_INTERCOM_CALL_ID_SIZE] = {};
+    memcpy(call_id, s_state.call_id, sizeof(call_id));
     const voice_intercom_end_reason_t reason = voice_intercom_core_tick(
         &s_state,
         voice_intercom_now_ms()
     );
     voice_intercom_unlock();
     if (reason != VOICE_INTERCOM_END_NONE) {
-        voice_intercom_apply_end(reason);
+        voice_intercom_apply_end(reason, call_id);
     }
 }
 // Shared by the MQTT event task and the public entry point. The event task
@@ -1035,13 +1162,17 @@ voice_intercom_end_reason_t voice_intercom_poll(void) {
         return VOICE_INTERCOM_END_NONE;
     }
     voice_intercom_lock();
+    // Captured before the tick for the same reason as the internal paths: a
+    // timer that ends the call also erases the identifier it ended.
+    char call_id[VOICE_INTERCOM_CALL_ID_SIZE] = {};
+    memcpy(call_id, s_state.call_id, sizeof(call_id));
     const voice_intercom_end_reason_t reason = voice_intercom_core_tick(
         &s_state,
         voice_intercom_now_ms()
     );
     voice_intercom_unlock();
     if (reason != VOICE_INTERCOM_END_NONE) {
-        voice_intercom_apply_end(reason);
+        voice_intercom_apply_end(reason, call_id);
     }
     return reason;
 }

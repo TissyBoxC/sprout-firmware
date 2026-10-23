@@ -1,10 +1,35 @@
 #include "companionship.h"
 
 #include <string.h>
+#include <time.h>
 
 #include "companionship_core.h"
 
+#ifdef CONFIG_FEATURE_EMOTION_REPORT
+#include "emotion_report.h"
+#endif
+
 static bool s_ready;
+
+/*
+ * Hand one settled emotion to the platform reporter.
+ *
+ * Every caller of `companionship_emotion_from_name` has just resolved how the
+ * child felt in this turn, which is the only moment the device holds a genuine
+ * observation; a per-turn observation anywhere else (for example in
+ * `companionship_encourage`) would report the same turn twice or report a
+ * fallback reply the AI never produced. The call is a single queue push with no
+ * I/O, and a reporting failure never changes the reply the child receives.
+ */
+static void companionship_report_settled_emotion(
+    companionship_emotion_t emotion
+) {
+#if CONFIG_FEATURE_EMOTION_REPORT
+    (void)emotion_report_observe(emotion, (int64_t)time(NULL));
+#else
+    (void)emotion;
+#endif
+}
 
 esp_err_t companionship_init(void) {
     s_ready = true;
@@ -58,6 +83,7 @@ bool companionship_emotion_from_name(
     if (emotion_out != NULL) {
         *emotion_out = parsed;
     }
+    companionship_report_settled_emotion(parsed);
     return true;
 }
 

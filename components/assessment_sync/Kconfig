@@ -1,0 +1,51 @@
+menu "Sprout feature modules"
+
+# Secure by default: the device cannot grade a child, so this component only
+# mirrors an assessment the guardian drives from the phone. It stays off in
+# every profile until the guardian flow that supplies the score ships.
+config FEATURE_ASSESSMENT_SYNC
+    bool "Enable learning assessment session sync"
+    default n
+    depends on FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Fetches the assessment session the guardian started and reports the
+        answers the guardian graded on their phone. The firmware has no speech
+        recognition, so it never derives a score: it presents the item, keeps
+        the answer queued until the platform accepts it, and exposes the run's
+        progress. With this disabled, no assessment request is made.
+
+config ASSESSMENT_SYNC_POLL_INTERVAL_SECONDS
+    int "Assessment session poll interval in seconds"
+    depends on FEATURE_ASSESSMENT_SYNC
+    range 15 600
+    default 60
+    help
+        How often an active assessment is re-read. A session lasts at most ten
+        minutes, so a minute keeps the device close to the guardian's phone
+        without polling the platform per item.
+
+config ASSESSMENT_SYNC_RETRY_INTERVAL_SECONDS
+    int "Assessment sync retry interval in seconds"
+    depends on FEATURE_ASSESSMENT_SYNC
+    range 5 120
+    default 15
+
+config ASSESSMENT_SYNC_MAX_RETRY_INTERVAL_SECONDS
+    int "Assessment sync maximum backoff in seconds"
+    depends on FEATURE_ASSESSMENT_SYNC
+    range 30 1800
+    default 300
+    help
+        Consecutive failures double the retry delay up to this cap, so a
+        platform outage produces a few attempts instead of a request storm.
+
+config ASSESSMENT_SYNC_TASK_STACK_SIZE
+    int "Assessment sync worker stack size"
+    depends on FEATURE_ASSESSMENT_SYNC
+    range 3072 16384
+    default 6144
+    help
+        The worker parses one session response at a time; the JSON document and
+        the item buffers live on this stack.
+
+endmenu

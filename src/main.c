@@ -29,8 +29,10 @@
 #if CONFIG_FEATURE_VOICE_SESSION
 #include "voice_session.h"
 #endif
-#if CONFIG_FEATURE_VOICE_INTERCOM
+#if CONFIG_FEATURE_CARE_VIEW
 #include "care_view.h"
+#endif
+#if CONFIG_FEATURE_VOICE_INTERCOM
 #include "voice_intercom.h"
 #endif
 #if CONFIG_FEATURE_CONVERSATION_CONTEXT
@@ -73,6 +75,10 @@
 #include "companionship.h"
 #endif
 
+#if CONFIG_FEATURE_EMOTION_REPORT
+#include "emotion_report.h"
+#endif
+
 #if CONFIG_FEATURE_GROWTH_RECORD
 #include "growth_record.h"
 #endif
@@ -103,6 +109,10 @@
 
 #if CONFIG_FEATURE_ENGLISH_COURSE_SYNC
 #include "english_course_sync.h"
+#endif
+
+#if CONFIG_FEATURE_ASSESSMENT_SYNC
+#include "assessment_sync.h"
 #endif
 
 #if CONFIG_FEATURE_PLAYBACK_REQUEST
@@ -1051,6 +1061,12 @@ static void register_modules(void) {
 #if CONFIG_FEATURE_VOICE_INTERCOM
     ESP_ERROR_CHECK(module_registry_add(voice_intercom_module_descriptor()));
 #endif
+#if CONFIG_FEATURE_ASSESSMENT_SYNC
+    // Registers the worker that mirrors the guardian-driven assessment. The
+    // component only starts tracking a run once a caller names its session, so
+    // registering it opens no request on its own.
+    ESP_ERROR_CHECK(module_registry_add(assessment_sync_module_descriptor()));
+#endif
 #if CONFIG_FEATURE_CARE_VIEW
     ESP_ERROR_CHECK(module_registry_add(care_view_module_descriptor()));
 #endif
@@ -1080,6 +1096,9 @@ static void register_modules(void) {
 #endif
 #if CONFIG_FEATURE_COMPANIONSHIP
     ESP_ERROR_CHECK(module_registry_add(companionship_module_descriptor()));
+#endif
+#if CONFIG_FEATURE_EMOTION_REPORT
+    ESP_ERROR_CHECK(module_registry_add(emotion_report_module_descriptor()));
 #endif
 #if CONFIG_FEATURE_GROWTH_RECORD
     ESP_ERROR_CHECK(module_registry_add(growth_record_module_descriptor()));

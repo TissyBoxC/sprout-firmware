@@ -1,0 +1,55 @@
+menu "Sprout feature modules"
+
+# Secure by default: supervising a child's mood is a guardian decision, so the
+# device never reports a sample until the feature is compiled in AND the family
+# has turned mood sensing on in the parent app. The platform refuses samples
+# with 403 while the family switch is off.
+config FEATURE_EMOTION_REPORT
+    bool "Report emotion observations to the platform"
+    default n
+    depends on FEATURE_COMPANIONSHIP && FEATURE_DEVICE_BINDING_CLIENT && FEATURE_NETWORK_MANAGER && FEATURE_TIME_SYNC
+    help
+        Sends one coarse mood sample (label, confidence, observation instant)
+        to POST /api/v1/devices/{device_id}/emotion-observations each time the
+        companionship module settles on an emotion after a wake or a finished
+        turn. No conversation text, audio, or image ever leaves the device.
+        Companionship keeps working locally when this is disabled.
+
+config EMOTION_REPORT_INTERVAL_SECONDS
+    int "Minimum interval between two reported samples in seconds"
+    depends on FEATURE_EMOTION_REPORT
+    range 30 3600
+    default 60
+    help
+        A child who is awake and chatting produces many turns per minute; a
+        sample per turn would turn an aggregate into a minute-by-minute log of
+        one child. One sample per minute still gives a weekly distribution.
+
+config EMOTION_REPORT_RETRY_INTERVAL_SECONDS
+    int "Retry interval after a transient upload failure in seconds"
+    depends on FEATURE_EMOTION_REPORT
+    range 5 600
+    default 30
+
+config EMOTION_REPORT_BACKOFF_MAX_SECONDS
+    int "Maximum retry backoff after consecutive failures in seconds"
+    depends on FEATURE_EMOTION_REPORT
+    range 60 3600
+    default 900
+    help
+        Each consecutive failure doubles the wait between attempts up to this
+        ceiling, so a platform outage or an unregistered device stops asking
+        instead of retrying on every turn.
+
+config EMOTION_REPORT_QUEUE_CAPACITY
+    int "Samples held locally while offline"
+    depends on FEATURE_EMOTION_REPORT
+    range 0 32
+    default 8
+    help
+        Samples recorded while the device cannot reach the platform wait for
+        the next worker cycle. The oldest sample is dropped when the queue is
+        full, because a mood distribution is worth more than one old instant
+        and every retained sample is retained child data.
+
+endmenu
