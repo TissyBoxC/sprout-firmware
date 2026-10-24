@@ -20,7 +20,7 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # secure version binds every release to an explicit, traceable integer in
 # secure_version.txt; CI rejects a release that reuses an older value.
 CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK=y
-CONFIG_BOOTLOADER_APP_SECURE_VERSION=2
+CONFIG_BOOTLOADER_APP_SECURE_VERSION=3
 
 # Secure Boot V2 (RSA) so the bootloader only runs signed images.
 CONFIG_SECURE_BOOT=y
