@@ -1,8 +1,10 @@
 menu "Sprout feature modules"
 
 # Secure by default: the device cannot grade a child, so this component only
-# mirrors an assessment the guardian drives from the phone. It stays off in
-# every profile until the guardian flow that supplies the score ships.
+# mirrors an assessment the guardian drives from the phone. The guardian flow
+# that supplies the score ships with the parent app, so a product profile may
+# enable it; the default stays off because a device with no bound guardian has
+# nothing to mirror.
 config FEATURE_ASSESSMENT_SYNC
     bool "Enable learning assessment session sync"
     default n

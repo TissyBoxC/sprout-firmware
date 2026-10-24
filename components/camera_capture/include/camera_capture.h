@@ -90,6 +90,31 @@ camera_capture_error_t camera_capture_finish(
 /** @brief Abort an in-flight capture without recording a frame. */
 camera_capture_error_t camera_capture_abort(void);
 
+/**
+ * @brief Copy one whole JPEG still of the current scene into caller memory.
+ *
+ * The caller owns the buffer and must pass its capacity. The call reads the
+ * sensor once, converts the frame to JPEG, and copies it out before releasing
+ * the sensor buffer, so no driver memory outlives the call and no caller holds a
+ * pointer into the DMA buffer.
+ *
+ * Consent gates the sensor, not this function: capture_start already refused
+ * without it, so a caller that reaches here has a live, consented capture.
+ *
+ * @return CAMERA_CAPTURE_ERR_PRIVACY_CONSENT_REQUIRED when no consented capture
+ *         is active, CAMERA_CAPTURE_ERR_NOT_READY when the sensor is not
+ *         initialized or the driver read failed,
+ *         CAMERA_CAPTURE_ERR_NULL_ARGUMENT for an unusable output buffer, and
+ *         CAMERA_CAPTURE_ERR_INVALID_FRAME when the still does not fit.
+ */
+camera_capture_error_t camera_capture_read_jpeg(
+    uint8_t *buffer,
+    size_t buffer_size,
+    uint32_t *width_out,
+    uint32_t *height_out,
+    size_t *length_out
+);
+
 /** @brief Return the stable text for one capture error. */
 const char *camera_capture_error_name(camera_capture_error_t error);
 

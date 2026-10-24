@@ -18,6 +18,7 @@
 #include "mqtt_client.h"
 #include "prompt_tone.h"
 #include "screen_surface.h"
+#include "voice_session.h"
 
 namespace {
 
@@ -49,6 +50,84 @@ constexpr size_t kSessionUrlSize = 256;
 constexpr size_t kDeclinePayloadSize = 96;
 constexpr size_t kBaseUrlSize = 128;
 constexpr int kSessionRequestTimeoutMs = 8000;
+
+// One still is sent per poll tick. A care view has to stay watchable, but the
+// uplink is shared with the child's own audio, so the interval is deliberately
+// slower than the audio frame rate.
+constexpr uint64_t kFrameIntervalMs = 700u;
+// The JPEG buffer is allocated once in PSRAM-sized units and reused, because a
+// per-frame allocation of this size would fragment the internal heap during a
+// view that can legally last many minutes.
+constexpr size_t kFrameBufferBytes = 256u * 1024u;
+uint8_t *g_frame_buffer = nullptr;
+uint64_t g_last_frame_at_ms = 0;
+
+// Declared ahead of the capture helper, which stamps each frame with it.
+uint64_t now_ms();
+
+/**
+ * @brief Read one still and hand it to the live audio socket.
+ *
+ * Every path updates the core's frame counters exactly once, because the
+ * platform's diagnostics read frames_sent and frames_dropped as a pair: a frame
+ * that is read but neither sent nor counted leaves the two disagreeing.
+ */
+void capture_and_send_frame() {
+    if (!care_view_core_allows_capture()) {
+        return;
+    }
+    if (g_frame_buffer == nullptr) {
+        g_frame_buffer = static_cast<uint8_t *>(malloc(kFrameBufferBytes));
+        if (g_frame_buffer == nullptr) {
+            care_view_core_note_frame(true);
+            return;
+        }
+    }
+    // The lifecycle counts the frame; the sensor only fills the buffer. A read
+    // that produced no pixels still consumes the capture slot, so it is aborted
+    // rather than finished.
+    const camera_capture_error_t started = camera_capture_start();
+    if (started != CAMERA_CAPTURE_OK) {
+        care_view_core_note_frame(true);
+        return;
+    }
+    uint32_t width = 0;
+    uint32_t height = 0;
+    size_t length = 0;
+    const camera_capture_error_t read = camera_capture_read_jpeg(
+        g_frame_buffer,
+        kFrameBufferBytes,
+        &width,
+        &height,
+        &length
+    );
+    if (read != CAMERA_CAPTURE_OK) {
+        (void)camera_capture_abort();
+        care_view_core_note_frame(true);
+        ++g_status.camera_failures;
+        return;
+    }
+
+    const uint32_t captured_at_ms = static_cast<uint32_t>(now_ms());
+    const esp_err_t sent = voice_session_send_video_frame(
+        g_frame_buffer,
+        length,
+        captured_at_ms
+    );
+    if (sent != ESP_OK) {
+        // A still is replaced by the next tick, so a failed write is a dropped
+        // frame rather than an end to the view.
+        (void)camera_capture_abort();
+        care_view_core_note_frame(true);
+        return;
+    }
+    // Finishing after the write keeps the recorded metadata about a frame that
+    // actually left the device.
+    (void)camera_capture_finish(width, height, static_cast<uint32_t>(length));
+    care_view_core_note_frame(false);
+    g_last_frame_at_ms = now_ms();
+}
+
 
 uint64_t now_ms() {
     return static_cast<uint64_t>(esp_timer_get_time() / 1000);
@@ -450,7 +529,17 @@ void care_view_poll(void) {
         );
         report_acknowledgement("camera_unavailable", g_status.session_id);
         refresh_status();
+        return;
     }
+
+    // Pacing lives here rather than in the tick so a slow poll cannot stack up
+    // frames, and the first frame of a view is sent without waiting a full
+    // interval.
+    const uint64_t now = now_ms();
+    if (g_last_frame_at_ms != 0 && now - g_last_frame_at_ms < kFrameIntervalMs) {
+        return;
+    }
+    capture_and_send_frame();
 }
 
 care_view_status_t care_view_status(void) {

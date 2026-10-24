@@ -45,7 +45,8 @@ if(CONFIG_FEATURE_CARE_VIEW)
             espressif__mqtt
             led_indicator
             prompt_tone
-            screen_surface)
+            screen_surface
+            voice_session)
         if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../${_care_view_dependency}/CMakeLists.txt")
             idf_component_optional_requires(PRIVATE ${_care_view_dependency})
         endif()

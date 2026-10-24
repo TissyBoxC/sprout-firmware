@@ -89,11 +89,20 @@ extern "C" {
 #define DEVICE_RUNTIME_HAS_VOICE_INTERCOM 0
 #endif
 
+#if CONFIG_FEATURE_ASSESSMENT_SYNC && __has_include("assessment_sync.h")
+#define DEVICE_RUNTIME_HAS_ASSESSMENT_SYNC 1
+#else
+#define DEVICE_RUNTIME_HAS_ASSESSMENT_SYNC 0
+#endif
+
 #if DEVICE_RUNTIME_HAS_CARE_VIEW
 #include "care_view.h"
 #endif
 #if DEVICE_RUNTIME_HAS_VOICE_INTERCOM
 #include "voice_intercom.h"
+#endif
+#if DEVICE_RUNTIME_HAS_ASSESSMENT_SYNC
+#include "assessment_sync.h"
 #endif
 
 #if DEVICE_RUNTIME_HAS_PARENT_POLICY
@@ -1314,6 +1323,16 @@ static bool device_runtime_is_voice_intercom_command(
         strcmp(command_type, "voice_intercom_call_control") == 0;
 }
 
+// Command type the assessment module owns. The platform names the session and
+// the device fetches the items itself, so this command carries no lesson
+// content and no answer.
+static bool device_runtime_is_assessment_command(const char *command_type) {
+    if (command_type == nullptr) {
+        return false;
+    }
+    return strcmp(command_type, "assessment_start") == 0;
+}
+
 static device_runtime_command_execution_t device_runtime_execute_command(
     const char *device_id,
     const device_runtime_command_t *command,
@@ -1450,6 +1469,23 @@ static device_runtime_command_execution_t device_runtime_execute_command(
         }
 #else
         result_code = "voice_intercom_unavailable";
+        result = ESP_ERR_NOT_SUPPORTED;
+#endif
+    } else if (device_runtime_is_assessment_command(command->type)) {
+#if DEVICE_RUNTIME_HAS_ASSESSMENT_SYNC
+        // The session module validates the payload itself; the reporter only
+        // guarantees it hands over the exact bytes it received.
+        result = assessment_sync_handle_command(
+            command->data,
+            command->data_length
+        );
+        if (result == ESP_ERR_NOT_SUPPORTED) {
+            result_code = "unsupported_command";
+        } else if (result != ESP_OK) {
+            result_code = "assessment_rejected";
+        }
+#else
+        result_code = "assessment_unavailable";
         result = ESP_ERR_NOT_SUPPORTED;
 #endif
     } else {

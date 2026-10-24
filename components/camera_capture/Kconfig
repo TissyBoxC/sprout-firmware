@@ -5,9 +5,127 @@ config FEATURE_CAMERA_CAPTURE
     depends on CAPABILITY_CAMERA
     default n
     help
-        Enables the camera capture lifecycle. Capture always requires explicit
-        guardian consent for image upload; without consent the sensor is never
-        started. Firmware images built without the camera capability compile
-        the component out entirely.
+        Enables the camera capture lifecycle and the OV2640 sensor driver behind
+        it. Capture always requires explicit guardian consent for image upload;
+        without consent the sensor is never started. Firmware images built
+        without the camera capability compile the component out entirely, and
+        the sensor is only started when a pin set is configured below.
+
+config CAMERA_SENSOR_OV2640
+    bool "Use the OV2640 image sensor"
+    depends on FEATURE_CAMERA_CAPTURE
+    default y
+    help
+        The OV2640 is the sensor on the current carrier board. Only one sensor
+        model may be selected, because the driver binds its register set at
+        initialization.
+
+config CAMERA_PIN_PWDN
+    int "Power-down GPIO (-1 when the board ties it low)"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 38
+    help
+        Set this to -1 when the carrier board pulls PWDN to ground permanently.
+
+config CAMERA_PIN_RESET
+    int "Reset GPIO (-1 when the board ties it high)"
+    depends on FEATURE_CAMERA_CAPTURE
+    default -1
+
+config CAMERA_PIN_XCLK
+    int "Master clock GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 15
+
+config CAMERA_PIN_SIOD
+    int "SCCB data GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 4
+
+config CAMERA_PIN_SIOC
+    int "SCCB clock GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 5
+
+config CAMERA_PIN_D7
+    int "Pixel data D7 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 16
+
+config CAMERA_PIN_D6
+    int "Pixel data D6 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 17
+
+config CAMERA_PIN_D5
+    int "Pixel data D5 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 18
+
+config CAMERA_PIN_D4
+    int "Pixel data D4 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 12
+
+config CAMERA_PIN_D3
+    int "Pixel data D3 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 10
+
+config CAMERA_PIN_D2
+    int "Pixel data D2 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 8
+
+config CAMERA_PIN_D1
+    int "Pixel data D1 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 9
+
+config CAMERA_PIN_D0
+    int "Pixel data D0 GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 11
+
+config CAMERA_PIN_VSYNC
+    int "Vertical sync GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 6
+
+config CAMERA_PIN_HREF
+    int "Horizontal reference GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 7
+
+config CAMERA_PIN_PCLK
+    int "Pixel clock GPIO"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 13
+
+config CAMERA_XCLK_FREQUENCY_HZ
+    int "Master clock frequency in Hz"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 20000000
+    range 10000000 24000000
+
+config CAMERA_FRAME_QUALITY
+    int "JPEG quality, lower is better and larger"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 12
+    range 6 30
+    help
+        A still is one JPEG frame. The quality stays mid-range because a care
+        view still only has to be legible, and a smaller frame keeps a mobile
+        uplink from stalling.
+
+config CAMERA_FRAME_WIDTH
+    int "JPEG frame width in pixels"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 640
+
+config CAMERA_FRAME_HEIGHT
+    int "JPEG frame height in pixels"
+    depends on FEATURE_CAMERA_CAPTURE
+    default 480
 
 endmenu

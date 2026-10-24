@@ -1,0 +1,15 @@
+## IDF component manifest for the camera capture path.
+##
+## The OV2640 driver is distributed through PlatformIO, but its headers include
+## the ESP Component Registry decoder, which the ESP-IDF framework bundled with
+## PlatformIO does not ship. Declaring it here lets the component manager place
+## jpeg_decoder.h on the include path without vendoring the source.
+dependencies:
+  espressif/esp32-camera:
+    # Pinned exactly: dependencies.lock is ignored by this repository, so a
+    # range here would let a different driver enter a release unreviewed.
+    version: "2.1.8"
+    rules:
+      - if: "idf_version >= 4.4"
+  idf:
+    version: ">=5.0"

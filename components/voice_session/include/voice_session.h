@@ -66,6 +66,8 @@ typedef struct {
     uint32_t audio_frames_sent;
     uint32_t audio_frames_received;
     uint32_t audio_frames_dropped;
+    uint32_t video_frames_sent;
+    uint32_t video_frames_dropped;
     uint32_t decode_failures;
     uint32_t barge_in_events;
     uint32_t reconnect_attempts;
@@ -135,6 +137,33 @@ esp_err_t voice_session_notify_wake_detected(
 esp_err_t voice_session_send_wake_detected(
     const char *wake_word,
     uint32_t confidence_milli
+);
+
+/**
+ * @brief Send one encoded JPEG still over the active session transport.
+ *
+ * Blocks while the frame is copied and written to the socket, so it must be
+ * called from a task that may wait, never from an audio or camera ISR. The
+ * frame is gated by IMAGE-upload consent, not audio consent, and is dropped
+ * and counted when consent is missing. The envelope is heap-allocated because
+ * a still is far too large for a task stack, and is released on every path.
+ *
+ * @param jpeg Encoded JPEG bytes; copied before the call returns.
+ * @param length Byte count, at most VOICE_SESSION_MAX_VIDEO_PAYLOAD_BYTES.
+ * @param captured_at_ms Capture time in milliseconds for the envelope.
+ * @return ESP_OK when the frame was sent;
+ *         ESP_ERR_INVALID_ARG for a NULL pointer or zero length;
+ *         ESP_ERR_INVALID_SIZE when length exceeds the video payload cap;
+ *         ESP_ERR_INVALID_STATE when no session is active, the socket is not
+ *         connected, or the socket write failed;
+ *         ESP_ERR_NO_MEM when the envelope could not be allocated.
+ *         A missing-consent, allocation, or write failure drops the frame and
+ *         counts it in video_frames_dropped.
+ */
+esp_err_t voice_session_send_video_frame(
+    const uint8_t *jpeg,
+    size_t length,
+    uint32_t captured_at_ms
 );
 
 /** @brief End the active session with a stable reason. */

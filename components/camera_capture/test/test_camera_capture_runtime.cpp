@@ -118,10 +118,78 @@ static void test_invalid_frame_is_dropped() {
     assert(snapshot.state == CAMERA_CAPTURE_READY);
 }
 
+// A read outside a consented capture must not hand out pixels, whatever the
+// sensor could produce, so the lifecycle state gates it before the driver runs.
+static void test_read_requires_an_active_capture() {
+    reset_guard(false);
+    assert(camera_capture_init() == ESP_OK);
+    uint8_t buffer[16] = {0};
+    uint32_t width = 0;
+    uint32_t height = 0;
+    size_t length = 0;
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), &width, &height, &length
+           ) == CAMERA_CAPTURE_ERR_PRIVACY_CONSENT_REQUIRED);
+    assert(width == 0 && height == 0 && length == 0);
+
+    reset_guard(true);
+    assert(camera_capture_init() == ESP_OK);
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), &width, &height, &length
+           ) == CAMERA_CAPTURE_ERR_PRIVACY_CONSENT_REQUIRED);
+}
+
+// Every output pointer is required, because a caller that cannot receive the
+// dimensions cannot record the frame either.
+static void test_read_rejects_unusable_outputs() {
+    reset_guard(true);
+    assert(camera_capture_init() == ESP_OK);
+    assert(camera_capture_start() == CAMERA_CAPTURE_OK);
+    uint8_t buffer[16] = {0};
+    uint32_t width = 0;
+    uint32_t height = 0;
+    size_t length = 0;
+    assert(camera_capture_read_jpeg(
+               NULL, sizeof(buffer), &width, &height, &length
+           ) == CAMERA_CAPTURE_ERR_NULL_ARGUMENT);
+    assert(camera_capture_read_jpeg(
+               buffer, 0, &width, &height, &length
+           ) == CAMERA_CAPTURE_ERR_NULL_ARGUMENT);
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), NULL, &height, &length
+           ) == CAMERA_CAPTURE_ERR_NULL_ARGUMENT);
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), &width, NULL, &length
+           ) == CAMERA_CAPTURE_ERR_NULL_ARGUMENT);
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), &width, &height, NULL
+           ) == CAMERA_CAPTURE_ERR_NULL_ARGUMENT);
+    assert(camera_capture_abort() == CAMERA_CAPTURE_OK);
+}
+
+// This host build selects no sensor model, so a consented capture honestly
+// reports that no image can be produced instead of inventing a frame.
+static void test_read_reports_missing_sensor() {
+    reset_guard(true);
+    assert(camera_capture_init() == ESP_OK);
+    assert(camera_capture_start() == CAMERA_CAPTURE_OK);
+    uint8_t buffer[16] = {0};
+    uint32_t width = 0;
+    uint32_t height = 0;
+    size_t length = 0;
+    assert(camera_capture_read_jpeg(
+               buffer, sizeof(buffer), &width, &height, &length
+           ) == CAMERA_CAPTURE_ERR_UNSUPPORTED);
+    assert(camera_capture_abort() == CAMERA_CAPTURE_OK);
+}
+
 int main() {
     test_capture_requires_consent();
     test_capture_lifecycle_with_consent();
     test_revocation_stops_next_frame();
     test_invalid_frame_is_dropped();
+    test_read_requires_an_active_capture();
+    test_read_rejects_unusable_outputs();
+    test_read_reports_missing_sensor();
     return 0;
 }

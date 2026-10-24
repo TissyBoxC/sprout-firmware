@@ -8,6 +8,7 @@
 #include "voice_session.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -72,7 +73,7 @@
 #define VOICE_SESSION_HAS_PARENT_CONTROL_RUNTIME 0
 #endif
 
-#if CONFIG_FEATURE_PRIVACY_GUARD && __has_include("privacy_guard.h")
+#if VOICE_SESSION_HAS_PRIVACY_GUARD && __has_include("privacy_guard.h")
 #include "privacy_guard.h"
 #define VOICE_SESSION_HAS_PRIVACY_GUARD 1
 #else
@@ -116,6 +117,15 @@ esp_err_t voice_session_start_session(
 
 /** @brief Sender wake cadence; bounds how long an audio frame can wait. */
 #define VOICE_SESSION_SENDER_POLL_MS 10
+
+/**
+ * @brief Bound on one video frame write before the frame is dropped.
+ *
+ * A still is far larger than an audio frame, so the socket write needs more
+ * than the audio path's budget, but it must still be bounded so the camera
+ * caller cannot stall forever on a network that stops making progress.
+ */
+#define VOICE_SESSION_VIDEO_SEND_TIMEOUT_MS 10000
 
 /** @brief Bounded retries while the TLS handshake finishes and a frame is due. */
 #define VOICE_SESSION_CONTROL_RETRY_ATTEMPTS 60
@@ -879,6 +889,105 @@ static void voice_session_send_audio_payload(
         return;
     }
     voice_session_increment(&voice_session_state.counters.audio_frames_sent);
+}
+
+esp_err_t voice_session_send_video_frame(
+    const uint8_t *jpeg,
+    size_t length,
+    uint32_t captured_at_ms
+) {
+    if (jpeg == NULL || length == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (length > (size_t)VOICE_SESSION_MAX_VIDEO_PAYLOAD_BYTES) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    // The session id and socket live on the lifecycle paths, which replace
+    // them under the lifecycle mutex. Copy the id under that mutex rather than
+    // holding it across the socket write, which can block for seconds.
+    if (voice_session_state.lifecycle_mutex == NULL ||
+        xSemaphoreTake(
+            voice_session_state.lifecycle_mutex,
+            portMAX_DELAY
+        ) != pdTRUE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char session_id[VOICE_SESSION_IDENTIFIER_SIZE] = {0};
+    strncpy(
+        session_id,
+        voice_session_state.session_id,
+        sizeof(session_id) - 1
+    );
+    xSemaphoreGive(voice_session_state.lifecycle_mutex);
+
+    const esp_websocket_client_handle_t client = voice_session_state.client;
+    if (client == NULL || !voice_session_state.has_active_session ||
+        !esp_websocket_client_is_connected(client)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+#if VOICE_SESSION_HAS_PRIVACY_GUARD
+    // A still frame is the same child's image data as any other capture. It
+    // needs IMAGE-upload consent specifically; a granted audio class must not
+    // authorize it. The check fails closed before allocation.
+    if (!privacy_guard_has_consent(PRIVACY_GUARD_DATA_IMAGE_UPLOAD)) {
+        voice_session_increment(&voice_session_state.counters.video_frames_dropped);
+        return ESP_OK;
+    }
+#endif
+
+    // A still is far too large for a task stack, so the envelope is heap
+    // allocated for exactly header + session id + payload and released below.
+    // The video header is the widened 26-byte layout, not the 24-byte audio one.
+    const size_t envelope_capacity =
+        VOICE_SESSION_VIDEO_ENVELOPE_HEADER_SIZE + strlen(session_id) + length;
+    uint8_t *envelope = (uint8_t *)malloc(envelope_capacity);
+    if (envelope == NULL) {
+        voice_session_increment(&voice_session_state.counters.video_frames_dropped);
+        ESP_LOGW(TAG, "video envelope allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t result = ESP_OK;
+    size_t envelope_length = 0;
+    // The payload cap and the session id were already validated, so a failure
+    // here means the session changed underneath the caller; treat it as one.
+    const bool is_encoded = voice_session_envelope_encode(
+        VOICE_SESSION_ENVELOPE_MAGIC_DEVICE_VIDEO,
+        session_id,
+        voice_session_state.next_audio_sequence,
+        captured_at_ms,
+        jpeg,
+        length,
+        envelope,
+        envelope_capacity,
+        &envelope_length
+    ) == VOICE_SESSION_PROTOCOL_OK;
+    if (!is_encoded) {
+        voice_session_increment(&voice_session_state.counters.video_frames_dropped);
+        result = ESP_ERR_INVALID_STATE;
+    } else {
+        const int sent = esp_websocket_client_send_bin(
+            client,
+            (const char *)envelope,
+            (int)envelope_length,
+            pdMS_TO_TICKS(VOICE_SESSION_VIDEO_SEND_TIMEOUT_MS)
+        );
+        if (sent < 0 || (size_t)sent != envelope_length) {
+            voice_session_increment(
+                &voice_session_state.counters.video_frames_dropped
+            );
+            ESP_LOGW(TAG, "video frame write failed");
+            result = ESP_ERR_INVALID_STATE;
+        } else {
+            voice_session_increment(&voice_session_state.counters.video_frames_sent);
+        }
+    }
+
+    // The envelope carries the frame; it must never outlive the send attempt.
+    free(envelope);
+    return result;
 }
 
 /**

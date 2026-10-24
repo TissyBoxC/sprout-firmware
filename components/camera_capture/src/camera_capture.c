@@ -3,6 +3,7 @@
 #include "esp_log.h"
 
 #include "camera_capture_core.h"
+#include "camera_capture_sensor.h"
 #if CONFIG_FEATURE_PRIVACY_GUARD
 #include "privacy_guard.h"
 #endif
@@ -94,6 +95,15 @@ camera_capture_error_t camera_capture_start(void) {
         return CAMERA_CAPTURE_ERR_PRIVACY_CONSENT_REQUIRED;
     }
     camera_capture_snapshot.guardian_consent = true;
+#if CAMERA_CAPTURE_HAS_SENSOR
+    // The sensor is started only here, after consent passed, so a device whose
+    // guardian never allowed image upload never powers the camera at all.
+    const esp_err_t sensor_result = camera_capture_sensor_init();
+    if (sensor_result != ESP_OK) {
+        camera_capture_snapshot.state = CAMERA_CAPTURE_ERROR;
+        return CAMERA_CAPTURE_ERR_NOT_READY;
+    }
+#endif
     camera_capture_snapshot.state = CAMERA_CAPTURE_CAPTURING;
     return CAMERA_CAPTURE_OK;
 }
@@ -131,6 +141,44 @@ camera_capture_error_t camera_capture_abort(void) {
     }
     camera_capture_core_record_drop(&camera_capture_snapshot);
     return CAMERA_CAPTURE_OK;
+}
+
+camera_capture_error_t camera_capture_read_jpeg(
+    uint8_t *buffer,
+    size_t buffer_size,
+    uint32_t *width_out,
+    uint32_t *height_out,
+    size_t *length_out
+) {
+    if (buffer == NULL || buffer_size == 0 || width_out == NULL ||
+        height_out == NULL || length_out == NULL) {
+        return CAMERA_CAPTURE_ERR_NULL_ARGUMENT;
+    }
+    if (!camera_capture_ready) {
+        return CAMERA_CAPTURE_ERR_NOT_READY;
+    }
+    // A read outside a consented capture would hand out pixels the guardian has
+    // not allowed, so the capture state, not only the consent flag, gates this.
+    if (camera_capture_snapshot.state != CAMERA_CAPTURE_CAPTURING) {
+        return CAMERA_CAPTURE_ERR_PRIVACY_CONSENT_REQUIRED;
+    }
+#if CAMERA_CAPTURE_HAS_SENSOR
+    const camera_capture_sensor_frame_t frame =
+        camera_capture_sensor_read(buffer, buffer_size);
+    if (!frame.ok) {
+        camera_capture_core_record_drop(&camera_capture_snapshot);
+        return CAMERA_CAPTURE_ERR_INVALID_FRAME;
+    }
+    *width_out = frame.width;
+    *height_out = frame.height;
+    *length_out = frame.length;
+    return CAMERA_CAPTURE_OK;
+#else
+    // No sensor model is selected, so the image cannot produce a frame. The
+    // caller reports "camera unavailable" and the guardian sees that the view
+    // has no image rather than a blank picture.
+    return CAMERA_CAPTURE_ERR_UNSUPPORTED;
+#endif
 }
 
 const char *camera_capture_error_name(camera_capture_error_t error) {

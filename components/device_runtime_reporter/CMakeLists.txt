@@ -52,6 +52,11 @@ if(CONFIG_FEATURE_VOICE_INTERCOM AND EXISTS
     list(APPEND device_runtime_reporter_requires "voice_intercom")
 endif()
 
+if(CONFIG_FEATURE_ASSESSMENT_SYNC AND EXISTS
+        "${CMAKE_CURRENT_LIST_DIR}/../assessment_sync/CMakeLists.txt")
+    list(APPEND device_runtime_reporter_requires "assessment_sync")
+endif()
+
 if(CONFIG_FEATURE_USAGE_LEDGER AND EXISTS
         "${CMAKE_CURRENT_LIST_DIR}/../usage_ledger/CMakeLists.txt")
     list(APPEND device_runtime_reporter_requires "usage_ledger")

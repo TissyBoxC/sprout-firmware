@@ -161,3 +161,7 @@ CONFIG_FEATURE_CARE_VIEW=y
 # The family switch in the parent app still gates it: the platform refuses
 # samples while that switch is off, and no conversation text leaves the device.
 CONFIG_FEATURE_EMOTION_REPORT=y
+# The adaptive assessment stores its answers on the platform when the guardian
+# starts one for this device. The device only carries the session id and the
+# scores the guardian graded; the level curve stays on the platform.
+CONFIG_FEATURE_ASSESSMENT_SYNC=y

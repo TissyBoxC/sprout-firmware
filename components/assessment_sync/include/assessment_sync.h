@@ -134,6 +134,19 @@ esp_err_t assessment_sync_get_status(
  */
 esp_err_t assessment_sync_reset(void);
 
+/**
+ * @brief Handle one assessment_start command from the runtime reporter.
+ *
+ * The platform names the session and the device fetches its first item over its
+ * own authenticated session, so a command carries no lesson content and no
+ * answer. Only session_id is read from the payload.
+ *
+ * @return ESP_OK when the session was refreshed, ESP_ERR_INVALID_ARG for a
+ *         malformed or oversized payload, ESP_ERR_NOT_SUPPORTED when the module
+ *         is not initialized, otherwise the refresh error.
+ */
+esp_err_t assessment_sync_handle_command(const char *payload, size_t length);
+
 /** @brief Return the removable-module descriptor for assessment sync. */
 const module_descriptor_t *assessment_sync_module_descriptor(void);
 

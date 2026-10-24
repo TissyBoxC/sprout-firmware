@@ -45,6 +45,10 @@
 #define ASSESSMENT_SYNC_RESPONSE_SIZE 8192
 #define ASSESSMENT_SYNC_REQUEST_SIZE 512
 
+// An assessment_start command carries only the session id and a deadline, so a
+// generous bound still refuses anything that is not one small JSON object.
+#define ASSESSMENT_SYNC_COMMAND_MAX_BYTES 512
+
 static const char *const TAG = "assessment_sync";
 
 static SemaphoreHandle_t s_lock;
@@ -504,6 +508,28 @@ esp_err_t assessment_sync_refresh_session(const char *session_id) {
     }
     xSemaphoreGive(s_lock);
     return result;
+}
+
+esp_err_t assessment_sync_handle_command(const char *payload, size_t length) {
+    if (payload == NULL || length == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    // The reporter hands over the exact bytes it received, so this module owns
+    // bounding them. A command is a handful of short fields.
+    if (length > ASSESSMENT_SYNC_COMMAND_MAX_BYTES) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    JsonDocument document;
+    if (deserializeJson(document, payload, length)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    JsonObjectConst root = document.as<JsonObjectConst>();
+    const char *session_id = root["session_id"];
+    if (session_id == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return assessment_sync_refresh_session(session_id);
 }
 
 esp_err_t assessment_sync_submit_answer(
